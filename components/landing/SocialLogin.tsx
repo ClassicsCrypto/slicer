@@ -18,8 +18,8 @@ export default function SocialLogin() {
     const supabase = createSupabaseClient()
     const redirectTo =
       typeof window !== 'undefined'
-        ? `${window.location.origin}/dashboard`
-        : '/dashboard'
+        ? `${window.location.origin}/api/auth/callback`
+        : '/api/auth/callback'
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
