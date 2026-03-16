@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #00BFA5;
+  --accent: #00E676;
+  --background: #0A0E1A;
+  --surface: #111827;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  background-color: #0A0E1A;
+  color: #ffffff;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00BFA5;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00E676;
+}
+
+/* Glow effects */
+.glow-teal {
+  box-shadow: 0 0 20px rgba(0, 191, 165, 0.3);
+}
+
+.glow-teal-strong {
+  box-shadow: 0 0 40px rgba(0, 191, 165, 0.5);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #00BFA5, #00E676);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Marquee animation */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Cat float animation */
+@keyframes catFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+.cat-float {
+  animation: catFloat 3s ease-in-out infinite;
+}
+
+/* Glow pulse */
+@keyframes glowPulse {
+  0%, 100% { filter: drop-shadow(0 0 8px #00BFA5); }
+  50% { filter: drop-shadow(0 0 32px #00E676); }
+}
+
+.glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Checklist item animation */
+@keyframes checkIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.check-in {
+  animation: checkIn 0.4s ease-out forwards;
+}
+
+/* Tab underline */
+.tab-active {
+  border-bottom: 2px solid #00BFA5;
+  color: #00BFA5;
+}
+
+/* Input focus styles */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #00BFA5;
+  box-shadow: 0 0 0 2px rgba(0, 191, 165, 0.2);
+}
+
+/* Drag zone active */
+.drag-active {
+  border-color: #00E676 !important;
+  background-color: rgba(0, 230, 118, 0.05) !important;
+}
