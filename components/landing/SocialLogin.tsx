@@ -93,6 +93,15 @@ export default function SocialLogin() {
       <p className="text-center text-muted/60 text-xs mt-2">
         No password needed — we&apos;ll email you a secure sign-in link.
       </p>
+
+      {process.env.NODE_ENV === 'development' && (
+        <button
+          onClick={() => window.location.href = '/dashboard'}
+          className="mt-2 w-full px-6 py-2.5 rounded-xl font-semibold text-xs border border-dashed border-yellow-500/40 text-yellow-400/70 hover:border-yellow-400 hover:text-yellow-400 transition-all"
+        >
+          ⚡ Dev: Skip login → Dashboard
+        </button>
+      )}
     </div>
   )
 }
