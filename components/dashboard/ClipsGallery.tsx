@@ -193,12 +193,8 @@ export default function ClipsGallery() {
               </div>
               <div className="flex items-center gap-2 text-xs text-muted mb-4">
                 <span>{formatDate(job.created_at)}</span>
-                {job.options && (
-                  <>
-                    <span>·</span>
-                    <Badge variant="default">{job.options.clipCount} clips</Badge>
-                  </>
-                )}
+                <span>·</span>
+                <Badge variant="default">{job.clips?.length ?? 0} clips</Badge>
               </div>
 
               {/* Actions */}
@@ -229,31 +225,71 @@ export default function ClipsGallery() {
       >
         {previewJob && (
           <div className="space-y-4">
-            <div className="bg-black rounded-xl h-64 flex items-center justify-center">
-              <p className="text-muted text-sm">Video preview — connect R2 to enable</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="bg-background rounded-xl p-3">
-                <p className="text-muted text-xs mb-1">Status</p>
-                {statusBadge(previewJob.status)}
-              </div>
-              <div className="bg-background rounded-xl p-3">
-                <p className="text-muted text-xs mb-1">Created</p>
-                <p className="text-white">{formatDate(previewJob.created_at)}</p>
-              </div>
-              {previewJob.options && (
-                <>
-                  <div className="bg-background rounded-xl p-3">
-                    <p className="text-muted text-xs mb-1">Clip Count</p>
-                    <p className="text-white">{previewJob.options.clipCount}</p>
-                  </div>
-                  <div className="bg-background rounded-xl p-3">
-                    <p className="text-muted text-xs mb-1">Format</p>
-                    <p className="text-white capitalize">{previewJob.options.platformFormat}</p>
-                  </div>
-                </>
+            {/* Job meta */}
+            <div className="flex items-center gap-3 flex-wrap text-sm">
+              {statusBadge(previewJob.status)}
+              <span className="text-muted">{formatDate(previewJob.created_at)}</span>
+              {previewJob.options?.platformFormat && (
+                <Badge variant="default">{previewJob.options.platformFormat}</Badge>
               )}
+              <span className="text-muted">{previewJob.clips?.length ?? 0} clips</span>
             </div>
+
+            {/* Clips grid */}
+            {previewJob.clips && previewJob.clips.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+                {previewJob.clips.map((clip, i) => (
+                  <div key={clip.id} className="bg-background rounded-xl border border-white/10 overflow-hidden">
+                    {/* Clip player — shows video if r2_key has a URL, otherwise placeholder */}
+                    <div className="relative bg-black h-36 flex items-center justify-center">
+                      {clip.r2_key && clip.r2_key.startsWith('http') ? (
+                        <video
+                          src={clip.r2_key}
+                          controls
+                          className="w-full h-full object-cover"
+                          preload="metadata"
+                        />
+                      ) : (
+                        <div className="text-center">
+                          <div className="text-3xl mb-1">🎬</div>
+                          <p className="text-muted text-xs">Clip {i + 1}</p>
+                        </div>
+                      )}
+                    </div>
+                    {/* Clip info + actions */}
+                    <div className="p-3 flex items-center justify-between gap-2">
+                      <div className="text-xs text-muted">
+                        <p className="text-white font-semibold mb-0.5">Clip {i + 1}</p>
+                        {clip.start_time != null && clip.end_time != null && (
+                          <p>{clip.start_time}s – {clip.end_time}s · {clip.duration}s</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {clip.r2_key && clip.r2_key.startsWith('http') ? (
+                          <a
+                            href={clip.r2_key}
+                            download={`slicer-clip-${i + 1}.mp4`}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/40 text-primary rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            ⬇ Download
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted/50 italic">No file yet</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-10 text-center">
+                <p className="text-muted text-sm">
+                  {previewJob.status === 'processing' || previewJob.status === 'pending'
+                    ? '⚡ Still processing — check back in a moment'
+                    : 'No clips found for this job'}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </Modal>
