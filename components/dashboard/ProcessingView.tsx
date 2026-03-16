@@ -26,7 +26,38 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
   const supabase = createSupabaseClient()
 
   useEffect(() => {
-    // Poll for progress
+    // Dev mode: simulate progress locally without API calls
+    if (jobId.startsWith('dev-') || process.env.NODE_ENV === 'development') {
+      const steps = [
+        { key: 'uploading', delay: 800, est: 25 },
+        { key: 'analyzing', delay: 2500, est: 20 },
+        { key: 'detecting', delay: 2500, est: 15 },
+        { key: 'subtitles', delay: 2500, est: 10 },
+        { key: 'rendering', delay: 2500, est: 5 },
+        { key: 'finalizing', delay: 2000, est: 0 },
+      ]
+      let cancelled = false
+      const run = async () => {
+        for (let i = 0; i < steps.length; i++) {
+          if (cancelled) return
+          const step = steps[i]
+          // Mark current as active
+          setProgress(prev => ({ ...prev, [step.key]: true, estimatedSecondsRemaining: step.est }))
+          await new Promise(r => setTimeout(r, step.delay))
+          if (cancelled) return
+          // Mark current as done
+          setProgress(prev => ({ ...prev, [step.key]: 'done' }))
+        }
+        if (!cancelled) {
+          setStatus('complete')
+          setTimeout(onComplete, 2000)
+        }
+      }
+      run()
+      return () => { cancelled = true }
+    }
+
+    // Production: poll API + Supabase realtime
     const interval = setInterval(async () => {
       const res = await fetch(`/api/jobs/${jobId}`)
       if (!res.ok) return
@@ -42,7 +73,6 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       }
     }, 2000)
 
-    // Also subscribe to Supabase realtime
     const channel = supabase
       .channel(`job-${jobId}`)
       .on('postgres_changes', {
