@@ -11,10 +11,17 @@ export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('Authorization') || ''
   const token = authHeader.replace('Bearer ', '')
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) {
+  let userId = 'dev-user'
+  if (token) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    userId = user.id
+  } else if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const user = { id: userId }
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null

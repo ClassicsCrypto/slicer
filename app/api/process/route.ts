@@ -8,13 +8,22 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseAdmin()
 
-  // Auth
+  // Auth — allow unauthenticated in dev mode
   const authHeader = req.headers.get('Authorization') || ''
   const token = authHeader.replace('Bearer ', '')
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) {
+  let userId = 'dev-user'
+
+  if (token) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    userId = user.id
+  } else if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const user = { id: userId }
 
   const body = await req.json()
   const { videoUrl, filePath, options, title } = body as {
@@ -28,25 +37,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No video source provided' }, { status: 400 })
   }
 
-  // Create job in Supabase
-  const { data: job, error: insertError } = await supabase
-    .from('jobs')
-    .insert({
-      id: uuidv4(),
-      user_id: user.id,
-      title: title || videoUrl || 'Untitled',
-      source_url: videoUrl || null,
-      r2_key: filePath || null,
-      status: 'pending',
-      options,
-      progress: {},
-    })
-    .select()
-    .single()
+  // Create job in Supabase (skip DB insert in dev mode with no real user)
+  const jobId = uuidv4()
+  let job = { id: jobId }
 
-  if (insertError || !job) {
-    console.error('Insert error:', insertError)
-    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
+  if (user.id !== 'dev-user') {
+    const { data: dbJob, error: insertError } = await supabase
+      .from('jobs')
+      .insert({
+        id: jobId,
+        user_id: user.id,
+        title: title || videoUrl || 'Untitled',
+        source_url: videoUrl || null,
+        r2_key: filePath || null,
+        status: 'pending',
+        options,
+        progress: {},
+      })
+      .select()
+      .single()
+
+    if (insertError || !dbJob) {
+      console.error('Insert error:', insertError)
+      return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
+    }
+    job = dbJob
   }
 
   // Start async processing (fire and forget)
