@@ -19,18 +19,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.push('/')
-        return
+      if (session) {
+        setUser(session.user)
       }
-      setUser(session.user)
+      // In dev mode, allow access without a session
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
-        router.push('/')
-      } else {
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+      } else if (session) {
         setUser(session.user)
       }
     })
