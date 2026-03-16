@@ -274,8 +274,28 @@ export default function ClipsGallery() {
                             ⬇ Download
                           </a>
                         ) : (
-                          <span className="text-xs text-muted/50 italic">No file yet</span>
+                          <button
+                            disabled
+                            title="Available after real processing"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white/5 text-muted/40 rounded-lg text-xs font-semibold cursor-not-allowed"
+                          >
+                            ⬇ Download
+                          </button>
                         )}
+                        <button
+                          onClick={() => {
+                            if (previewJob) {
+                              setPreviewJob({
+                                ...previewJob,
+                                clips: previewJob.clips?.filter(c => c.id !== clip.id)
+                              })
+                            }
+                          }}
+                          title="Delete clip"
+                          className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/30 text-red-400 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                          🗑
+                        </button>
                       </div>
                     </div>
                   </div>
