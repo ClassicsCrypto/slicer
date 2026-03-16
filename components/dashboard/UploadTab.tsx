@@ -153,16 +153,26 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
       {/* File selected preview */}
       {file && !processing && (
-        <div className="mt-4 flex items-center gap-3 p-4 bg-surface rounded-xl border border-primary/30">
-          <span className="text-2xl">🎬</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{file.name}</p>
-            <p className="text-xs text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+        <>
+          <div className="mt-4 flex items-center gap-3 p-4 bg-surface rounded-xl border border-primary/30">
+            <span className="text-2xl">🎬</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{file.name}</p>
+              <p className="text-xs text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+            </div>
+            <button onClick={() => { setFile(null); setShowOptions(false) }} className="text-muted hover:text-red-400 transition-colors">
+              ✕
+            </button>
           </div>
-          <button onClick={() => { setFile(null); setShowOptions(false) }} className="text-muted hover:text-red-400 transition-colors">
-            ✕
-          </button>
-        </div>
+          <Button
+            variant="primary"
+            size="lg"
+            className="mt-4 w-full"
+            onClick={() => setShowOptions(true)}
+          >
+            ⚡ Set Options &amp; Process
+          </Button>
+        </>
       )}
 
       {/* URL Input */}
@@ -182,7 +192,17 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           </Button>
         </div>
         {url && (
-          <p className="mt-2 text-xs text-primary truncate">✓ URL ready: {url}</p>
+          <>
+            <p className="mt-2 text-xs text-primary truncate">✓ URL ready: {url}</p>
+            <Button
+              variant="primary"
+              size="lg"
+              className="mt-4 w-full"
+              onClick={() => setShowOptions(true)}
+            >
+              ⚡ Set Options &amp; Process
+            </Button>
+          </>
         )}
       </div>
 
