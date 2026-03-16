@@ -39,6 +39,27 @@ export default function ClipsGallery() {
     if (res.ok) {
       const data = await res.json()
       setJobs(data)
+    } else {
+      // Dev mode: show mock jobs so the gallery is visible
+      setJobs([
+        {
+          id: 'dev-job-1',
+          user_id: 'dev-user',
+          title: 'Mars Cats Voyage — Highlight Reel.mp4',
+          source_url: 'https://youtube.com/watch?v=demo',
+          r2_key: null,
+          status: 'complete',
+          options: {},
+          progress: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          clips: [
+            { id: 'c1', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 30, start_time: 10, end_time: 40, created_at: new Date().toISOString() },
+            { id: 'c2', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 45, start_time: 65, end_time: 110, created_at: new Date().toISOString() },
+            { id: 'c3', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 28, start_time: 140, end_time: 168, created_at: new Date().toISOString() },
+          ]
+        },
+      ] as Job[])
     }
     setLoading(false)
   }, [])

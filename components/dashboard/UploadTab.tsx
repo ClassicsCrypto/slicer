@@ -45,11 +45,12 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     }
   }, [])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: ACCEPTED_TYPES,
     maxSize: MAX_SIZE,
     maxFiles: 1,
+    noClick: true,
   })
 
   const handleUrlPaste = () => {
@@ -144,7 +145,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
             <span className="text-muted text-xs uppercase tracking-widest">or</span>
             <div className="flex-1 h-px bg-white/10" />
           </div>
-          <Button variant="ghost" size="md" onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="md" onClick={(e) => { e.stopPropagation(); open() }}>
             Browse Files
           </Button>
         </div>
