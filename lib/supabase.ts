@@ -1,13 +1,28 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Client-side Supabase client (singleton)
-export const createSupabaseClient = () =>
-  createClient(supabaseUrl, supabaseAnonKey)
+// Singleton — one client instance to avoid storage lock conflicts
+let clientInstance: SupabaseClient | null = null
 
-// Server-side Supabase client (same, used in API routes)
+export const createSupabaseClient = () => {
+  if (typeof window === 'undefined') {
+    // Server-side: always create fresh
+    return createClient(supabaseUrl, supabaseAnonKey)
+  }
+  if (!clientInstance) {
+    clientInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        storageKey: 'slicer-auth',
+      },
+    })
+  }
+  return clientInstance
+}
+
+// Server-side client (no singleton needed)
 export const createSupabaseServerClient = () =>
   createClient(supabaseUrl, supabaseAnonKey)
 

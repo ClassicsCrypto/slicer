@@ -29,12 +29,12 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
     // Dev mode: simulate progress locally without API calls
     if (jobId.startsWith('dev-') || process.env.NODE_ENV === 'development') {
       const steps = [
-        { key: 'uploading', delay: 800, est: 25 },
-        { key: 'analyzing', delay: 2500, est: 20 },
-        { key: 'detecting', delay: 2500, est: 15 },
-        { key: 'subtitles', delay: 2500, est: 10 },
-        { key: 'rendering', delay: 2500, est: 5 },
-        { key: 'finalizing', delay: 2000, est: 0 },
+        { key: 'uploading',   delay: 3000,  est: 600 },  // ~10 min total
+        { key: 'analyzing',   delay: 8000,  est: 480 },
+        { key: 'detecting',   delay: 10000, est: 300 },
+        { key: 'subtitles',   delay: 12000, est: 180 },
+        { key: 'rendering',   delay: 15000, est: 60  },
+        { key: 'finalizing',  delay: 5000,  est: 0   },
       ]
       let cancelled = false
       const run = async () => {
@@ -148,7 +148,11 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
         </div>
         {progress.estimatedSecondsRemaining != null && status === 'processing' && (
           <p className="text-xs text-muted mt-2 text-center">
-            Est. {Math.ceil(progress.estimatedSecondsRemaining / 60)} min remaining
+            Est.{' '}
+            {progress.estimatedSecondsRemaining >= 60
+              ? `${Math.ceil(progress.estimatedSecondsRemaining / 60)} min`
+              : `${progress.estimatedSecondsRemaining}s`}{' '}
+            remaining
           </p>
         )}
       </div>
