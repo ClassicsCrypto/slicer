@@ -85,9 +85,22 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         let body: Record<string, unknown> = { options }
 
         if (file) {
-          // Skip actual storage upload until R2/Supabase Storage is configured
-          // Just pass filename as reference so the job gets created
-          body.filePath = `pending/${file.name}`
+          if (session?.access_token) {
+            // Real upload to Supabase Storage
+            const uploadHeaders: Record<string, string> = { 'Authorization': `Bearer ${session.access_token}` }
+            const formData = new FormData()
+            formData.append('file', file)
+            const uploadRes = await fetch('/api/upload', { method: 'POST', headers: uploadHeaders, body: formData })
+            if (uploadRes.ok) {
+              const { r2Key, publicUrl } = await uploadRes.json()
+              body.filePath = r2Key
+              body.publicUrl = publicUrl
+            } else {
+              body.filePath = `pending/${file.name}`
+            }
+          } else {
+            body.filePath = `pending/${file.name}`
+          }
           body.title = file.name
         } else if (url) {
           body.videoUrl = url
