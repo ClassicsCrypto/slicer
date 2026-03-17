@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: 'Slicer — AI Video Clipping by MCV',
   description: 'AI-Powered Clips. Zero Effort. The premier video clipping and subtitle tool by Mars Cats Voyage.',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/favicon.svg',
   },
 }
 
