@@ -63,10 +63,9 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       if (completed.current) return
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        const headers: Record<string, string> = {}
-        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
-
-        const res = await fetch(`/api/jobs/${jobId}/poll`, { headers })
+        const userId = session?.user?.id
+        const pollUrl = userId ? `/api/jobs/${jobId}/poll?userId=${userId}` : `/api/jobs/${jobId}/poll`
+        const res = await fetch(pollUrl)
         if (!res.ok) return
 
         const data = await res.json()

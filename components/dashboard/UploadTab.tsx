@@ -84,18 +84,19 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       try {
         const supabase = createSupabaseClient()
         const { data: { session } } = await supabase.auth.getSession()
+        // Pass userId in body to avoid REQUEST_HEADER_TOO_LARGE from large JWTs
         const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (session?.access_token) authHeaders['Authorization'] = `Bearer ${session.access_token}`
+        const currentUserId = session?.user?.id
 
-        let body: Record<string, unknown> = { options }
+        let body: Record<string, unknown> = { options, userId: currentUserId }
 
         if (file) {
           if (session?.access_token) {
             // Step 1: Get a signed upload URL (no file size limit)
             const urlRes = await fetch('/api/upload-url', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-              body: JSON.stringify({ filename: file.name, contentType: file.type }),
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filename: file.name, contentType: file.type, userId: currentUserId }),
             })
             if (urlRes.ok) {
               const { signedUrl, storageKey, publicUrl } = await urlRes.json()

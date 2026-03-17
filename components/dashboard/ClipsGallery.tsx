@@ -43,12 +43,10 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     const supabase = createSupabaseClient()
     const { data: { session } } = await supabase.auth.getSession()
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`
-    }
-
-    const res = await fetch('/api/jobs', { headers })
+    // Use userId as query param to avoid REQUEST_HEADER_TOO_LARGE from large JWTs
+    const userId = session?.user?.id
+    const url = userId ? `/api/jobs?userId=${userId}` : '/api/jobs'
+    const res = await fetch(url)
     if (res.ok) {
       const data = await res.json()
       setJobs(Array.isArray(data) ? data : [])

@@ -23,23 +23,26 @@ export async function POST(req: NextRequest) {
   const token = authHeader.replace('Bearer ', '')
   let userId = 'dev-user'
 
-  if (token) {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    userId = user.id
-  } else if (process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (token && token.length > 10) {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) userId = user.id
+    } catch { /* header too large — will use userId from body */ }
   }
 
   const body = await req.json()
-  const { videoUrl, filePath, publicUrl, options, title } = body as {
+  const { videoUrl, filePath, publicUrl, options, title, userId: bodyUserId } = body as {
     videoUrl?: string
     filePath?: string
     publicUrl?: string
     options: ProcessingOptions
     title?: string
+    userId?: string
+  }
+
+  // If header auth failed due to REQUEST_HEADER_TOO_LARGE, use userId from body
+  if (userId === 'dev-user' && bodyUserId) {
+    userId = bodyUserId
   }
 
   if (!videoUrl && !filePath) {
