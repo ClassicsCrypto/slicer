@@ -20,7 +20,10 @@ export default function SocialLogin() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo },
+      options: {
+        emailRedirectTo: redirectTo,
+        shouldCreateUser: true,
+      },
     })
 
     if (error) {
@@ -41,6 +44,7 @@ export default function SocialLogin() {
           We sent a magic link to <span className="text-primary font-medium">{email}</span>.
           Click it to sign in — no password needed.
         </p>
+        <p className="text-xs text-muted/60 mt-3">Make sure to click the link on the same device/browser.</p>
         <button
           onClick={() => { setSent(false); setEmail('') }}
           className="mt-6 text-muted/60 text-xs underline hover:text-muted"
@@ -67,7 +71,8 @@ export default function SocialLogin() {
         <button
           type="submit"
           disabled={loading || !email}
-          className="flex items-center justify-center gap-2 w-full px-6 py-3.5 rounded-xl font-semibold text-sm bg-primary hover:bg-primary/90 text-background transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex items-center justify-center gap-2 w-full px-6 py-3.5 rounded-xl font-semibold text-sm text-background transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{background: 'linear-gradient(135deg, #00E676, #00BFA5)'}}
         >
           {loading ? (
             <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
