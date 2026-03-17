@@ -1,7 +1,17 @@
 export type JobStatus = 'pending' | 'processing' | 'complete' | 'failed'
 
-export type ClipLength = '15' | '30' | '45' | '60' | '90' | 'custom'
+export type ClipLength = '15' | '30' | '45' | '60' | 'custom'
 export type DetectionMode = 'auto' | 'manual'
+
+export type AIFocus =
+  | 'funny_moments'
+  | 'kill_streaks'
+  | 'intense_action'
+  | 'big_plays'
+  | 'reactions'
+  | 'key_dialogue'
+  | 'hype_moments'
+  | 'fails'
 export type SubtitleStyle = 'bold' | 'clean' | 'shadow' | 'outline' | 'karaoke'
 export type SubtitleSize = 'small' | 'medium' | 'large'
 export type OutputQuality = '720p' | '1080p' | '4k'
@@ -15,11 +25,18 @@ export interface SubtitleOptions {
   background: boolean
 }
 
+export interface ManualRange {
+  startPct: number  // 0-100
+  endPct: number    // 0-100
+}
+
 export interface ProcessingOptions {
   clipCount: number
   clipLength: ClipLength
   customClipLength?: number
   detectionMode: DetectionMode
+  aiFocus: AIFocus[]
+  manualRange?: ManualRange
   subtitles: SubtitleOptions
   outputQuality: OutputQuality
   platformFormat: PlatformFormat

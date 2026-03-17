@@ -11,7 +11,19 @@ import type {
   SubtitleSize,
   OutputQuality,
   PlatformFormat,
+  AIFocus,
 } from '@/types'
+
+const AI_FOCUS_OPTIONS: { id: AIFocus; label: string; icon: string }[] = [
+  { id: 'funny_moments',  label: 'Funny Moments',  icon: '😂' },
+  { id: 'kill_streaks',   label: 'Kill Streaks',   icon: '💀' },
+  { id: 'intense_action', label: 'Intense Action', icon: '🔥' },
+  { id: 'big_plays',      label: 'Big Plays',      icon: '🏆' },
+  { id: 'reactions',      label: 'Reactions',      icon: '😱' },
+  { id: 'key_dialogue',   label: 'Key Dialogue',   icon: '🗣️' },
+  { id: 'hype_moments',   label: 'Hype Moments',   icon: '⚡' },
+  { id: 'fails',          label: 'Fails & Clips',  icon: '💥' },
+]
 
 const getDefaultOptions = (): ProcessingOptions => {
   const stored = <T,>(key: string, fallback: T): T => {
@@ -19,18 +31,20 @@ const getDefaultOptions = (): ProcessingOptions => {
     try { return JSON.parse(localStorage.getItem(`slicer_${key}`) || 'null') ?? fallback } catch { return fallback }
   }
   return {
-    clipCount: 5,
-    clipLength: '30',
+    clipCount: stored<number>('clipCount', 5),
+    clipLength: stored<ClipLength>('clipLength', '30'),
     detectionMode: 'auto',
+    aiFocus: stored<AIFocus[]>('aiFocus', ['funny_moments', 'hype_moments']),
+    manualRange: { startPct: 0, endPct: 100 },
     subtitles: {
-      enabled: true,
-      style: stored<string>('subStyle', 'bold') as import('@/types').SubtitleStyle,
+      enabled: stored<boolean>('subtitlesOn', true),
+      style: stored<SubtitleStyle>('subStyle', 'bold'),
       size: 'medium',
       color: '#ffffff',
       background: false,
     },
-    outputQuality: stored<string>('quality', '1080p') as import('@/types').OutputQuality,
-    platformFormat: stored<string>('format', 'custom') as import('@/types').PlatformFormat,
+    outputQuality: stored<OutputQuality>('quality', '1080p'),
+    platformFormat: stored<PlatformFormat>('format', 'custom'),
   }
 }
 
@@ -41,10 +55,40 @@ interface OptionsModalProps {
   loading?: boolean
 }
 
+// Collapsible section wrapper
+function Section({ title, icon, children, defaultOpen = true }: { title: string; icon: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border border-white/10 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/8 transition-colors"
+      >
+        <span className="text-sm font-semibold text-white flex items-center gap-2">
+          <span>{icon}</span> {title}
+        </span>
+        <span className="text-muted text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div className="px-4 py-4 space-y-4">{children}</div>}
+    </div>
+  )
+}
+
+// Toggle switch
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${value ? 'bg-primary' : 'bg-white/20'}`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  )
+}
+
 export default function OptionsModal({ isOpen, onClose, onStart, loading = false }: OptionsModalProps) {
   const [options, setOptions] = useState<ProcessingOptions>(() => getDefaultOptions())
 
-  // Reload settings from localStorage each time modal opens
   React.useEffect(() => {
     if (isOpen) setOptions(getDefaultOptions())
   }, [isOpen])
@@ -53,97 +97,166 @@ export default function OptionsModal({ isOpen, onClose, onStart, loading = false
   const updateSubtitles = (patch: Partial<ProcessingOptions['subtitles']>) =>
     setOptions((prev) => ({ ...prev, subtitles: { ...prev.subtitles, ...patch } }))
 
+  const toggleAIFocus = (id: AIFocus) => {
+    setOptions((prev) => {
+      const has = prev.aiFocus.includes(id)
+      return { ...prev, aiFocus: has ? prev.aiFocus.filter(f => f !== id) : [...prev.aiFocus, id] }
+    })
+  }
+
+  // Cap clip length at 60s
+  const clipLengthOptions: { value: ClipLength; label: string }[] = [
+    { value: '15', label: '15 seconds' },
+    { value: '30', label: '30 seconds' },
+    { value: '45', label: '45 seconds' },
+    { value: '60', label: '60 seconds (max)' },
+    { value: 'custom', label: 'Custom (up to 60s)' },
+  ]
+
+  const manualRange = options.manualRange ?? { startPct: 0, endPct: 100 }
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="⚙️ Clip Options" size="lg">
-      <div className="space-y-6">
+      <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
 
         {/* Clip Count */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-semibold text-white">Clip Count</label>
-            <span className="text-primary font-bold text-lg">{options.clipCount}</span>
+        <Section title="Clip Count" icon="🎬">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-muted">How many clips to generate</span>
+              <span className="text-primary font-bold text-xl">{options.clipCount}</span>
+            </div>
+            <input
+              type="range" min={1} max={20} value={options.clipCount}
+              onChange={(e) => update({ clipCount: Number(e.target.value) })}
+              className="w-full accent-primary"
+            />
+            <div className="flex justify-between text-xs text-muted mt-1"><span>1</span><span>20</span></div>
           </div>
-          <input
-            type="range"
-            min={1}
-            max={20}
-            value={options.clipCount}
-            onChange={(e) => update({ clipCount: Number(e.target.value) })}
-            className="w-full accent-primary"
-          />
-          <div className="flex justify-between text-xs text-muted mt-1">
-            <span>1</span>
-            <span>20</span>
-          </div>
-        </div>
+        </Section>
 
         {/* Clip Length */}
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Clip Length</label>
+        <Section title="Clip Length" icon="⏱️">
           <select
             value={options.clipLength}
             onChange={(e) => update({ clipLength: e.target.value as ClipLength })}
             className="w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-white focus:border-primary transition-colors"
           >
-            <option value="15">15 seconds</option>
-            <option value="30">30 seconds</option>
-            <option value="45">45 seconds</option>
-            <option value="60">60 seconds</option>
-            <option value="90">90 seconds</option>
-            <option value="custom">Custom</option>
+            {clipLengthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           {options.clipLength === 'custom' && (
-            <input
-              type="number"
-              placeholder="Enter seconds..."
-              value={options.customClipLength || ''}
-              onChange={(e) => update({ customClipLength: Number(e.target.value) })}
-              className="mt-2 w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-white"
-            />
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-muted">Custom length (seconds)</span>
+                <span className="text-primary font-bold">{Math.min(options.customClipLength || 30, 60)}s</span>
+              </div>
+              <input
+                type="range" min={5} max={60}
+                value={Math.min(options.customClipLength || 30, 60)}
+                onChange={(e) => update({ customClipLength: Number(e.target.value) })}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted mt-1"><span>5s</span><span>60s max</span></div>
+            </div>
           )}
-        </div>
+        </Section>
 
         {/* Detection Mode */}
-        <div>
-          <label className="block text-sm font-semibold text-white mb-3">Detection Mode</label>
+        <Section title="Detection Mode" icon="🎯">
           <div className="flex gap-3">
             {(['auto', 'manual'] as DetectionMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => update({ detectionMode: mode })}
                 className={`flex-1 py-3 rounded-xl text-sm font-semibold border transition-all ${
-                  options.detectionMode === mode
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-white/10 text-muted hover:border-white/30'
+                  options.detectionMode === mode ? 'border-primary bg-primary/10 text-primary' : 'border-white/10 text-muted hover:border-white/30'
                 }`}
               >
                 {mode === 'auto' ? '🤖 Auto (AI)' : '✋ Manual'}
               </button>
             ))}
           </div>
-        </div>
+
+          {/* AI Focus — shown when auto */}
+          {options.detectionMode === 'auto' && (
+            <div>
+              <p className="text-xs text-muted mb-3">What should the AI look for? Select all that apply:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {AI_FOCUS_OPTIONS.map((f) => {
+                  const active = options.aiFocus.includes(f.id)
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => toggleAIFocus(f.id)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border transition-all text-left ${
+                        active ? 'border-primary bg-primary/10 text-primary' : 'border-white/10 text-muted hover:border-white/30'
+                      }`}
+                    >
+                      <span className="text-lg">{f.icon}</span>
+                      <span className="font-medium text-xs">{f.label}</span>
+                      {active && <span className="ml-auto text-primary text-xs">✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              {options.aiFocus.length === 0 && (
+                <p className="text-xs text-yellow-400 mt-2">⚠️ Select at least one focus type</p>
+              )}
+            </div>
+          )}
+
+          {/* Manual range sliders — shown when manual */}
+          {options.detectionMode === 'manual' && (
+            <div className="space-y-4">
+              <p className="text-xs text-muted">Drag to select the portion of the video to clip:</p>
+              <div>
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Start: <span className="text-white font-semibold">{manualRange.startPct}%</span></span>
+                  <span>End: <span className="text-white font-semibold">{manualRange.endPct}%</span></span>
+                </div>
+                {/* Visual range bar */}
+                <div className="relative h-8 bg-white/5 rounded-lg overflow-hidden mb-3">
+                  <div
+                    className="absolute h-full bg-primary/30 border-x-2 border-primary"
+                    style={{ left: `${manualRange.startPct}%`, width: `${manualRange.endPct - manualRange.startPct}%` }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-primary font-semibold">
+                    {manualRange.endPct - manualRange.startPct}% selected
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted block mb-1">Start point</label>
+                    <input
+                      type="range" min={0} max={manualRange.endPct - 5}
+                      value={manualRange.startPct}
+                      onChange={(e) => update({ manualRange: { ...manualRange, startPct: Number(e.target.value) } })}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted block mb-1">End point</label>
+                    <input
+                      type="range" min={manualRange.startPct + 5} max={100}
+                      value={manualRange.endPct}
+                      onChange={(e) => update({ manualRange: { ...manualRange, endPct: Number(e.target.value) } })}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </Section>
 
         {/* Subtitles */}
-        <div className="border border-white/10 rounded-xl p-4 space-y-4">
+        <Section title="Subtitles" icon="📝">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-white">📝 Subtitles</label>
-            <button
-              onClick={() => updateSubtitles({ enabled: !options.subtitles.enabled })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                options.subtitles.enabled ? 'bg-primary' : 'bg-white/20'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  options.subtitles.enabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
+            <span className="text-sm text-white">Enable subtitles</span>
+            <Toggle value={options.subtitles.enabled} onChange={(v) => updateSubtitles({ enabled: v })} />
           </div>
-
           {options.subtitles.enabled && (
-            <div className="space-y-3 pt-2">
-              {/* Style */}
+            <div className="space-y-3 pt-1">
               <div>
                 <label className="block text-xs text-muted mb-1.5">Style</label>
                 <select
@@ -158,95 +271,60 @@ export default function OptionsModal({ isOpen, onClose, onStart, loading = false
                   <option value="karaoke">Karaoke</option>
                 </select>
               </div>
-
-              {/* Size */}
               <div>
                 <label className="block text-xs text-muted mb-1.5">Size</label>
                 <div className="flex gap-2">
                   {(['small', 'medium', 'large'] as SubtitleSize[]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => updateSubtitles({ size: s })}
+                    <button key={s} onClick={() => updateSubtitles({ size: s })}
                       className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all capitalize ${
-                        options.subtitles.size === s
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-white/10 text-muted hover:border-white/30'
+                        options.subtitles.size === s ? 'border-primary bg-primary/10 text-primary' : 'border-white/10 text-muted'
                       }`}
-                    >
-                      {s}
-                    </button>
+                    >{s}</button>
                   ))}
                 </div>
               </div>
-
-              {/* Color + Background */}
-              <div className="flex gap-4">
+              <div className="flex gap-4 items-end">
                 <div className="flex-1">
                   <label className="block text-xs text-muted mb-1.5">Color</label>
-                  <input
-                    type="color"
-                    value={options.subtitles.color}
+                  <input type="color" value={options.subtitles.color}
                     onChange={(e) => updateSubtitles({ color: e.target.value })}
                     className="h-9 w-full rounded-lg border border-white/10 bg-background cursor-pointer"
                   />
                 </div>
-                <div className="flex flex-col justify-between">
+                <div className="flex items-center gap-2 pb-1">
                   <label className="text-xs text-muted">Background</label>
-                  <button
-                    onClick={() => updateSubtitles({ background: !options.subtitles.background })}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      options.subtitles.background ? 'bg-primary' : 'bg-white/20'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        options.subtitles.background ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  <Toggle value={options.subtitles.background} onChange={(v) => updateSubtitles({ background: v })} />
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </Section>
 
         {/* Output Quality */}
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Output Quality</label>
+        <Section title="Output Quality" icon="🎞️">
           <div className="flex gap-3">
             {(['720p', '1080p', '4k'] as OutputQuality[]).map((q) => (
-              <button
-                key={q}
-                onClick={() => update({ outputQuality: q })}
+              <button key={q} onClick={() => update({ outputQuality: q })}
                 className={`flex-1 py-3 rounded-xl text-sm font-semibold border transition-all uppercase ${
-                  options.outputQuality === q
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-white/10 text-muted hover:border-white/30'
+                  options.outputQuality === q ? 'border-primary bg-primary/10 text-primary' : 'border-white/10 text-muted hover:border-white/30'
                 }`}
-              >
-                {q}
-              </button>
+              >{q}</button>
             ))}
           </div>
-        </div>
+        </Section>
 
         {/* Platform Format */}
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Platform Format</label>
+        <Section title="Platform Format" icon="📱">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { value: 'tiktok', label: '🎵 TikTok', sub: '9:16 · max 60s' },
-              { value: 'twitter', label: '🐦 Twitter/X', sub: '16:9 · max 140s' },
-              { value: 'youtube_shorts', label: '▶️ YT Shorts', sub: '9:16 · max 60s' },
-              { value: 'custom', label: '⚙️ Custom', sub: 'Original ratio' },
+              { value: 'tiktok',         label: '🎵 TikTok',     sub: '9:16 · max 60s' },
+              { value: 'twitter',        label: '🐦 Twitter/X',  sub: '16:9 · max 60s' },
+              { value: 'youtube_shorts', label: '▶️ YT Shorts',  sub: '9:16 · max 60s' },
+              { value: 'custom',         label: '⚙️ Custom',     sub: 'Original ratio' },
             ].map((p) => (
-              <button
-                key={p.value}
-                onClick={() => update({ platformFormat: p.value as PlatformFormat })}
+              <button key={p.value} onClick={() => update({ platformFormat: p.value as PlatformFormat })}
                 className={`py-3 px-4 rounded-xl border transition-all text-left ${
-                  options.platformFormat === p.value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-white/10 hover:border-white/30'
+                  options.platformFormat === p.value ? 'border-primary bg-primary/10' : 'border-white/10 hover:border-white/30'
                 }`}
               >
                 <div className="text-sm font-semibold text-white">{p.label}</div>
@@ -254,16 +332,16 @@ export default function OptionsModal({ isOpen, onClose, onStart, loading = false
               </button>
             ))}
           </div>
-        </div>
+        </Section>
 
         {/* Submit */}
-        <div className="pt-2">
+        <div className="pt-1">
           <Button
-            variant="primary"
-            size="lg"
-            className="w-full"
-            loading={loading}
-            onClick={() => onStart(options)}
+            variant="primary" size="lg" className="w-full" loading={loading}
+            onClick={() => {
+              if (options.detectionMode === 'auto' && options.aiFocus.length === 0) return
+              onStart(options)
+            }}
           >
             🚀 Start Processing
           </Button>
