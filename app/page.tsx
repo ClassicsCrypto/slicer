@@ -149,7 +149,7 @@ export default function LandingPage() {
             <span className="text-2xl">🚀</span>
             <span className="text-green-400 font-semibold">Built by Mars Cats Voyage</span>
           </div>
-          <p className="text-muted text-lg mb-8">Slicer is an internal MCV tool built for the community first. Phase 3 brings $CREAM token-gated premium features — hold 100 $CREAM to unlock 4K quality, unlimited clips, and direct social posting.</p>
+          <p className="text-muted text-lg mb-8">Slicer is an internal MCV tool built for the community first. Premium features and expanded capabilities are coming soon for the MCV community.</p>
         </div>
       </section>
 
