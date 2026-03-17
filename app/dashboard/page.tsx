@@ -23,6 +23,7 @@ const WELCOME_MESSAGES = [
 
 export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>('upload')
+  const [clipsKey, setClipsKey] = useState(0)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -129,7 +130,7 @@ export default function DashboardPage() {
           {tabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setTab(t.id); if (t.id === 'clips') setClipsKey(k => k + 1) }}
               className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold transition-all border-b-2 -mb-px ${
                 tab === t.id
                   ? 'border-primary text-primary'
@@ -148,7 +149,7 @@ export default function DashboardPage() {
         {tab === 'upload' && (
           <UploadTab onJobCreated={() => setTab('clips')} />
         )}
-        {tab === 'clips' && <ClipsGallery key={tab} onUploadNew={() => setTab('upload')} />}
+        {tab === 'clips' && <ClipsGallery key={clipsKey} onUploadNew={() => setTab('upload')} />}
         {tab === 'settings' && <SettingsTab user={user} onSaved={() => {}} />}
       </main>
     </div>

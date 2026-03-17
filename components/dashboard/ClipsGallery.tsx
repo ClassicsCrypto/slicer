@@ -61,6 +61,13 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     fetchJobs()
   }, [fetchJobs])
 
+  // Refetch when window gets focus (handles tab switching)
+  useEffect(() => {
+    const onFocus = () => fetchJobs()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchJobs])
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
