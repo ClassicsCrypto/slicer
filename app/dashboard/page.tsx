@@ -49,8 +49,14 @@ export default function DashboardPage() {
   }, [supabase])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'global' })
+    // Clear all local storage to ensure full logout
+    if (typeof window !== 'undefined') {
+      localStorage.clear()
+      sessionStorage.clear()
+    }
     router.push('/')
+    router.refresh()
   }
 
   if (loading) {

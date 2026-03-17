@@ -86,10 +86,11 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     const { data: { session } } = await supabase.auth.getSession()
     const userId = session?.user?.id
     await fetch(`/api/jobs/${id}?userId=${userId || ''}`, { method: 'DELETE' })
-    setJobs((prev) => prev.filter((j) => j.id !== id))
-    setSelected((prev) => { const n = new Set(prev); n.delete(id); return n })
     setDeletingId(null)
     setConfirmDelete(null)
+    setSelected(new Set())
+    // Always refetch from server after delete
+    await fetchJobs()
   }
 
   const deleteSelected = async () => {
@@ -99,8 +100,9 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     for (const id of Array.from(selected)) {
       await fetch(`/api/jobs/${id}?userId=${userId || ''}`, { method: 'DELETE' })
     }
-    setJobs((prev) => prev.filter((j) => !selected.has(j.id)))
     clearSelection()
+    // Always refetch from server after delete
+    await fetchJobs()
   }
 
   if (loading) {
