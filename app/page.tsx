@@ -179,7 +179,7 @@ export default function LandingPage() {
         </div>
         <div className="flex gap-6">
           <a href="https://twitter.com/MarsCatsVoyage" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">Twitter/X</a>
-          <a href="https://discord.gg/marscats" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">Discord</a>
+          <a href="https://discord.gg/MCV" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">Discord</a>
         </div>
         <p className="text-muted/50 text-xs">© 2025 Mars Cats Voyage. All rights reserved.</p>
       </footer>
