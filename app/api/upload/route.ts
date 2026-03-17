@@ -6,13 +6,6 @@ import { v4 as uuidv4 } from 'uuid'
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
-// Increase body size limit for video uploads
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
-
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseAdmin()
   const authHeader = req.headers.get('Authorization') || ''

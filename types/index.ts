@@ -64,6 +64,7 @@ export interface Job {
   progress: ProcessingProgress
   created_at: string
   updated_at: string
+  clips?: Clip[]
 }
 
 export interface Clip {
