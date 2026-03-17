@@ -88,25 +88,32 @@ export default function DashboardPage() {
         </div>
 
         {/* Welcome + user */}
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex flex-col items-end">
-            <span className="text-xs text-muted leading-none mb-0.5">{welcomeMsg}</span>
-            <span className="text-sm font-semibold text-white leading-none">
+        <div className="flex items-center gap-3">
+          {/* Clickable name → Settings tab */}
+          <button
+            onClick={() => setTab('settings')}
+            className="hidden sm:flex flex-col items-end hover:opacity-80 transition-opacity group"
+          >
+            <span className="text-xs text-muted leading-none mb-0.5 group-hover:text-primary transition-colors">{welcomeMsg}</span>
+            <span className="text-sm font-semibold text-white leading-none group-hover:text-primary transition-colors">
               Hey, {displayName} 👋
             </span>
-          </div>
-          {user?.user_metadata?.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={user.user_metadata.avatar_url}
-              alt="Avatar"
-              className="w-9 h-9 rounded-full border-2 border-primary/50"
-            />
-          ) : (
-            <div className="w-9 h-9 rounded-full bg-primary/20 border-2 border-primary/50 flex items-center justify-center text-sm font-bold text-primary">
-              {displayName.charAt(0).toUpperCase()}
-            </div>
-          )}
+          </button>
+          {/* Avatar — also goes to settings */}
+          <button onClick={() => setTab('settings')} className="hover:opacity-80 transition-opacity">
+            {user?.user_metadata?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={user.user_metadata.avatar_url}
+                alt="Avatar"
+                className="w-9 h-9 rounded-full border-2 border-primary/50"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-primary/20 border-2 border-primary/50 flex items-center justify-center text-sm font-bold text-primary">
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </button>
           <button
             onClick={handleSignOut}
             className="text-sm text-muted hover:text-white transition-colors"

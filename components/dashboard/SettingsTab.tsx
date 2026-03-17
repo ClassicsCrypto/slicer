@@ -74,19 +74,46 @@ export default function SettingsTab({ user: userProp, onSaved }: SettingsTabProp
   const user = userProp ?? DEV_USER
   const supabase = createSupabaseClient()
 
-  const [displayName, setDisplayName]         = useState(user.user_metadata?.name || '')
-  const [defaultQuality, setDefaultQuality]   = useState<OutputQuality>(() => stored('quality', '1080p'))
-  const [defaultFormat, setDefaultFormat]     = useState<PlatformFormat>(() => stored('format', 'custom'))
-  const [defaultSubStyle, setDefaultSubStyle] = useState<SubtitleStyle>(() => stored('subStyle', 'bold'))
-  const [defaultClipLen, setDefaultClipLen]   = useState<string>(() => stored('clipLength', '30'))
+  const [displayName, setDisplayName]           = useState(user.user_metadata?.name || '')
+  const [avatarUrl, setAvatarUrl]               = useState<string>(user.user_metadata?.avatar_url || '')
+  const [avatarUploading, setAvatarUploading]   = useState(false)
+  const [defaultQuality, setDefaultQuality]     = useState<OutputQuality>(() => stored('quality', '1080p'))
+  const [defaultFormat, setDefaultFormat]       = useState<PlatformFormat>(() => stored('format', 'custom'))
+  const [defaultSubStyle, setDefaultSubStyle]   = useState<SubtitleStyle>(() => stored('subStyle', 'bold'))
+  const [defaultClipLen, setDefaultClipLen]     = useState<string>(() => stored('clipLength', '30'))
   const [defaultClipCount, setDefaultClipCount] = useState<number>(() => stored('clipCount', 5))
-  const [defaultAIFocus, setDefaultAIFocus]   = useState<AIFocus[]>(() => stored('aiFocus', ['funny_moments', 'hype_moments']))
-  const [subtitlesOn, setSubtitlesOn]         = useState<boolean>(() => stored('subtitlesOn', true))
+  const [defaultAIFocus, setDefaultAIFocus]     = useState<AIFocus[]>(() => stored('aiFocus', ['funny_moments', 'hype_moments']))
+  const [subtitlesOn, setSubtitlesOn]           = useState<boolean>(() => stored('subtitlesOn', true))
+  const [madeWithSlicer, setMadeWithSlicer]     = useState<boolean>(() => stored('madeWithSlicer', true))
+
+  // Stats from localStorage (incremented by process route)
+  const totalClips    = stored<number>('stat_totalClips', 0)
+  const totalMinutes  = stored<number>('stat_totalMinutes', 0)
 
   const [saving, setSaving]                   = useState(false)
   const [saved, setSaved]                     = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteInput, setDeleteInput]         = useState('')
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarUploading(true)
+    // Preview locally immediately
+    const localUrl = URL.createObjectURL(file)
+    setAvatarUrl(localUrl)
+    // Store as data URL in user metadata (no storage needed)
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string
+      setAvatarUrl(dataUrl)
+      if (userProp) {
+        await supabase.auth.updateUser({ data: { avatar_url: dataUrl } })
+      }
+      setAvatarUploading(false)
+    }
+    reader.readAsDataURL(file)
+  }
 
   const toggleAIFocus = (id: AIFocus) => {
     setDefaultAIFocus(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id])
@@ -101,6 +128,7 @@ export default function SettingsTab({ user: userProp, onSaved }: SettingsTabProp
     localStorage.setItem('slicer_clipCount',    JSON.stringify(defaultClipCount))
     localStorage.setItem('slicer_aiFocus',      JSON.stringify(defaultAIFocus))
     localStorage.setItem('slicer_subtitlesOn',  JSON.stringify(subtitlesOn))
+    localStorage.setItem('slicer_madeWithSlicer', JSON.stringify(madeWithSlicer))
     if (userProp) await supabase.auth.updateUser({ data: { name: displayName } })
     setSaving(false)
     setSaved(true)
@@ -231,20 +259,54 @@ export default function SettingsTab({ user: userProp, onSaved }: SettingsTabProp
 
       {/* Account */}
       <Section title="Account" icon="👤">
-        <div className="flex items-center gap-4">
-          {user.user_metadata?.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-16 h-16 rounded-full border-2 border-primary" />
-          ) : (
-            <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-2xl font-bold text-primary">
-              {(user.user_metadata?.name || user.email || '?').charAt(0).toUpperCase()}
+        {/* Avatar + stats card */}
+        <div className="flex items-start gap-4">
+          {/* PFP with upload overlay */}
+          <div className="relative flex-shrink-0">
+            <label className="cursor-pointer group">
+              <div className="relative w-20 h-20">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="Avatar" className="w-20 h-20 rounded-full border-2 border-primary object-cover" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-3xl font-bold text-primary">
+                    {(displayName || user.email || '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                {/* Upload overlay */}
+                <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {avatarUploading ? (
+                    <svg className="animate-spin w-5 h-5 text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                  ) : (
+                    <span className="text-white text-xs font-semibold">📷 Change</span>
+                  )}
+                </div>
+              </div>
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            </label>
+          </div>
+
+          {/* Info + stats */}
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-white text-base truncate">{displayName || user.email}</p>
+            <p className="text-xs text-muted mb-3">Member since {new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-background rounded-xl px-3 py-2 border border-white/5">
+                <p className="text-2xl font-black text-primary leading-none">{totalClips}</p>
+                <p className="text-xs text-muted mt-0.5">Clips Made</p>
+              </div>
+              <div className="bg-background rounded-xl px-3 py-2 border border-white/5">
+                <p className="text-2xl font-black text-primary leading-none">{totalMinutes}<span className="text-sm font-semibold text-muted">m</span></p>
+                <p className="text-xs text-muted mt-0.5">Footage Processed</p>
+              </div>
             </div>
-          )}
-          <div>
-            <p className="font-semibold text-white">{user.email}</p>
-            <p className="text-xs text-muted">Member since {new Date(user.created_at).toLocaleDateString()}</p>
           </div>
         </div>
+
         <div>
           <label className="block text-sm font-semibold text-white mb-2">Display Name</label>
           <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)}
@@ -252,6 +314,27 @@ export default function SettingsTab({ user: userProp, onSaved }: SettingsTabProp
             placeholder="Your display name"
           />
         </div>
+        <p className="text-xs text-muted">Email: {user.email}</p>
+      </Section>
+
+      {/* Clip Branding */}
+      <Section title="Clip Branding" icon="✂️">
+        <div className="flex items-start gap-3">
+          <Toggle value={madeWithSlicer} onChange={setMadeWithSlicer} />
+          <div>
+            <p className="text-sm font-semibold text-white">&quot;Made with Slicer&quot; outro</p>
+            <p className="text-xs text-muted mt-0.5">Adds a 2-second branded end card to every clip. Helps spread the word 🚀</p>
+          </div>
+        </div>
+        {madeWithSlicer && (
+          <div className="mt-2 rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-3">
+            <span className="text-2xl">✂️</span>
+            <div>
+              <p className="text-xs font-bold text-primary">Made with Slicer</p>
+              <p className="text-xs text-muted">by Mars Cats Voyage</p>
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* Save button */}
