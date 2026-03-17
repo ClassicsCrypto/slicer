@@ -9,6 +9,7 @@ import type { OutputQuality, PlatformFormat, SubtitleStyle } from '@/types'
 
 interface SettingsTabProps {
   user: User | null
+  onSaved?: () => void
 }
 
 const PLATFORMS = [
@@ -26,12 +27,19 @@ const DEV_USER = {
   user_metadata: { name: 'Dev User' },
 } as unknown as User
 
-export default function SettingsTab({ user: userProp }: SettingsTabProps) {
+export default function SettingsTab({ user: userProp, onSaved }: SettingsTabProps) {
   const user = userProp ?? DEV_USER
+
+  // Load persisted settings from localStorage
+  const getStored = <T,>(key: string, fallback: T): T => {
+    if (typeof window === 'undefined') return fallback
+    try { return JSON.parse(localStorage.getItem(`slicer_${key}`) || 'null') ?? fallback } catch { return fallback }
+  }
+
   const [displayName, setDisplayName] = useState(user.user_metadata?.name || '')
-  const [defaultQuality, setDefaultQuality] = useState<OutputQuality>('1080p')
-  const [defaultFormat, setDefaultFormat] = useState<PlatformFormat>('custom')
-  const [defaultSubStyle, setDefaultSubStyle] = useState<SubtitleStyle>('bold')
+  const [defaultQuality, setDefaultQuality] = useState<OutputQuality>(() => getStored('quality', '1080p'))
+  const [defaultFormat, setDefaultFormat] = useState<PlatformFormat>(() => getStored('format', 'custom'))
+  const [defaultSubStyle, setDefaultSubStyle] = useState<SubtitleStyle>(() => getStored('subStyle', 'bold'))
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteInput, setDeleteInput] = useState('')
   const [saving, setSaving] = useState(false)
@@ -40,10 +48,18 @@ export default function SettingsTab({ user: userProp }: SettingsTabProps) {
 
   const handleSave = async () => {
     setSaving(true)
-    await supabase.auth.updateUser({ data: { name: displayName } })
+    // Persist to localStorage
+    localStorage.setItem('slicer_quality', JSON.stringify(defaultQuality))
+    localStorage.setItem('slicer_format', JSON.stringify(defaultFormat))
+    localStorage.setItem('slicer_subStyle', JSON.stringify(defaultSubStyle))
+    // Update display name in Supabase if real user
+    if (userProp) {
+      await supabase.auth.updateUser({ data: { name: displayName } })
+    }
     setSaving(false)
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setTimeout(() => setSaved(false), 2500)
+    onSaved?.()
   }
 
   const handleDeleteAccount = async () => {

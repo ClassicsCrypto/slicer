@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { createSupabaseClient } from '@/lib/supabase'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
@@ -10,6 +10,17 @@ import type { User } from '@supabase/supabase-js'
 
 type Tab = 'upload' | 'clips' | 'settings'
 
+const WELCOME_MESSAGES = [
+  "Ready to go viral?",
+  "Let's make some clips 🔥",
+  "Your content, amplified.",
+  "Time to slice something up ✂️",
+  "The algorithm won't know what hit it.",
+  "Drop a video. Watch magic happen.",
+  "Clip it. Post it. Win.",
+  "What are we clipping today?",
+]
+
 export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>('upload')
   const [user, setUser] = useState<User | null>(null)
@@ -17,25 +28,24 @@ export default function DashboardPage() {
   const router = useRouter()
   const supabase = createSupabaseClient()
 
+  // Pick a random welcome message once per session
+  const welcomeMsg = useMemo(() =>
+    WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)],
+  [])
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user)
-      }
-      // In dev mode, allow access without a session
+      if (session) setUser(session.user)
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setUser(null)
-      } else if (session) {
-        setUser(session.user)
-      }
+      if (event === 'SIGNED_OUT') setUser(null)
+      else if (session) setUser(session.user)
     })
 
     return () => subscription.unsubscribe()
-  }, [supabase, router])
+  }, [supabase])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -53,6 +63,8 @@ export default function DashboardPage() {
     )
   }
 
+  const displayName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'there'
+
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'upload', label: 'Upload', icon: '⬆️' },
     { id: 'clips', label: 'Clips', icon: '🎬' },
@@ -62,22 +74,37 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 w-full px-6 py-4 flex items-center justify-between border-b border-white/5 bg-background/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full px-6 py-3 flex items-center justify-between border-b border-white/5 bg-background/80 backdrop-blur-md">
+        {/* Logo — navigate to landing WITHOUT signing out */}
         <div className="flex items-center gap-2">
-          <a href="/" className="text-xl font-black text-gradient tracking-tight">✂️ Slicer</a>
-          <span className="text-xs text-muted ml-2 border border-primary/30 rounded-full px-2 py-0.5">by MCV</span>
+          <a
+            href="/"
+            className="text-xl font-black tracking-tight hover:opacity-80 transition-opacity"
+            style={{background:'linear-gradient(90deg,#00E676,#00BFA5)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent'}}
+          >
+            ✂️ Slicer
+          </a>
+          <span className="text-xs text-muted ml-1 border border-primary/30 rounded-full px-2 py-0.5">by MCV</span>
         </div>
+
+        {/* Welcome + user */}
         <div className="flex items-center gap-4">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className="text-xs text-muted leading-none mb-0.5">{welcomeMsg}</span>
+            <span className="text-sm font-semibold text-white leading-none">
+              Hey, {displayName} 👋
+            </span>
+          </div>
           {user?.user_metadata?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={user.user_metadata.avatar_url}
               alt="Avatar"
-              className="w-8 h-8 rounded-full border border-primary/50"
+              className="w-9 h-9 rounded-full border-2 border-primary/50"
             />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/50 flex items-center justify-center text-sm">
-              🐱
+            <div className="w-9 h-9 rounded-full bg-primary/20 border-2 border-primary/50 flex items-center justify-center text-sm font-bold text-primary">
+              {displayName.charAt(0).toUpperCase()}
             </div>
           )}
           <button
@@ -115,7 +142,7 @@ export default function DashboardPage() {
           <UploadTab onJobCreated={() => setTab('clips')} />
         )}
         {tab === 'clips' && <ClipsGallery key={tab} onUploadNew={() => setTab('upload')} />}
-        {tab === 'settings' && <SettingsTab user={user} />}
+        {tab === 'settings' && <SettingsTab user={user} onSaved={() => {}} />}
       </main>
     </div>
   )
