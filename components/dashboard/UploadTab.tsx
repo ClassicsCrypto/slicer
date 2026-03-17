@@ -61,6 +61,11 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       setError('Please enter a valid URL')
       return
     }
+    // Warn about unsupported platforms
+    if (trimmed.match(/youtube\.com|youtu\.be|twitch\.tv|twitter\.com|tiktok\.com/i)) {
+      setError('⚠️ YouTube, Twitch, and social media URLs are not supported yet. Please upload a video file directly using drag & drop or Browse Files.')
+      return
+    }
     setError(null)
     setUrl(trimmed)
     setFile(null)

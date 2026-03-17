@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createSupabaseAdmin } from '@/lib/supabase'
-import { uploadToStorage } from '@/lib/storage'
+import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 
 export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const supabase = createSupabaseAdmin()
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
   const authHeader = req.headers.get('Authorization') || ''
   const token = authHeader.replace('Bearer ', '')
 
@@ -39,15 +42,20 @@ export async function POST(req: NextRequest) {
     const storageKey = `uploads/${userId}/${uuidv4()}.${ext}`
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    await uploadToStorage(storageKey, buffer, file.type)
+
+    const { error: uploadError } = await supabase.storage
+      .from('slicer-videos')
+      .upload(storageKey, buffer, { contentType: file.type, upsert: true })
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError)
+      return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 })
+    }
 
     // Get public URL
-    const { createClient } = await import('@supabase/supabase-js')
-    const client = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    const { data: urlData } = client.storage.from('slicer-videos').getPublicUrl(storageKey)
+    const { data: urlData } = supabase.storage
+      .from('slicer-videos')
+      .getPublicUrl(storageKey)
 
     return NextResponse.json({
       r2Key: storageKey,
