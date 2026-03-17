@@ -68,17 +68,17 @@ export default function SocialLogin() {
           <input
             type="text"
             inputMode="numeric"
-            placeholder="Enter 6-digit code"
+            placeholder="Enter your code"
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            maxLength={6}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+            maxLength={8}
             required
             autoFocus
             className="w-full px-4 py-4 rounded-xl bg-surface border border-white/10 text-white placeholder-muted/50 focus:outline-none focus:border-primary text-center text-2xl font-bold tracking-[0.5em]"
           />
           <button
             type="submit"
-            disabled={loading || code.length < 6}
+            disabled={loading || code.length < 6} // accepts 6-8 digits
             className="flex items-center justify-center gap-2 w-full px-6 py-3.5 rounded-xl font-semibold text-sm text-background transition-all disabled:opacity-60"
             style={{background: 'linear-gradient(135deg, #00E676, #00BFA5)'}}
           >
