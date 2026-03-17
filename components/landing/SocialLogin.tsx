@@ -16,10 +16,7 @@ export default function SocialLogin() {
     setError(null)
 
     const supabase = createSupabaseClient()
-    const redirectTo =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/auth/confirm`
-        : '/auth/confirm'
+    const redirectTo = `${window.location.origin}/auth/confirm`
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
