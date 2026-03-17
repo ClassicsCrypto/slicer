@@ -26,7 +26,11 @@ function formatDate(dateStr: string) {
   })
 }
 
-export default function ClipsGallery() {
+interface ClipsGalleryProps {
+  onUploadNew?: () => void
+}
+
+export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -47,8 +51,9 @@ export default function ClipsGallery() {
     const res = await fetch('/api/jobs', { headers })
     if (res.ok) {
       const data = await res.json()
-      setJobs(data)
+      setJobs(Array.isArray(data) ? data : [])
     } else {
+      console.warn('Jobs fetch failed:', res.status, await res.text())
       setJobs([])
     }
     setLoading(false)
@@ -104,7 +109,7 @@ export default function ClipsGallery() {
         <div className="text-6xl mb-4">🎬</div>
         <h3 className="text-xl font-bold text-white mb-2">No clips yet</h3>
         <p className="text-muted mb-6 max-w-sm">Upload your first video and let the MCV AI create viral-ready clips for you.</p>
-        <Button variant="primary" onClick={() => {}}>
+        <Button variant="primary" onClick={onUploadNew}>
           Upload a Video
         </Button>
       </div>
