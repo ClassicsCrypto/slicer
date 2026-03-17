@@ -55,7 +55,7 @@ export default function DashboardPage() {
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'upload', label: 'Upload', icon: '⬆️' },
-    { id: 'clips', label: 'Previously Clipped', icon: '🎬' },
+    { id: 'clips', label: 'Clips', icon: '🎬' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ]
 
@@ -112,10 +112,10 @@ export default function DashboardPage() {
       {/* Content */}
       <main className="flex-1 max-w-4xl mx-auto w-full">
         {tab === 'upload' && (
-          <UploadTab onJobCreated={() => { /* optionally switch to clips tab */ }} />
+          <UploadTab onJobCreated={() => setTab('clips')} />
         )}
         {tab === 'clips' && <ClipsGallery />}
-        {tab === 'settings' && user && <SettingsTab user={user} />}
+        {tab === 'settings' && <SettingsTab user={user} />}
       </main>
     </div>
   )

@@ -8,7 +8,7 @@ import type { User } from '@supabase/supabase-js'
 import type { OutputQuality, PlatformFormat, SubtitleStyle } from '@/types'
 
 interface SettingsTabProps {
-  user: User
+  user: User | null
 }
 
 const PLATFORMS = [
@@ -19,7 +19,15 @@ const PLATFORMS = [
   { id: 'instagram', label: 'Instagram', icon: '📸' },
 ]
 
-export default function SettingsTab({ user }: SettingsTabProps) {
+// Dev placeholder user
+const DEV_USER = {
+  email: 'dev@mcv.local',
+  created_at: new Date().toISOString(),
+  user_metadata: { name: 'Dev User' },
+} as unknown as User
+
+export default function SettingsTab({ user: userProp }: SettingsTabProps) {
+  const user = userProp ?? DEV_USER
   const [displayName, setDisplayName] = useState(user.user_metadata?.name || '')
   const [defaultQuality, setDefaultQuality] = useState<OutputQuality>('1080p')
   const [defaultFormat, setDefaultFormat] = useState<PlatformFormat>('custom')

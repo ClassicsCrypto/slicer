@@ -73,14 +73,19 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       let body: Record<string, unknown> = { options }
 
       if (file) {
-        // Upload file first
-        const formData = new FormData()
-        formData.append('file', file)
-        const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
-        if (!uploadRes.ok) throw new Error('Upload failed')
-        const { r2Key } = await uploadRes.json()
-        body.filePath = r2Key
-        body.title = file.name
+        // In dev mode skip actual upload, just use filename as key
+        if (process.env.NODE_ENV === 'development') {
+          body.filePath = `dev-uploads/${file.name}`
+          body.title = file.name
+        } else {
+          const formData = new FormData()
+          formData.append('file', file)
+          const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
+          if (!uploadRes.ok) throw new Error('Upload failed')
+          const { r2Key } = await uploadRes.json()
+          body.filePath = r2Key
+          body.title = file.name
+        }
       } else if (url) {
         body.videoUrl = url
         body.title = url
