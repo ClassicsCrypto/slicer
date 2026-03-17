@@ -112,17 +112,18 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] py-12 px-4">
-      {/* MCV Cat Animation — real MCV cat image */}
-      <div className="mb-8 cat-float glow-pulse relative">
-        {/* Teal glow ring behind cat */}
-        <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl scale-110 animate-pulse" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/slicer-cat.png"
-          alt="MCV Slicer Cat"
-          width={160}
-          height={160}
-          className="relative rounded-2xl drop-shadow-[0_0_24px_rgba(0,191,165,0.7)]"
+      {/* MCV Cat Animation */}
+      <div className="mb-8 relative flex items-center justify-center">
+        <div className="absolute inset-0 rounded-full bg-primary/20 blur-3xl scale-125 animate-pulse" />
+        <video
+          src="/slicer-cat.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          width={220}
+          height={220}
+          className="relative rounded-2xl drop-shadow-[0_0_32px_rgba(0,191,165,0.8)]"
         />
       </div>
 
