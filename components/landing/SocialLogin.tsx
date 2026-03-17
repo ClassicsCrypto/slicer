@@ -60,7 +60,7 @@ export default function SocialLogin() {
           <div className="text-3xl mb-2">📬</div>
           <p className="text-white font-semibold">Check your email</p>
           <p className="text-muted text-sm mt-1">
-            We sent a 6-digit code to <span className="text-primary">{email}</span>
+            We sent a login code to <span className="text-primary">{email}</span> — paste it below
           </p>
         </div>
 

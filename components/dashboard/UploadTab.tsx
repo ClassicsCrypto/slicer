@@ -91,15 +91,27 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
         if (file) {
           if (session?.access_token) {
-            // Real upload to Supabase Storage
-            const uploadHeaders: Record<string, string> = { 'Authorization': `Bearer ${session.access_token}` }
-            const formData = new FormData()
-            formData.append('file', file)
-            const uploadRes = await fetch('/api/upload', { method: 'POST', headers: uploadHeaders, body: formData })
-            if (uploadRes.ok) {
-              const { r2Key, publicUrl } = await uploadRes.json()
-              body.filePath = r2Key
-              body.publicUrl = publicUrl
+            // Step 1: Get a signed upload URL (no file size limit)
+            const urlRes = await fetch('/api/upload-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+              body: JSON.stringify({ filename: file.name, contentType: file.type }),
+            })
+            if (urlRes.ok) {
+              const { signedUrl, storageKey, publicUrl } = await urlRes.json()
+              // Step 2: Upload directly from browser to Supabase Storage (bypasses Vercel limits)
+              const uploadRes = await fetch(signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file,
+              })
+              if (uploadRes.ok) {
+                body.filePath = storageKey
+                body.publicUrl = publicUrl
+              } else {
+                console.error('Direct upload failed:', uploadRes.status)
+                body.filePath = `pending/${file.name}`
+              }
             } else {
               body.filePath = `pending/${file.name}`
             }
