@@ -1,8 +1,27 @@
+'use client'
+
+import React, { useEffect, useState } from 'react'
 import FeatureMarquee from '@/components/landing/FeatureMarquee'
 import SocialLogin from '@/components/landing/SocialLogin'
-import Image from 'next/image'
+import { createSupabaseClient } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
 
 export default function LandingPage() {
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const supabase = createSupabaseClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setUser(session.user)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const displayName = user?.user_metadata?.name || user?.email?.split('@')[0] || null
+
   return (
     <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       {/* Header */}
@@ -11,7 +30,16 @@ export default function LandingPage() {
           <span className="text-2xl font-black tracking-tight" style={{background:'linear-gradient(90deg,#00E676,#00BFA5)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent'}}>✂️ Slicer</span>
           <span className="text-xs text-muted font-medium ml-2 border border-primary/30 rounded-full px-2 py-0.5">by MCV</span>
         </div>
-        <a href="#login" className="text-sm font-semibold text-primary hover:text-accent transition-colors">Sign in →</a>
+        {user ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted hidden sm:block">Welcome back, <span className="text-white font-semibold">{displayName}</span></span>
+            <a href="/dashboard" className="px-4 py-2 rounded-xl text-sm font-bold text-background transition-all hover:scale-105" style={{background:'linear-gradient(135deg,#00E676,#00BFA5)'}}>
+              Go to Dashboard →
+            </a>
+          </div>
+        ) : (
+          <a href="#login" className="text-sm font-semibold text-primary hover:text-accent transition-colors">Sign in →</a>
+        )}
       </header>
 
       {/* Hero */}
@@ -19,9 +47,17 @@ export default function LandingPage() {
         {/* Big green glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-30 pointer-events-none" style={{background:'radial-gradient(ellipse at center, #00E676 0%, transparent 70%)', filter:'blur(80px)'}} />
 
-        {/* Cat image */}
-        <div className="mb-8 relative z-10" style={{filter:'drop-shadow(0 0 40px rgba(0,230,118,0.6))'}}>
-          <img src="/slicer-cat.png" alt="Slicer Cat" width={140} height={140} className="rounded-2xl animate-bounce-slow" style={{animation:'float 3s ease-in-out infinite'}} />
+        {/* New logo cat */}
+        <div className="mb-8 relative z-10" style={{filter:'drop-shadow(0 0 40px rgba(0,230,118,0.7))'}}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/slicer-logo.png"
+            alt="Slicer"
+            width={160}
+            height={160}
+            className="rounded-3xl"
+            style={{animation:'float 3s ease-in-out infinite'}}
+          />
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto">
@@ -41,10 +77,17 @@ export default function LandingPage() {
           </p>
           <p className="text-green-400 text-sm font-semibold tracking-widest uppercase mb-12">No editing skills needed. No timeline. No BS.</p>
 
-          <a href="#login" className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-background transition-all hover:scale-105 active:scale-95 shadow-lg" style={{background:'linear-gradient(135deg,#00E676,#00BFA5)', boxShadow:'0 0 40px rgba(0,230,118,0.4)'}}>
-            ✂️ Start Clipping Free
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-          </a>
+          {user ? (
+            <a href="/dashboard" className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-background transition-all hover:scale-105 active:scale-95 shadow-lg" style={{background:'linear-gradient(135deg,#00E676,#00BFA5)', boxShadow:'0 0 40px rgba(0,230,118,0.4)'}}>
+              ✂️ Go to Dashboard
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+            </a>
+          ) : (
+            <a href="#login" className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-background transition-all hover:scale-105 active:scale-95 shadow-lg" style={{background:'linear-gradient(135deg,#00E676,#00BFA5)', boxShadow:'0 0 40px rgba(0,230,118,0.4)'}}>
+              ✂️ Start Clipping Free
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+            </a>
+          )}
         </div>
       </section>
 
@@ -63,7 +106,7 @@ export default function LandingPage() {
             { step: '02', icon: '🤖', title: 'AI Does the Work', desc: 'Slicer detects highlights, cuts clips at the right moments, and generates accurate subtitles with Whisper AI.' },
             { step: '03', icon: '📱', title: 'Export & Post', desc: 'Download your clips formatted perfectly for TikTok (9:16), YouTube Shorts, Twitter/X, or custom format.' },
           ].map((item) => (
-            <div key={item.step} className="relative bg-surface rounded-2xl border border-white/10 p-6 hover:border-green-400/30 transition-all group">
+            <div key={item.step} className="relative bg-surface rounded-2xl border border-white/10 p-6 hover:border-green-400/30 transition-all">
               <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-background" style={{background:'linear-gradient(135deg,#00E676,#00BFA5)'}}>{item.step}</div>
               <div className="text-4xl mb-4">{item.icon}</div>
               <h3 className="text-white font-bold text-lg mb-2">{item.title}</h3>
@@ -85,7 +128,7 @@ export default function LandingPage() {
               { icon: '✂️', title: 'Smart Clip Detection', desc: 'AI identifies peak engagement moments — loud cheers, key phrases, action sequences.' },
               { icon: '📝', title: 'Auto Subtitles', desc: 'Whisper AI transcribes and burns in subtitles. Bold, clean, shadow, outline — you choose the style.' },
               { icon: '📐', title: 'Platform Formats', desc: 'Auto-resize to TikTok 9:16, YouTube 16:9, or Shorts. No manual cropping.' },
-              { icon: '🎛️', title: 'Full Control', desc: 'Adjust clip count, length, subtitle colors, output quality up to 4K. You\'re the director.' },
+              { icon: '🎛️', title: 'Full Control', desc: "Adjust clip count, length, subtitle colors, output quality up to 4K. You're the director." },
               { icon: '⚡', title: 'Fast Pipeline', desc: 'FFmpeg-powered processing with live progress updates. See exactly what stage you\'re at.' },
               { icon: '☁️', title: 'Secure Storage', desc: 'All your clips stored safely. Download anytime, delete when done. Your content, your control.' },
             ].map((f) => (
@@ -99,7 +142,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Social proof / MCV badge */}
+      {/* MCV badge */}
       <section className="py-16 px-4 text-center">
         <div className="max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full border border-green-400/20 bg-green-400/5 mb-6">
@@ -110,17 +153,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Login section */}
-      <section id="login" className="flex flex-col items-center justify-center px-4 pb-24">
-        <div className="w-full max-w-md rounded-2xl border p-8 shadow-2xl" style={{background:'linear-gradient(135deg, rgba(0,230,118,0.05), rgba(0,191,165,0.05))', borderColor:'rgba(0,230,118,0.2)', boxShadow:'0 0 60px rgba(0,230,118,0.1)'}}>
-          <div className="text-center mb-6">
-            <div className="text-4xl mb-3">✂️</div>
-            <h2 className="text-2xl font-black text-white mb-1">Start Clipping Today</h2>
-            <p className="text-muted text-sm">Free forever. No credit card required.</p>
+      {/* Login / CTA section */}
+      {!user && (
+        <section id="login" className="flex flex-col items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-md rounded-2xl border p-8 shadow-2xl" style={{background:'linear-gradient(135deg, rgba(0,230,118,0.05), rgba(0,191,165,0.05))', borderColor:'rgba(0,230,118,0.2)', boxShadow:'0 0 60px rgba(0,230,118,0.1)'}}>
+            <div className="text-center mb-6">
+              <div className="mb-3 flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/slicer-logo.png" alt="Slicer" width={64} height={64} className="rounded-xl" style={{filter:'drop-shadow(0 0 12px rgba(0,230,118,0.5))'}} />
+              </div>
+              <h2 className="text-2xl font-black text-white mb-1">Start Clipping Today</h2>
+              <p className="text-muted text-sm">Free forever. No credit card required.</p>
+            </div>
+            <SocialLogin />
           </div>
-          <SocialLogin />
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="mt-auto border-t border-white/5 px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-muted text-sm">

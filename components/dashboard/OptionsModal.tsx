@@ -13,19 +13,25 @@ import type {
   PlatformFormat,
 } from '@/types'
 
-const defaultOptions: ProcessingOptions = {
-  clipCount: 5,
-  clipLength: '30',
-  detectionMode: 'auto',
-  subtitles: {
-    enabled: true,
-    style: 'bold',
-    size: 'medium',
-    color: '#ffffff',
-    background: false,
-  },
-  outputQuality: '1080p',
-  platformFormat: 'custom',
+const getDefaultOptions = (): ProcessingOptions => {
+  const stored = <T,>(key: string, fallback: T): T => {
+    if (typeof window === 'undefined') return fallback
+    try { return JSON.parse(localStorage.getItem(`slicer_${key}`) || 'null') ?? fallback } catch { return fallback }
+  }
+  return {
+    clipCount: 5,
+    clipLength: '30',
+    detectionMode: 'auto',
+    subtitles: {
+      enabled: true,
+      style: stored<string>('subStyle', 'bold') as import('@/types').SubtitleStyle,
+      size: 'medium',
+      color: '#ffffff',
+      background: false,
+    },
+    outputQuality: stored<string>('quality', '1080p') as import('@/types').OutputQuality,
+    platformFormat: stored<string>('format', 'custom') as import('@/types').PlatformFormat,
+  }
 }
 
 interface OptionsModalProps {
@@ -36,7 +42,12 @@ interface OptionsModalProps {
 }
 
 export default function OptionsModal({ isOpen, onClose, onStart, loading = false }: OptionsModalProps) {
-  const [options, setOptions] = useState<ProcessingOptions>(defaultOptions)
+  const [options, setOptions] = useState<ProcessingOptions>(() => getDefaultOptions())
+
+  // Reload settings from localStorage each time modal opens
+  React.useEffect(() => {
+    if (isOpen) setOptions(getDefaultOptions())
+  }, [isOpen])
 
   const update = (patch: Partial<ProcessingOptions>) => setOptions((prev) => ({ ...prev, ...patch }))
   const updateSubtitles = (patch: Partial<ProcessingOptions['subtitles']>) =>
