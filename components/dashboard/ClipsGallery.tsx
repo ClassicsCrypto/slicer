@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
+import { createSupabaseClient } from '@/lib/supabase'
 import type { Job, JobStatus } from '@/types'
 
 function statusBadge(status: JobStatus) {
@@ -35,31 +36,20 @@ export default function ClipsGallery() {
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
-    const res = await fetch('/api/jobs')
+    const supabase = createSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
+
+    const res = await fetch('/api/jobs', { headers })
     if (res.ok) {
       const data = await res.json()
       setJobs(data)
     } else {
-      // Dev mode: show mock jobs so the gallery is visible
-      setJobs([
-        {
-          id: 'dev-job-1',
-          user_id: 'dev-user',
-          title: 'Mars Cats Voyage — Highlight Reel.mp4',
-          source_url: 'https://youtube.com/watch?v=demo',
-          r2_key: null,
-          status: 'complete',
-          options: {},
-          progress: {},
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          clips: [
-            { id: 'c1', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 30, start_time: 10, end_time: 40, created_at: new Date().toISOString() },
-            { id: 'c2', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 45, start_time: 65, end_time: 110, created_at: new Date().toISOString() },
-            { id: 'c3', job_id: 'dev-job-1', user_id: 'dev-user', r2_key: '', duration: 28, start_time: 140, end_time: 168, created_at: new Date().toISOString() },
-          ]
-        },
-      ] as Job[])
+      setJobs([])
     }
     setLoading(false)
   }, [])

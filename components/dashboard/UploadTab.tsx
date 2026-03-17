@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone'
 import Button from '@/components/ui/Button'
 import OptionsModal from './OptionsModal'
 import ProcessingView from './ProcessingView'
+import { createSupabaseClient } from '@/lib/supabase'
 import type { ProcessingOptions } from '@/types'
 
 const ACCEPTED_TYPES = {
@@ -72,18 +73,29 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     try {
       let body: Record<string, unknown> = { options }
 
+      // Get auth token
+      const supabase = createSupabaseClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        authHeaders['Authorization'] = `Bearer ${session.access_token}`
+      }
+
       if (file) {
-        // In dev mode skip actual upload, just use filename as key
-        if (process.env.NODE_ENV === 'development') {
-          body.filePath = `dev-uploads/${file.name}`
-          body.title = file.name
-        } else {
+        if (session) {
+          // Real upload
+          const uploadHeaders: Record<string, string> = {}
+          if (session.access_token) uploadHeaders['Authorization'] = `Bearer ${session.access_token}`
           const formData = new FormData()
           formData.append('file', file)
-          const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
+          const uploadRes = await fetch('/api/upload', { method: 'POST', headers: uploadHeaders, body: formData })
           if (!uploadRes.ok) throw new Error('Upload failed')
           const { r2Key } = await uploadRes.json()
           body.filePath = r2Key
+          body.title = file.name
+        } else {
+          // Dev mode - no session
+          body.filePath = `dev-uploads/${file.name}`
           body.title = file.name
         }
       } else if (url) {
@@ -93,17 +105,21 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         throw new Error('No video source')
       }
 
+      // Show processing screen immediately before API call
+      const tempJobId = `pending-${Date.now()}`
+      setJobId(tempJobId)
+      setShowOptions(false)
+      setProcessing(true)
+
       const res = await fetch('/api/process', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error('Failed to start processing')
       const { jobId: newJobId } = await res.json()
 
       setJobId(newJobId)
-      setShowOptions(false)
-      setProcessing(true)
       onJobCreated(newJobId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
