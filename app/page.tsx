@@ -163,7 +163,6 @@ export default function LandingPage() {
                 <img src="/slicer-logo.png" alt="Slicer" width={64} height={64} className="rounded-xl" style={{filter:'drop-shadow(0 0 12px rgba(0,230,118,0.5))'}} />
               </div>
               <h2 className="text-2xl font-black text-white mb-1">Start Clipping Today</h2>
-              <p className="text-muted text-sm">Free forever. No credit card required.</p>
             </div>
             <SocialLogin />
           </div>
