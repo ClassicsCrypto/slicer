@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   const { data: jobs, error } = await supabase
     .from('jobs')
-    .select('*')
+    .select('*, clips(*)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 

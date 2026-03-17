@@ -114,7 +114,7 @@ export default function DashboardPage() {
         {tab === 'upload' && (
           <UploadTab onJobCreated={() => setTab('clips')} />
         )}
-        {tab === 'clips' && <ClipsGallery />}
+        {tab === 'clips' && <ClipsGallery key={tab} />}
         {tab === 'settings' && <SettingsTab user={user} />}
       </main>
     </div>
