@@ -101,6 +101,34 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     return () => window.removeEventListener('focus', onFocus)
   }, [fetchJobs])
 
+  // Auto-poll any jobs that are still processing
+  useEffect(() => {
+    const processingJobs = jobs.filter(j => j.status === 'processing' || j.status === 'pending')
+    if (processingJobs.length === 0) return
+
+    const pollOne = async (job: Job) => {
+      try {
+        const supabase = createSupabaseClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const userId = session?.user?.id
+        const url = userId ? `/api/jobs/${job.id}/poll?userId=${userId}` : `/api/jobs/${job.id}/poll`
+        const res = await fetch(url)
+        if (!res.ok) return
+        const updated = await res.json()
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...updated } : j))
+      } catch { /* ignore */ }
+    }
+
+    const interval = setInterval(() => {
+      processingJobs.forEach(pollOne)
+    }, 8000)
+
+    // Also poll immediately once
+    processingJobs.forEach(pollOne)
+
+    return () => clearInterval(interval)
+  }, [jobs.map(j => `${j.id}:${j.status}`).join(',')])
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -149,6 +177,9 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     )
   }
 
+  const completedJobs = jobs.filter(j => j.status === 'complete' || j.status === 'failed')
+  const activeJobs = jobs.filter(j => j.status === 'processing' || j.status === 'pending')
+
   if (jobs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
@@ -165,10 +196,10 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
   return (
     <div className="py-6 px-4">
       {/* Bulk actions bar */}
-      {jobs.length > 0 && (
+      {completedJobs.length > 0 && (
         <div className="flex items-center gap-3 mb-6 flex-wrap">
           <button onClick={selectAll} className="text-xs text-primary hover:text-accent transition-colors font-semibold">
-            Select All ({jobs.length})
+            Select All ({completedJobs.length})
           </button>
           {selected.size > 0 && (
             <>
@@ -187,9 +218,52 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
         </div>
       )}
 
+      {/* Processing job cards — shown at the top while rendering */}
+      {activeJobs.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <p className="text-xs text-muted font-semibold uppercase tracking-wider">⚡ In Progress</p>
+          {activeJobs.map((job) => {
+            const prog = job.progress || {}
+            const renderPct = (prog as Record<string, unknown>).renderPct as number | undefined
+            const est = prog.estimatedSecondsRemaining
+            const completedCount = (prog as Record<string, unknown>).completedCount as number | undefined
+            const totalRenders = ((prog as Record<string, unknown>).renderIds as string[] | undefined)?.length
+            return (
+              <div key={job.id} className="bg-surface border border-primary/30 rounded-2xl p-4 flex items-center gap-4">
+                {/* Animated spinner */}
+                <div className="flex-shrink-0 w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-sm truncate">{job.title || 'Untitled video'}</p>
+                  <p className="text-muted text-xs mt-0.5">
+                    {completedCount != null && totalRenders != null
+                      ? `${completedCount} / ${totalRenders} clips done`
+                      : 'Rendering clips with Shotstack…'}
+                  </p>
+                  {/* Progress bar */}
+                  <div className="mt-2 w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-700"
+                      style={{ width: `${renderPct ?? 15}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  {est != null && est > 0 ? (
+                    <p className="text-xs text-muted">
+                      ~{est >= 60 ? `${Math.ceil(est / 60)}m` : `${est}s`}
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-primary font-semibold mt-1">{renderPct ?? 15}%</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Job cards grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {jobs.map((job) => (
+        {completedJobs.map((job) => (
           <div
             key={job.id}
             className={`relative bg-surface rounded-2xl border overflow-hidden transition-all duration-200 ${
