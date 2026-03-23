@@ -95,6 +95,7 @@ export async function GET(
           job_id: params.jobId,
           user_id: userId,
           r2_key: result.url,
+          render_id: renderId,   // unique constraint prevents duplicate inserts
           duration: clipDuration,
           start_time: startTime,
           end_time: endTime,
@@ -102,7 +103,14 @@ export async function GET(
           created_at: new Date().toISOString(),
         })
         if (insertError) {
-          console.error(`[poll] clip insert failed for render ${renderId}:`, JSON.stringify(insertError))
+          // code 23505 = unique_violation — means already saved, not a real error
+          if ((insertError as { code?: string }).code === '23505') {
+            console.log(`[poll] clip already saved for render ${renderId} — skipping`)
+            savedRenderIds.push(renderId)
+            newCompletedCount++
+          } else {
+            console.error(`[poll] clip insert failed for render ${renderId}:`, JSON.stringify(insertError))
+          }
         } else {
           console.log(`[poll] clip saved for render ${renderId} url: ${result.url}`)
           savedRenderIds.push(renderId)

@@ -72,6 +72,7 @@ export interface Clip {
   job_id: string
   user_id: string
   r2_key: string
+  render_id: string | null
   thumbnail_r2_key: string | null
   duration: number | null
   start_time: number | null

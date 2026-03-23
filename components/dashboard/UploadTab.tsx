@@ -26,6 +26,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState('')
   const [urlInput, setUrlInput] = useState('')
+  const [jobName, setJobName] = useState('')
   const [showOptions, setShowOptions] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -88,7 +89,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
         const currentUserId = session?.user?.id
 
-        let body: Record<string, unknown> = { options, userId: currentUserId }
+        let body: Record<string, unknown> = { options, userId: currentUserId, title: jobName.trim() || undefined }
 
         if (file) {
           if (session?.access_token) {
@@ -212,14 +213,21 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
               <p className="text-sm font-semibold text-white truncate">{file.name}</p>
               <p className="text-xs text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
             </div>
-            <button onClick={() => { setFile(null); setShowOptions(false) }} className="text-muted hover:text-red-400 transition-colors">
+            <button onClick={() => { setFile(null); setShowOptions(false); setJobName('') }} className="text-muted hover:text-red-400 transition-colors">
               ✕
             </button>
           </div>
+          <input
+            type="text"
+            placeholder="Name this session (optional)"
+            value={jobName}
+            onChange={(e) => setJobName(e.target.value)}
+            className="mt-3 w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
+          />
           <Button
             variant="primary"
             size="lg"
-            className="mt-4 w-full"
+            className="mt-3 w-full"
             onClick={() => setShowOptions(true)}
           >
             ⚡ Set Options &amp; Process
@@ -246,10 +254,17 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         {url && (
           <>
             <p className="mt-2 text-xs text-primary truncate">✓ URL ready: {url}</p>
+            <input
+              type="text"
+              placeholder="Name this session (optional)"
+              value={jobName}
+              onChange={(e) => setJobName(e.target.value)}
+              className="mt-3 w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
+            />
             <Button
               variant="primary"
               size="lg"
-              className="mt-4 w-full"
+              className="mt-3 w-full"
               onClick={() => setShowOptions(true)}
             >
               ⚡ Set Options &amp; Process
