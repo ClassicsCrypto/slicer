@@ -81,17 +81,44 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
     }
   }
 
-  // Add "Made with Slicer" outro
+  // Add "Made with Slicer" outro — use two simple text overlays (HTML gradients don't render in Shotstack)
   if (spec.madeWithSlicer) {
+    // Teal background fill
     clips.push({
       asset: {
         type: 'html',
-        html: `<div style="background:linear-gradient(135deg,#00E676,#00BFA5);width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif"><p style="color:#000;font-size:52px;font-weight:900;margin:0">✂️ Made with Slicer</p><p style="color:rgba(0,0,0,0.6);font-size:28px;margin:8px 0 0">by Mars Cats Voyage</p></div>`,
+        html: `<div style="background:#00BFA5;width:${outputRes.width}px;height:${outputRes.height}px;"></div>`,
         width: outputRes.width,
         height: outputRes.height,
       },
       start: duration,
       length: 2,
+    })
+    // Main text
+    clips.push({
+      asset: {
+        type: 'html',
+        html: `<p style="color:#000000;font-size:56px;font-weight:900;font-family:Arial,sans-serif;text-align:center;margin:0;">Slicer</p>`,
+        width: outputRes.width,
+        height: 100,
+      },
+      start: duration,
+      length: 2,
+      position: 'center',
+      offset: { y: 0.05 },
+    })
+    // Sub text
+    clips.push({
+      asset: {
+        type: 'html',
+        html: `<p style="color:#003D33;font-size:28px;font-family:Arial,sans-serif;text-align:center;margin:0;">by Mars Cats Voyage</p>`,
+        width: outputRes.width,
+        height: 60,
+      },
+      start: duration,
+      length: 2,
+      position: 'center',
+      offset: { y: -0.05 },
     })
   }
 
