@@ -123,3 +123,13 @@ input:focus, textarea:focus, select:focus {
   border-color: #00E676 !important;
   background-color: rgba(0, 230, 118, 0.05) !important;
 }
+
+/* Shimmer animation for indeterminate progress bar */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
