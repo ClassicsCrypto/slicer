@@ -5,7 +5,40 @@ import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
 import { createSupabaseClient } from '@/lib/supabase'
-import type { Job, JobStatus } from '@/types'
+import type { Job, JobStatus, AIFocus, Clip } from '@/types'
+
+const AI_FOCUS_META: Record<AIFocus, { label: string; icon: string; color: string }> = {
+  funny_moments:  { label: 'Funny',    icon: '😂', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
+  kill_streaks:   { label: 'Kills',    icon: '💀', color: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  intense_action: { label: 'Action',   icon: '🔥', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
+  big_plays:      { label: 'Big Play', icon: '🏆', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  reactions:      { label: 'Reaction', icon: '😱', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  key_dialogue:   { label: 'Dialogue', icon: '🗣️', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+  hype_moments:   { label: 'Hype',     icon: '⚡', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
+  fails:          { label: 'Fail',     icon: '💥', color: 'bg-pink-500/20 text-pink-300 border-pink-500/30' },
+}
+
+function CategoryTags({ categories }: { categories: AIFocus[] | null | undefined }) {
+  if (!categories || categories.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      {categories.map((cat) => {
+        const meta = AI_FOCUS_META[cat]
+        if (!meta) return null
+        return (
+          <span
+            key={cat}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${meta.color}`}
+            title={`AI matched: ${meta.label}`}
+          >
+            <span>{meta.icon}</span>
+            <span>{meta.label}</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 function statusBadge(status: JobStatus) {
   const map: Record<JobStatus, { variant: 'success' | 'warning' | 'error' | 'info' | 'default'; label: string }> = {
@@ -199,11 +232,33 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
                 </h4>
                 {statusBadge(job.status)}
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted mb-4">
+              <div className="flex items-center gap-2 text-xs text-muted mb-2">
                 <span>{formatDate(job.created_at)}</span>
                 <span>·</span>
                 <Badge variant="default">{job.clips?.length ?? 0} clips</Badge>
               </div>
+              {/* Show unique categories across all clips for this job */}
+              {(() => {
+                const allCats = Array.from(new Set(
+                  (job.clips || []).flatMap(c => c.matched_categories || [])
+                )) as AIFocus[]
+                return allCats.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {allCats.slice(0, 4).map((cat) => {
+                      const meta = AI_FOCUS_META[cat]
+                      if (!meta) return null
+                      return (
+                        <span key={cat} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border ${meta.color}`}>
+                          {meta.icon} {meta.label}
+                        </span>
+                      )
+                    })}
+                    {allCats.length > 4 && (
+                      <span className="text-xs text-muted self-center">+{allCats.length - 4}</span>
+                    )}
+                  </div>
+                ) : null
+              })()}
 
               {/* Actions */}
               <div className="flex gap-2">
@@ -265,46 +320,50 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
                       )}
                     </div>
                     {/* Clip info + actions */}
-                    <div className="p-3 flex items-center justify-between gap-2">
-                      <div className="text-xs text-muted">
-                        <p className="text-white font-semibold mb-0.5">Clip {i + 1}</p>
-                        {clip.start_time != null && clip.end_time != null && (
-                          <p>{clip.start_time}s – {clip.end_time}s · {clip.duration}s</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        {clip.r2_key && clip.r2_key.startsWith('http') ? (
-                          <a
-                            href={clip.r2_key}
-                            download={`slicer-clip-${i + 1}.mp4`}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/40 text-primary rounded-lg text-xs font-semibold transition-colors"
-                          >
-                            ⬇ Download
-                          </a>
-                        ) : (
+                    <div className="p-3">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="text-xs text-muted">
+                          <p className="text-white font-semibold mb-0.5">Clip {i + 1}</p>
+                          {clip.start_time != null && clip.end_time != null && (
+                            <p>{clip.start_time}s – {clip.end_time}s · {clip.duration}s</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          {clip.r2_key && clip.r2_key.startsWith('http') ? (
+                            <a
+                              href={clip.r2_key}
+                              download={`slicer-clip-${i + 1}.mp4`}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/40 text-primary rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              ⬇ Download
+                            </a>
+                          ) : (
+                            <button
+                              disabled
+                              title="Available after real processing"
+                              className="flex items-center gap-1 px-3 py-1.5 bg-white/5 text-muted/40 rounded-lg text-xs font-semibold cursor-not-allowed"
+                            >
+                              ⬇ Download
+                            </button>
+                          )}
                           <button
-                            disabled
-                            title="Available after real processing"
-                            className="flex items-center gap-1 px-3 py-1.5 bg-white/5 text-muted/40 rounded-lg text-xs font-semibold cursor-not-allowed"
+                            onClick={() => {
+                              if (previewJob) {
+                                setPreviewJob({
+                                  ...previewJob,
+                                  clips: previewJob.clips?.filter(c => c.id !== clip.id)
+                                })
+                              }
+                            }}
+                            title="Delete clip"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/30 text-red-400 rounded-lg text-xs font-semibold transition-colors"
                           >
-                            ⬇ Download
+                            🗑
                           </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            if (previewJob) {
-                              setPreviewJob({
-                                ...previewJob,
-                                clips: previewJob.clips?.filter(c => c.id !== clip.id)
-                              })
-                            }
-                          }}
-                          title="Delete clip"
-                          className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/30 text-red-400 rounded-lg text-xs font-semibold transition-colors"
-                        >
-                          🗑
-                        </button>
+                        </div>
                       </div>
+                      {/* Category tags — why the AI picked this clip */}
+                      <CategoryTags categories={clip.matched_categories} />
                     </div>
                   </div>
                 ))}

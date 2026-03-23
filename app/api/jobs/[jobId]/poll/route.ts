@@ -70,6 +70,9 @@ export async function GET(
   const completedCount = job.progress?.completedCount || 0
   let newCompletedCount = completedCount
 
+  // Per-clip category assignments saved during process submission
+  const clipCategories: string[][] = job.progress?.clipCategories || []
+
   for (let i = 0; i < renderIds.length; i++) {
     const renderId = renderIds[i]
 
@@ -90,6 +93,7 @@ export async function GET(
         // Save the clip to DB
         const startTime = i * (clipDuration + 5)
         const endTime = startTime + clipDuration
+        const matchedCategories = clipCategories[i] || []
 
         await supabase.from('clips').insert({
           id: uuidv4(),
@@ -99,6 +103,7 @@ export async function GET(
           duration: clipDuration,
           start_time: startTime,
           end_time: endTime,
+          matched_categories: matchedCategories,
           created_at: new Date().toISOString(),
         })
         newCompletedCount++

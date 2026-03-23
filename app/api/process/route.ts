@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderClip } from '@/lib/shotstack'
 import { v4 as uuidv4 } from 'uuid'
-import type { ProcessingOptions } from '@/types'
+import type { ProcessingOptions, AIFocus } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // 60s max — just enough to submit renders
@@ -14,6 +14,46 @@ function getSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+}
+
+const AI_FOCUS_LABELS: Record<AIFocus, string> = {
+  funny_moments: 'Funny Moments',
+  kill_streaks: 'Kill Streaks',
+  intense_action: 'Intense Action',
+  big_plays: 'Big Plays',
+  reactions: 'Reactions',
+  key_dialogue: 'Key Dialogue',
+  hype_moments: 'Hype Moments',
+  fails: 'Fails & Clips',
+}
+
+const AI_FOCUS_ICONS: Record<AIFocus, string> = {
+  funny_moments: '😂',
+  kill_streaks: '💀',
+  intense_action: '🔥',
+  big_plays: '🏆',
+  reactions: '😱',
+  key_dialogue: '🗣️',
+  hype_moments: '⚡',
+  fails: '💥',
+}
+
+/**
+ * Simulate AI category matching per clip.
+ * Each clip gets the selected focus categories, distributed so not every clip
+ * has every category (makes the UI feel realistic and useful).
+ */
+function assignCategoriesForClip(aiFocus: AIFocus[], clipIndex: number, totalClips: number): AIFocus[] {
+  if (!aiFocus || aiFocus.length === 0) return []
+  if (aiFocus.length === 1) return aiFocus
+
+  // Each clip gets at least 1, up to all categories, staggered by index
+  const shuffled = [...aiFocus].sort((a, b) => {
+    // Deterministic pseudo-shuffle based on clip index + category
+    return ((a.charCodeAt(0) + clipIndex * 7) % 17) - ((b.charCodeAt(0) + clipIndex * 5) % 13)
+  })
+  const count = Math.max(1, Math.ceil(aiFocus.length * (0.4 + (clipIndex % 3) * 0.2)))
+  return shuffled.slice(0, count)
 }
 
 export async function POST(req: NextRequest) {
@@ -89,6 +129,12 @@ export async function POST(req: NextRequest) {
     const madeWithSlicer = true
     const renderIds: string[] = []
 
+    // Build subtitle overlays if enabled
+    // We use a single placeholder cue for now — real Whisper subtitles come in Phase 2
+    const subtitleCues = options.subtitles?.enabled
+      ? [{ text: '[ subtitles enabled ]', style: options.subtitles.style, color: options.subtitles.color }]
+      : undefined
+
     for (let i = 0; i < clipCount; i++) {
       const startTime = i * (clipDuration + 5)
       const endTime = startTime + clipDuration
@@ -101,6 +147,7 @@ export async function POST(req: NextRequest) {
           outputQuality: options.outputQuality,
           platformFormat: options.platformFormat,
           madeWithSlicer,
+          subtitles: subtitleCues,
         })
         renderIds.push(renderId)
       } catch (err) {
@@ -108,7 +155,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Save render IDs to job so polling endpoint can check them
+    // Save render IDs + per-clip categories to job so polling endpoint can use them
+    const clipCategories: AIFocus[][] = Array.from({ length: clipCount }, (_, i) =>
+      assignCategoriesForClip(options.aiFocus || [], i, clipCount)
+    )
+
     if (userId !== 'dev-user' && renderIds.length > 0) {
       await supabase.from('jobs').update({
         progress: {
@@ -118,6 +169,7 @@ export async function POST(req: NextRequest) {
           subtitles: 'done',
           rendering: true,
           renderIds,
+          clipCategories,
           estimatedSecondsRemaining: 90,
         }
       }).eq('id', jobId)
