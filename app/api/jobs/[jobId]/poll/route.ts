@@ -67,8 +67,10 @@ export async function GET(
   const clipDuration = parseInt(options.clipLength as string) || 30
   let allDone = true
   let anyFailed = false
-  const completedCount = job.progress?.completedCount || 0
-  let newCompletedCount = completedCount
+
+  // Track which renderIds have already been saved — prevents duplicate inserts on every poll
+  const savedRenderIds: string[] = job.progress?.savedRenderIds || []
+  let newCompletedCount = savedRenderIds.length
 
   // Per-clip category assignments saved during process submission
   const clipCategories: string[][] = job.progress?.clipCategories || []
@@ -76,23 +78,15 @@ export async function GET(
   for (let i = 0; i < renderIds.length; i++) {
     const renderId = renderIds[i]
 
-    // Skip if this render already saved as a clip
-    const { data: existingClip } = await supabase
-      .from('clips')
-      .select('id')
-      .eq('job_id', params.jobId)
-      .eq('r2_key', renderId)  // we use renderId as temp key
-      .single()
-
-    if (existingClip) continue // already saved
+    // Skip if already saved in a previous poll
+    if (savedRenderIds.includes(renderId)) continue
 
     try {
       const result = await getRenderStatus(renderId)
       console.log(`[poll] render ${renderId} status: ${result.status} url: ${result.url || 'none'}`)
 
       if (result.status === 'done' && result.url) {
-        // Save the clip to DB
-        const startTime = i * (clipDuration + 5)
+        const startTime = i * Math.ceil(clipDuration / 2)
         const endTime = startTime + clipDuration
         const matchedCategories = clipCategories[i] || []
 
@@ -100,7 +94,7 @@ export async function GET(
           id: uuidv4(),
           job_id: params.jobId,
           user_id: userId,
-          r2_key: result.url,           // Shotstack CDN URL — direct download
+          r2_key: result.url,
           duration: clipDuration,
           start_time: startTime,
           end_time: endTime,
@@ -111,6 +105,7 @@ export async function GET(
           console.error(`[poll] clip insert failed for render ${renderId}:`, JSON.stringify(insertError))
         } else {
           console.log(`[poll] clip saved for render ${renderId} url: ${result.url}`)
+          savedRenderIds.push(renderId)
           newCompletedCount++
         }
       } else if (result.status === 'failed') {
@@ -139,6 +134,7 @@ export async function GET(
         finalizing: 'done',
         estimatedSecondsRemaining: 0,
         completedCount: newCompletedCount,
+        savedRenderIds,
       },
     }).eq('id', params.jobId)
   } else {
@@ -150,6 +146,7 @@ export async function GET(
         renderPct: pct,
         estimatedSecondsRemaining: remaining,
         completedCount: newCompletedCount,
+        savedRenderIds,
       },
     }).eq('id', params.jobId)
   }
