@@ -136,7 +136,9 @@ export async function POST(req: NextRequest) {
       : undefined
 
     for (let i = 0; i < clipCount; i++) {
-      const startTime = i * (clipDuration + 5)
+      // Space clips by half their duration to allow overlap and avoid gaps
+      // This keeps start times reasonable for shorter source videos
+      const startTime = i * Math.ceil(clipDuration / 2)
       const endTime = startTime + clipDuration
       try {
         const renderId = await renderClip({
