@@ -136,7 +136,7 @@ export default function DashboardPage() {
           {tabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => { setTab(t.id); if (t.id === 'clips') setClipsKey(k => k + 1) }}
+              onClick={() => { setTab(t.id); setClipsKey(k => k + 1) }}
               className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold transition-all border-b-2 -mb-px ${
                 tab === t.id
                   ? 'border-primary text-primary'
