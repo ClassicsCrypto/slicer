@@ -4,8 +4,17 @@
  */
 
 import { spawn } from 'child_process'
-import ffmpegStatic from 'ffmpeg-static'
 import type { AIFocus } from '@/types'
+
+// Try ffmpeg-static first, fall back to system ffmpeg
+function getFfmpegPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ffmpegStatic = require('ffmpeg-static')
+    if (ffmpegStatic && typeof ffmpegStatic === 'string') return ffmpegStatic
+  } catch { /* not available */ }
+  return 'ffmpeg' // system ffmpeg fallback
+}
 
 export interface HighlightSegment {
   startTime: number   // seconds into the video
@@ -71,7 +80,7 @@ export async function detectHighlights(
  */
 function extractLoudness(videoUrl: string, maxDuration: number): Promise<{ time: number; rms: number }[]> {
   return new Promise((resolve) => {
-    const ffmpegBin = (ffmpegStatic as unknown as string) || 'ffmpeg'
+    const ffmpegBin = getFfmpegPath()
 
     const args = [
       '-i', videoUrl,

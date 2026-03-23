@@ -81,43 +81,18 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
     }
   }
 
-  // Add "Made with Slicer" outro — use native color asset for background (HTML divs don't render in Shotstack)
+  // Add "Made with Slicer" outro — text only (sandbox doesn't support color asset type)
   if (spec.madeWithSlicer) {
-    // Solid teal background using native color asset
-    clips.push({
-      asset: {
-        type: 'color',
-        colour: '#00BFA5',
-      },
-      start: duration,
-      length: 2,
-      position: 'center',
-    })
-    // "✂️ Slicer" title
     clips.push({
       asset: {
         type: 'html',
-        html: `<p style="color:#000000;font-size:64px;font-weight:900;font-family:Arial Black,Arial,sans-serif;text-align:center;margin:0;padding:0;">&#9986; Slicer</p>`,
+        html: `<div style="width:${outputRes.width}px;height:${outputRes.height}px;background-color:#00BFA5;display:table;"><div style="display:table-cell;vertical-align:middle;text-align:center;"><p style="color:#000000;font-size:64px;font-weight:900;font-family:Arial,sans-serif;margin:0;">Slicer</p><p style="color:#003D33;font-size:30px;font-family:Arial,sans-serif;margin:8px 0 0;">by Mars Cats Voyage</p></div></div>`,
         width: outputRes.width,
-        height: 120,
+        height: outputRes.height,
       },
       start: duration,
       length: 2,
       position: 'center',
-      offset: { y: 0.06 },
-    })
-    // "by Mars Cats Voyage" subtitle
-    clips.push({
-      asset: {
-        type: 'html',
-        html: `<p style="color:#003D33;font-size:30px;font-family:Arial,sans-serif;text-align:center;margin:0;padding:0;">by Mars Cats Voyage</p>`,
-        width: outputRes.width,
-        height: 60,
-      },
-      start: duration,
-      length: 2,
-      position: 'center',
-      offset: { y: -0.06 },
     })
   }
 
