@@ -41,7 +41,14 @@ export async function detectHighlights(
 ): Promise<HighlightSegment[]> {
   const { clipDuration, clipCount, aiFocus, maxDuration = 3600 } = options
 
-  // Get loudness data from ffmpeg
+  // Skip ffmpeg analysis on Vercel serverless (binary execution not supported on free tier)
+  // Falls back to sequential clip placement
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    console.log('[audio-analysis] serverless environment detected — skipping ffmpeg, using sequential fallback')
+    return sequentialFallback(clipDuration, clipCount, aiFocus)
+  }
+
+  // Get loudness data from ffmpeg (local/self-hosted only)
   const loudnessData = await extractLoudness(videoUrl, maxDuration)
 
   if (loudnessData.length === 0) {
