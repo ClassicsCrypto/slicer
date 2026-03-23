@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderClip } from '@/lib/shotstack'
+import { detectHighlights } from '@/lib/audio-analysis'
 import { v4 as uuidv4 } from 'uuid'
 import type { ProcessingOptions, AIFocus } from '@/types'
 
@@ -130,15 +131,28 @@ export async function POST(req: NextRequest) {
     const renderIds: string[] = []
 
     // Build subtitle overlays if enabled
-    // We use a single placeholder cue for now — real Whisper subtitles come in Phase 2
     const subtitleCues = options.subtitles?.enabled
       ? [{ text: '[ subtitles enabled ]', style: options.subtitles.style, color: options.subtitles.color }]
       : undefined
 
+    // --- AUDIO ANALYSIS: detect real highlight moments ---
+    let highlights = null
+    try {
+      console.log(`[process] running audio peak detection on ${sourceUrl}`)
+      highlights = await detectHighlights(sourceUrl, {
+        clipDuration,
+        clipCount,
+        aiFocus: options.aiFocus || [],
+        maxDuration: 3600, // 1 hour max
+      })
+      console.log(`[process] found ${highlights.length} highlights`)
+    } catch (err) {
+      console.error('[process] audio analysis failed, falling back to sequential:', err)
+    }
+
     for (let i = 0; i < clipCount; i++) {
-      // Space clips by half their duration to allow overlap and avoid gaps
-      // This keeps start times reasonable for shorter source videos
-      const startTime = i * Math.ceil(clipDuration / 2)
+      // Use audio-detected timestamp if available, otherwise sequential fallback
+      const startTime = highlights?.[i]?.startTime ?? i * Math.ceil(clipDuration / 2)
       const endTime = startTime + clipDuration
       try {
         const renderId = await renderClip({
@@ -157,10 +171,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Save render IDs + per-clip categories to job so polling endpoint can use them
-    const clipCategories: AIFocus[][] = Array.from({ length: clipCount }, (_, i) =>
-      assignCategoriesForClip(options.aiFocus || [], i, clipCount)
-    )
+    // Save per-clip categories from audio analysis (or fallback)
+    const clipCategories: AIFocus[][] = highlights
+      ? highlights.slice(0, clipCount).map(h => h.categories)
+      : Array.from({ length: clipCount }, (_, i) => assignCategoriesForClip(options.aiFocus || [], i, clipCount))
 
     if (userId !== 'dev-user' && renderIds.length > 0) {
       await supabase.from('jobs').update({
