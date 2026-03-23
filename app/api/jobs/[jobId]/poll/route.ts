@@ -96,7 +96,7 @@ export async function GET(
         const endTime = startTime + clipDuration
         const matchedCategories = clipCategories[i] || []
 
-        await supabase.from('clips').insert({
+        const { error: insertError } = await supabase.from('clips').insert({
           id: uuidv4(),
           job_id: params.jobId,
           user_id: userId,
@@ -107,7 +107,12 @@ export async function GET(
           matched_categories: matchedCategories,
           created_at: new Date().toISOString(),
         })
-        newCompletedCount++
+        if (insertError) {
+          console.error(`[poll] clip insert failed for render ${renderId}:`, JSON.stringify(insertError))
+        } else {
+          console.log(`[poll] clip saved for render ${renderId} url: ${result.url}`)
+          newCompletedCount++
+        }
       } else if (result.status === 'failed') {
         anyFailed = true
         console.error(`Render ${renderId} failed`)
