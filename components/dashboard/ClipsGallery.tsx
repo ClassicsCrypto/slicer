@@ -193,6 +193,50 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     )
   }
 
+  // Only active jobs, no completed ones yet — show processing-only view
+  if (activeJobs.length > 0 && completedJobs.length === 0) {
+    return (
+      <div className="py-6 px-4">
+        <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">⚡ In Progress</p>
+        {activeJobs.map((job) => {
+          const prog = job.progress || {}
+          const renderPct = (prog as Record<string, unknown>).renderPct as number | undefined
+          const est = prog.estimatedSecondsRemaining
+          const completedCount = (prog as Record<string, unknown>).completedCount as number | undefined
+          const totalRenders = ((prog as Record<string, unknown>).renderIds as string[] | undefined)?.length
+          return (
+            <div key={job.id} className="bg-surface border border-primary/30 rounded-2xl p-4 flex items-center gap-4 mb-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{job.title || 'Untitled video'}</p>
+                <p className="text-muted text-xs mt-0.5">
+                  {completedCount != null && totalRenders != null
+                    ? `${completedCount} / ${totalRenders} clips done`
+                    : 'Rendering clips with Shotstack…'}
+                </p>
+                <div className="mt-2 w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-700"
+                    style={{ width: `${renderPct ?? 15}%` }}
+                  />
+                </div>
+              </div>
+              <div className="flex-shrink-0 text-right">
+                {est != null && est > 0 ? (
+                  <p className="text-xs text-muted">~{est >= 60 ? `${Math.ceil(est / 60)}m` : `${est}s`}</p>
+                ) : null}
+                <p className="text-xs text-primary font-semibold mt-1">{renderPct ?? 15}%</p>
+              </div>
+            </div>
+          )
+        })}
+        <p className="text-xs text-muted text-center mt-6">
+          This page polls every 8 seconds — clips will appear here automatically when ready 🎬
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="py-6 px-4">
       {/* Bulk actions bar */}
