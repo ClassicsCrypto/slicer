@@ -88,6 +88,7 @@ export async function GET(
 
     try {
       const result = await getRenderStatus(renderId)
+      console.log(`[poll] render ${renderId} status: ${result.status} url: ${result.url || 'none'}`)
 
       if (result.status === 'done' && result.url) {
         // Save the clip to DB
