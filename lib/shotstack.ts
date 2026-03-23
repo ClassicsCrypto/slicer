@@ -81,44 +81,43 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
     }
   }
 
-  // Add "Made with Slicer" outro — use two simple text overlays (HTML gradients don't render in Shotstack)
+  // Add "Made with Slicer" outro — use native color asset for background (HTML divs don't render in Shotstack)
   if (spec.madeWithSlicer) {
-    // Teal background fill
+    // Solid teal background using native color asset
     clips.push({
       asset: {
-        type: 'html',
-        html: `<div style="background:#00BFA5;width:${outputRes.width}px;height:${outputRes.height}px;"></div>`,
-        width: outputRes.width,
-        height: outputRes.height,
-      },
-      start: duration,
-      length: 2,
-    })
-    // Main text
-    clips.push({
-      asset: {
-        type: 'html',
-        html: `<p style="color:#000000;font-size:56px;font-weight:900;font-family:Arial,sans-serif;text-align:center;margin:0;">Slicer</p>`,
-        width: outputRes.width,
-        height: 100,
+        type: 'color',
+        colour: '#00BFA5',
       },
       start: duration,
       length: 2,
       position: 'center',
-      offset: { y: 0.05 },
     })
-    // Sub text
+    // "✂️ Slicer" title
     clips.push({
       asset: {
         type: 'html',
-        html: `<p style="color:#003D33;font-size:28px;font-family:Arial,sans-serif;text-align:center;margin:0;">by Mars Cats Voyage</p>`,
+        html: `<p style="color:#000000;font-size:64px;font-weight:900;font-family:Arial Black,Arial,sans-serif;text-align:center;margin:0;padding:0;">&#9986; Slicer</p>`,
+        width: outputRes.width,
+        height: 120,
+      },
+      start: duration,
+      length: 2,
+      position: 'center',
+      offset: { y: 0.06 },
+    })
+    // "by Mars Cats Voyage" subtitle
+    clips.push({
+      asset: {
+        type: 'html',
+        html: `<p style="color:#003D33;font-size:30px;font-family:Arial,sans-serif;text-align:center;margin:0;padding:0;">by Mars Cats Voyage</p>`,
         width: outputRes.width,
         height: 60,
       },
       start: duration,
       length: 2,
       position: 'center',
-      offset: { y: -0.05 },
+      offset: { y: -0.06 },
     })
   }
 

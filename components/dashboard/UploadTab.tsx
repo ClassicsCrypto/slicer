@@ -157,12 +157,15 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         jobId={jobId}
         onCancel={handleCancel}
         onComplete={() => {
-          setProcessing(false)
-          setJobId(null)
-          setFile(null)
-          setUrl('')
-          setUrlInput('')
-          onJobCreated(jobId) // triggers tab switch to Clips
+          // Stay on processing screen briefly so user sees "Done!" state
+          setTimeout(() => {
+            setProcessing(false)
+            setJobId(null)
+            setFile(null)
+            setUrl('')
+            setUrlInput('')
+            onJobCreated(jobId) // triggers tab switch to Clips
+          }, 2500)
         }}
       />
     )
