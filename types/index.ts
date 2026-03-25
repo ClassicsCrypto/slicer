@@ -79,6 +79,7 @@ export interface Clip {
   end_time: number | null
   subtitle_track: SubtitleCue[] | null
   matched_categories: AIFocus[] | null
+  ai_reason: string | null
   created_at: string
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderClip } from '@/lib/shotstack'
-import { detectHighlights } from '@/lib/audio-analysis'
+import { detectHighlightsAI } from '@/lib/ai-analysis'
 import { v4 as uuidv4 } from 'uuid'
 import type { ProcessingOptions, AIFocus } from '@/types'
 
@@ -135,23 +135,22 @@ export async function POST(req: NextRequest) {
       ? [{ text: '[ subtitles enabled ]', style: options.subtitles.style, color: options.subtitles.color }]
       : undefined
 
-    // --- AUDIO ANALYSIS: detect real highlight moments ---
+    // --- AI ANALYSIS: detect highlight moments using Whisper + GPT-4o ---
     let highlights = null
     try {
-      console.log(`[process] running audio peak detection on ${sourceUrl}`)
-      highlights = await detectHighlights(sourceUrl, {
+      console.log(`[process] running AI highlight detection on ${sourceUrl}`)
+      highlights = await detectHighlightsAI(sourceUrl, {
         clipDuration,
         clipCount,
         aiFocus: options.aiFocus || [],
-        maxDuration: 3600, // 1 hour max
       })
-      console.log(`[process] found ${highlights.length} highlights`)
+      console.log(`[process] AI found ${highlights.length} highlights`)
     } catch (err) {
-      console.error('[process] audio analysis failed, falling back to sequential:', err)
+      console.error('[process] AI analysis failed, falling back to sequential:', err)
     }
 
     for (let i = 0; i < clipCount; i++) {
-      // Use audio-detected timestamp if available, otherwise sequential fallback
+      // Use AI-detected timestamp if available, otherwise sequential fallback
       const startTime = highlights?.[i]?.startTime ?? i * Math.ceil(clipDuration / 2)
       const endTime = startTime + clipDuration
       try {
@@ -171,10 +170,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Save per-clip categories from audio analysis (or fallback)
+    // Save per-clip categories + reasons from AI analysis (or fallback)
     const clipCategories: AIFocus[][] = highlights
       ? highlights.slice(0, clipCount).map(h => h.categories)
       : Array.from({ length: clipCount }, (_, i) => assignCategoriesForClip(options.aiFocus || [], i, clipCount))
+
+    const clipReasons: string[] = highlights
+      ? highlights.slice(0, clipCount).map(h => h.reason)
+      : []
 
     if (userId !== 'dev-user' && renderIds.length > 0) {
       await supabase.from('jobs').update({
@@ -186,6 +189,7 @@ export async function POST(req: NextRequest) {
           rendering: true,
           renderIds,
           clipCategories,
+          clipReasons,
           estimatedSecondsRemaining: 90,
         }
       }).eq('id', jobId)

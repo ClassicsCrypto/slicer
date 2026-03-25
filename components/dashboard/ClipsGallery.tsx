@@ -460,6 +460,12 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
                       </div>
                       {/* Category tags — why the AI picked this clip */}
                       <CategoryTags categories={clip.matched_categories} />
+                      {/* AI reason tooltip */}
+                      {clip.ai_reason && (
+                        <p className="text-xs text-muted mt-1.5 italic leading-snug">
+                          💡 {clip.ai_reason}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

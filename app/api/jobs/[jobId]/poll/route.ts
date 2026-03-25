@@ -72,8 +72,9 @@ export async function GET(
   const savedRenderIds: string[] = job.progress?.savedRenderIds || []
   let newCompletedCount = savedRenderIds.length
 
-  // Per-clip category assignments saved during process submission
+  // Per-clip category + reason assignments saved during process submission
   const clipCategories: string[][] = job.progress?.clipCategories || []
+  const clipReasons: string[] = job.progress?.clipReasons || []
 
   for (let i = 0; i < renderIds.length; i++) {
     const renderId = renderIds[i]
@@ -95,11 +96,12 @@ export async function GET(
           job_id: params.jobId,
           user_id: userId,
           r2_key: result.url,
-          render_id: renderId,   // unique constraint prevents duplicate inserts
+          render_id: renderId,
           duration: clipDuration,
           start_time: startTime,
           end_time: endTime,
           matched_categories: matchedCategories,
+          ai_reason: clipReasons[i] || null,
           created_at: new Date().toISOString(),
         })
         if (insertError) {

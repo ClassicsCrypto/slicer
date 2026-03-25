@@ -7,9 +7,9 @@ import type { ProcessingProgress } from '@/types'
 
 const CHECKLIST_ITEMS = [
   { key: 'uploading',  label: 'Uploading video' },
-  { key: 'analyzing',  label: 'Analyzing content with AI' },
-  { key: 'detecting',  label: 'Detecting highlight moments' },
-  { key: 'subtitles',  label: 'Generating subtitles' },
+  { key: 'analyzing',  label: 'Transcribing audio with Whisper' },
+  { key: 'detecting',  label: 'Finding highlights with GPT-4o' },
+  { key: 'subtitles',  label: 'Preparing subtitles' },
   { key: 'rendering',  label: 'Rendering clips' },
   { key: 'finalizing', label: 'Finalizing export' },
 ] as const
