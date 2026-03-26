@@ -88,9 +88,9 @@ export async function POST(req: NextRequest) {
     userId = bodyUserId
   }
 
-  // DEV MODE bypass
-  if (userId === 'dev-user' && process.env.SKIP_AUTH === 'true') {
-    userId = process.env.DEV_USER_ID || 'dev-user-fixed'
+  // DEV MODE bypass — only apply if a valid UUID is configured
+  if (userId === 'dev-user' && process.env.SKIP_AUTH === 'true' && process.env.DEV_USER_ID) {
+    userId = process.env.DEV_USER_ID
   }
 
   if (!videoUrl && !filePath) {
