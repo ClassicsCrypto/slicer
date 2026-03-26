@@ -39,33 +39,37 @@ async function transcribeVideo(videoUrl: string): Promise<{
   segments: { start: number; end: number; text: string }[]
 }> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const { toFile } = await import('openai')
 
-  // Fetch only the first 4MB of the video via HTTP Range request
-  // Small enough to upload to Whisper within Vercel's 60s timeout
-  // Covers ~1-2 min of audio — enough for GPT to identify highlights
+  // Fetch only the first 4MB via HTTP Range — covers ~1-2 min of audio
   const MAX_BYTES = 4 * 1024 * 1024 // 4MB
   const controller = new AbortController()
-  const fetchTimeout = setTimeout(() => controller.abort(), 15000) // 15s max to fetch
+  const fetchTimeout = setTimeout(() => controller.abort(), 20000)
+
   const response = await fetch(videoUrl, {
     headers: { 'Range': `bytes=0-${MAX_BYTES - 1}` },
     signal: controller.signal,
   })
   clearTimeout(fetchTimeout)
+
   if (!response.ok && response.status !== 206) {
     throw new Error(`Failed to fetch video: ${response.status}`)
   }
 
-  const buffer = await response.arrayBuffer()
-  console.log(`[ai-analysis] fetched ${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB for Whisper`)
-  const blob = new Blob([buffer], { type: 'video/mp4' })
-  const file = new File([blob], 'video.mp4', { type: 'video/mp4' })
+  // Use toFile with the response stream — avoids loading into memory + streams directly to OpenAI
+  const contentLength = response.headers.get('content-length')
+  console.log(`[ai-analysis] streaming ${contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(1)}MB` : 'chunk'} to Whisper`)
+
+  const audioFile = await toFile(response.body as ReadableStream, 'audio.mp4', { type: 'video/mp4' })
 
   const transcription = await openai.audio.transcriptions.create({
-    file,
+    file: audioFile,
     model: 'whisper-1',
     response_format: 'verbose_json',
     timestamp_granularities: ['segment'],
   })
+
+  console.log(`[ai-analysis] Whisper done: ${transcription.text.length} chars, ${(transcription.segments || []).length} segments`)
 
   return {
     text: transcription.text,
@@ -109,30 +113,36 @@ Your job is to analyze video transcripts and identify the best moments to clip f
 You understand what makes content engaging on TikTok, Twitter, and YouTube Shorts.
 Always respond with valid JSON only, no markdown, no explanation outside the JSON.`
 
-  const userPrompt = `Analyze this video transcript and identify the ${clipCount} best moments to clip.
+  const transcriptSummary = formattedTranscript.length > 0
+    ? `Transcript:\n${formattedTranscript}`
+    : `Note: No speech detected in the first portion of this video. It may be music, ambient sound, or gameplay without commentary. Use your best judgment to pick ${clipCount} evenly-spaced clips that would likely capture engaging moments based on the selected categories.`
+
+  const lastSegmentTime = transcript.segments.length > 0
+    ? transcript.segments[transcript.segments.length - 1].end
+    : clipDuration * clipCount * 2
+
+  const userPrompt = `Analyze this video and identify the ${clipCount} best moments to clip for social media.
 
 Each clip should be ${clipDuration} seconds long.
 Select moments that match these categories:
 ${categoryDescriptions}
 
-Transcript:
-${formattedTranscript}
+${transcriptSummary}
 
-Return a JSON array of exactly ${clipCount} clips. Each clip must have:
+Return a JSON object with a "clips" array of exactly ${clipCount} clips. Each clip must have:
 - startTime: number (seconds, the best start point for a ${clipDuration}s clip)
 - categories: array of category names from [${aiFocus.join(', ')}] that this clip matches
 - reason: string (1 sentence explaining why this moment is clip-worthy)
-- confidence: number 0-100 (how confident you are this is a great clip)
+- confidence: number 0-100
 
 Rules:
-- Clips must not overlap
-- startTime must leave room for a ${clipDuration}s clip (don't start too close to the end)
-- Pick the most engaging, viral-worthy moments
-- If transcript is sparse, space clips evenly but still justify them
-- Return ONLY valid JSON, no markdown
+- Clips must not overlap (leave at least ${clipDuration}s between start times)
+- First clip can start at 0
+- Spread clips across the video timeline (don't cluster them all at the start)
+- Estimated video duration to work with: ~${Math.max(lastSegmentTime * 3, clipDuration * clipCount * 3)} seconds
+- Return ONLY valid JSON with a "clips" key
 
-Example format:
-[{"startTime": 42.5, "categories": ["hype_moments", "kill_streaks"], "reason": "Player lands a triple kill while yelling in excitement", "confidence": 92}]`
+Example: {"clips": [{"startTime": 42.5, "categories": ["hype_moments"], "reason": "High energy action sequence", "confidence": 85}]}`
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o',
@@ -192,8 +202,10 @@ export async function detectHighlightsAI(
     const transcript = await transcribeVideo(videoUrl)
     console.log(`[ai-analysis] transcript: ${transcript.segments.length} segments, ${transcript.text.length} chars`)
 
-    if (transcript.segments.length === 0 && transcript.text.length < 10) {
-      console.warn('[ai-analysis] no speech detected — using sequential fallback')
+    // Even with no speech, GPT can still pick clips based on timing context
+    // Only fall back if we got nothing at all from Whisper
+    if (!transcript) {
+      console.warn('[ai-analysis] no transcript at all — using sequential fallback')
       return sequentialFallback(clipDuration, clipCount, aiFocus)
     }
 
