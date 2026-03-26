@@ -63,7 +63,7 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       if (completed.current) return
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        const userId = session?.user?.id
+        const userId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
         const pollUrl = userId ? `/api/jobs/${jobId}/poll?userId=${userId}` : `/api/jobs/${jobId}/poll`
         const res = await fetch(pollUrl)
         if (!res.ok) return
