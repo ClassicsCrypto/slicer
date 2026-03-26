@@ -37,7 +37,7 @@ export async function transcribeUrl(
     },
     body: JSON.stringify({
       audio_url: videoUrl,
-      speech_model: 'universal-2',  // required by AssemblyAI v2 API
+      speech_models: ['universal-2'],  // required by AssemblyAI v2 API
       auto_highlights: true,
       auto_chapters: true,
     }),
