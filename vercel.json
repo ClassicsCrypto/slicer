@@ -1,7 +1,7 @@
 {
   "functions": {
     "app/api/process/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 60
     },
     "app/api/jobs/[jobId]/poll/route.ts": {
       "maxDuration": 30

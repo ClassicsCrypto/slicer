@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { ProcessingOptions, AIFocus } from '@/types'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300 // 5 min — needed for Whisper transcription + GPT analysis
+export const maxDuration = 60 // 60s — Vercel Hobby limit. Whisper runs fast on 24MB chunks.
 
 const SHOTSTACK_ENABLED = !!process.env.SHOTSTACK_API_KEY
 
