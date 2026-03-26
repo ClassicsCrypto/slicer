@@ -60,7 +60,8 @@ async function transcribeVideo(videoUrl: string): Promise<{
   const contentLength = response.headers.get('content-length')
   console.log(`[ai-analysis] streaming ${contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(1)}MB` : 'chunk'} to Whisper`)
 
-  const audioFile = await toFile(response.body as ReadableStream, 'audio.mp4', { type: 'video/mp4' })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioFile = await toFile(response.body as any, 'audio.mp4', { type: 'video/mp4' })
 
   const transcription = await openai.audio.transcriptions.create({
     file: audioFile,
