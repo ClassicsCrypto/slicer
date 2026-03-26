@@ -131,7 +131,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
       try {
         const supabase = createSupabaseClient()
         const { data: { session } } = await supabase.auth.getSession()
-        const userId = session?.user?.id
+        const userId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
         const url = userId ? `/api/jobs/${job.id}/poll?userId=${userId}` : `/api/jobs/${job.id}/poll`
         const res = await fetch(url)
         if (!res.ok) return
@@ -168,7 +168,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     setDeletingId(id)
     const supabase = createSupabaseClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+    const userId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
     await fetch(`/api/jobs/${id}?userId=${userId || ''}`, { method: 'DELETE' })
     setDeletingId(null)
     setConfirmDelete(null)
@@ -180,7 +180,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
   const deleteSelected = async () => {
     const supabase = createSupabaseClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id
+    const userId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
     if (!userId) {
       console.warn('[delete] no userId — aborting')
       return
