@@ -73,7 +73,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setShowOptions(true)
   }
 
-  const handleStart = (options: ProcessingOptions) => {
+  const handleStart = (options: ProcessingOptions, modalTitle?: string) => {
+    if (modalTitle) setJobName(modalTitle)
     // Close modal and show processing screen IMMEDIATELY — no async blocking
     const tempJobId = `dev-${Date.now()}`
     setShowOptions(false)
@@ -89,7 +90,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
         const currentUserId = session?.user?.id
 
-        let body: Record<string, unknown> = { options, userId: currentUserId, title: jobName.trim() || undefined }
+        const finalTitle = modalTitle?.trim() || jobName.trim() || undefined
+        let body: Record<string, unknown> = { options, userId: currentUserId, title: finalTitle }
 
         if (file) {
           if (session?.access_token) {

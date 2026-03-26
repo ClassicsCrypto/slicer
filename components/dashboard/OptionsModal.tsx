@@ -51,8 +51,15 @@ const getDefaultOptions = (): ProcessingOptions => {
 interface OptionsModalProps {
   isOpen: boolean
   onClose: () => void
-  onStart: (options: ProcessingOptions) => void
+  onStart: (options: ProcessingOptions, title: string) => void
   loading?: boolean
+}
+
+function getDefaultTitle(): string {
+  const now = new Date()
+  const date = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  return `${date} · ${time}`
 }
 
 // Collapsible section wrapper
@@ -88,9 +95,15 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 
 export default function OptionsModal({ isOpen, onClose, onStart, loading = false }: OptionsModalProps) {
   const [options, setOptions] = useState<ProcessingOptions>(() => getDefaultOptions())
+  const [title, setTitle] = useState<string>('')
+  const [titleEdited, setTitleEdited] = useState(false)
 
   React.useEffect(() => {
-    if (isOpen) setOptions(getDefaultOptions())
+    if (isOpen) {
+      setOptions(getDefaultOptions())
+      setTitle(getDefaultTitle())
+      setTitleEdited(false)
+    }
   }, [isOpen])
 
   const update = (patch: Partial<ProcessingOptions>) => setOptions((prev) => ({ ...prev, ...patch }))
@@ -118,6 +131,30 @@ export default function OptionsModal({ isOpen, onClose, onStart, loading = false
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="⚙️ Clip Options" size="lg">
       <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+
+        {/* Job Title */}
+        <div>
+          <label className="block text-xs text-muted font-semibold mb-1.5 uppercase tracking-wider">Session Title</label>
+          <input
+            type="text"
+            value={title}
+            onFocus={() => {
+              if (!titleEdited) {
+                setTitle('')
+                setTitleEdited(true)
+              }
+            }}
+            onBlur={() => {
+              if (!title.trim()) {
+                setTitle(getDefaultTitle())
+                setTitleEdited(false)
+              }
+            }}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
+            placeholder={getDefaultTitle()}
+          />
+        </div>
 
         {/* Clip Count */}
         <Section title="Clip Count" icon="🎬">
@@ -340,7 +377,7 @@ export default function OptionsModal({ isOpen, onClose, onStart, loading = false
             variant="primary" size="lg" className="w-full" loading={loading}
             onClick={() => {
               if (options.detectionMode === 'auto' && options.aiFocus.length === 0) return
-              onStart(options)
+              onStart(options, title.trim() || getDefaultTitle())
             }}
           >
             🚀 Start Processing
