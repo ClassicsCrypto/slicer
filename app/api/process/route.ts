@@ -88,6 +88,11 @@ export async function POST(req: NextRequest) {
     userId = bodyUserId
   }
 
+  // DEV MODE bypass
+  if (userId === 'dev-user' && process.env.SKIP_AUTH === 'true') {
+    userId = process.env.DEV_USER_ID || 'dev-user-fixed'
+  }
+
   if (!videoUrl && !filePath) {
     return NextResponse.json({ error: 'No video source provided' }, { status: 400 })
   }

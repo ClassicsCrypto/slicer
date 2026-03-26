@@ -1,15 +1,24 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import FeatureMarquee from '@/components/landing/FeatureMarquee'
 import SocialLogin from '@/components/landing/SocialLogin'
 import { createSupabaseClient } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
+// DEV MODE: set to true to skip auth and go straight to dashboard
+const SKIP_AUTH = process.env.NEXT_PUBLIC_SKIP_AUTH === 'true'
+
 export default function LandingPage() {
   const [user, setUser] = useState<User | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
+    if (SKIP_AUTH) {
+      router.replace('/dashboard')
+      return
+    }
     const supabase = createSupabaseClient()
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setUser(session.user)
@@ -18,7 +27,7 @@ export default function LandingPage() {
       setUser(session?.user ?? null)
     })
     return () => subscription.unsubscribe()
-  }, [])
+  }, [router])
 
   const displayName = user?.user_metadata?.name || user?.email?.split('@')[0] || null
 

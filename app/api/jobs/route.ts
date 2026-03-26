@@ -30,6 +30,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // DEV MODE bypass — use fixed dev user when SKIP_AUTH is enabled
+  if (!userId && process.env.SKIP_AUTH === 'true') {
+    userId = process.env.DEV_USER_ID || 'dev-user-fixed'
+  }
+
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
