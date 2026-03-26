@@ -40,13 +40,17 @@ async function transcribeVideo(videoUrl: string): Promise<{
 }> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-  // Fetch only the first 24MB of the video via HTTP Range request
-  // This covers ~10 min of audio at typical bitrates, well within Whisper's 25MB limit
-  // and avoids timing out on large files in Vercel serverless
-  const MAX_BYTES = 24 * 1024 * 1024 // 24MB
+  // Fetch only the first 4MB of the video via HTTP Range request
+  // Small enough to upload to Whisper within Vercel's 60s timeout
+  // Covers ~1-2 min of audio — enough for GPT to identify highlights
+  const MAX_BYTES = 4 * 1024 * 1024 // 4MB
+  const controller = new AbortController()
+  const fetchTimeout = setTimeout(() => controller.abort(), 15000) // 15s max to fetch
   const response = await fetch(videoUrl, {
-    headers: { 'Range': `bytes=0-${MAX_BYTES - 1}` }
+    headers: { 'Range': `bytes=0-${MAX_BYTES - 1}` },
+    signal: controller.signal,
   })
+  clearTimeout(fetchTimeout)
   if (!response.ok && response.status !== 206) {
     throw new Error(`Failed to fetch video: ${response.status}`)
   }
