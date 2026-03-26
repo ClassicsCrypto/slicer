@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       .insert({
         id: jobId,
         user_id: userId,
-        title: title || videoUrl || 'Untitled',
+        title: title || (videoUrl ? new URL(videoUrl).pathname.split('/').pop()?.replace(/\.[^.]+$/, '') || 'Video' : 'Untitled'),
         source_url: sourceUrl || videoUrl || null,
         r2_key: filePath || null,
         status: 'processing',

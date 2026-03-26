@@ -51,6 +51,17 @@ function statusBadge(status: JobStatus) {
   return <Badge variant={cfg.variant}>{cfg.label}</Badge>
 }
 
+function cleanTitle(title: string | null | undefined): string {
+  if (!title) return 'Untitled video'
+  if (title.startsWith('http')) {
+    try {
+      const filename = new URL(title).pathname.split('/').pop()?.replace(/\.[^.]+$/, '')
+      return filename || 'Video'
+    } catch { return 'Video' }
+  }
+  return title
+}
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', {
     month: 'short',
@@ -227,7 +238,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
       <div key={job.id} className="bg-surface border border-primary/30 rounded-2xl p-4 flex items-center gap-4 mb-3">
         <div className="flex-shrink-0 w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
         <div className="flex-1 min-w-0">
-          <p className="text-white font-semibold text-sm truncate">{job.title || 'Untitled video'}</p>
+          <p className="text-white font-semibold text-sm truncate">{cleanTitle(job.title)}</p>
           <p className="text-muted text-xs mt-0.5">
             {completedCount != null && totalRenders != null && totalRenders > 0
               ? `${completedCount} / ${totalRenders} clips done`
@@ -346,7 +357,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
             <div className="p-4">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h4 className="text-sm font-semibold text-white truncate flex-1">
-                  {job.title || 'Untitled video'}
+                  {cleanTitle(job.title)}
                 </h4>
                 {statusBadge(job.status)}
               </div>
