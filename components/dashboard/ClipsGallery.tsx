@@ -395,6 +395,29 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
             </div>
 
             {/* Clips grid */}
+            {(previewJob.status === 'processing' || previewJob.status === 'pending') && (!previewJob.clips || previewJob.clips.length === 0) && (
+              <div className="py-8 text-center space-y-3">
+                <div className="flex justify-center">
+                  <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                </div>
+                <p className="text-white font-semibold text-sm">Rendering your clips…</p>
+                <p className="text-muted text-xs max-w-xs mx-auto">Shotstack is processing your video. This usually takes 2–5 minutes. This modal will update automatically.</p>
+                {/* Skeleton clip placeholders */}
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  {Array.from({ length: previewJob.options?.clipCount ?? 2 }).map((_, i) => (
+                    <div key={i} className="bg-background rounded-xl border border-white/10 overflow-hidden">
+                      <div className="h-36 bg-white/5 animate-pulse flex items-center justify-center">
+                        <span className="text-2xl opacity-20">🎬</span>
+                      </div>
+                      <div className="p-3 space-y-2">
+                        <div className="h-3 bg-white/10 rounded animate-pulse w-2/3" />
+                        <div className="h-2 bg-white/5 rounded animate-pulse w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {previewJob.clips && previewJob.clips.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
                 {previewJob.clips.map((clip, i) => (
@@ -471,13 +494,12 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
                 ))}
               </div>
             ) : (
-              <div className="py-10 text-center">
-                <p className="text-muted text-sm">
-                  {previewJob.status === 'processing' || previewJob.status === 'pending'
-                    ? '⚡ Still processing — check back in a moment'
-                    : 'No clips found for this job'}
-                </p>
-              </div>
+              previewJob.status !== 'processing' && previewJob.status !== 'pending' && (
+                <div className="py-10 text-center">
+                  <p className="text-muted text-sm">No clips found for this job</p>
+                  <p className="text-xs text-muted/60 mt-1">Clips may have expired (Shotstack sandbox links last 24h)</p>
+                </div>
+              )
             )}
           </div>
         )}
