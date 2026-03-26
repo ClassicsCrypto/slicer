@@ -36,12 +36,11 @@ export async function GET(
     }
   }
 
-  // Get job + current progress
+  // Get job + current progress — no user_id filter here, service role handles auth
   const { data: job, error: jobError } = await supabase
     .from('jobs')
     .select('*')
     .eq('id', params.jobId)
-    .eq('user_id', userId)
     .single()
 
   if (jobError || !job) {
