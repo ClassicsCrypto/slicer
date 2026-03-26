@@ -68,7 +68,9 @@ export async function POST(req: NextRequest) {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser(token)
       if (!authError && user) userId = user.id
-    } catch { /* header too large — will use userId from body */ }
+    } catch (err) {
+      console.error('[process/POST] Auth token validation failed:', err instanceof Error ? err.message : String(err))
+    }
   }
 
   const body = await req.json()

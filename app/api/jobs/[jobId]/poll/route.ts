@@ -29,7 +29,9 @@ export async function GET(
       try {
         const { data: { user } } = await supabase.auth.getUser(token)
         if (user) userId = user.id
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error('[poll/GET] Auth token validation failed:', err instanceof Error ? err.message : String(err))
+      }
     }
   }
 

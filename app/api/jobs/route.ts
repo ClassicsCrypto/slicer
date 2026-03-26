@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
       try {
         const { data: { user } } = await supabase.auth.getUser(token)
         userId = user?.id || null
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error('[jobs/GET] Auth token validation failed:', err instanceof Error ? err.message : String(err))
+      }
     }
   }
 

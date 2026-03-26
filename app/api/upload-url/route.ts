@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
       try {
         const { data: { user }, error } = await supabase.auth.getUser(token)
         if (!error && user) userId = user.id
-      } catch { /* token too large or invalid — use bodyUserId */ }
+      } catch (err) {
+        console.error('[upload-url/POST] Auth token validation failed:', err instanceof Error ? err.message : String(err))
+      }
     }
 
     if (userId === 'dev-user' && bodyUserId) {

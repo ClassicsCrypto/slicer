@@ -122,7 +122,9 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
         if (!res.ok) return
         const updated = await res.json()
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...updated } : j))
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error('[ClipsGallery] Poll error:', err instanceof Error ? err.message : String(err))
+      }
     }
 
     const interval = setInterval(() => {
@@ -133,7 +135,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     processingJobs.forEach(pollOne)
 
     return () => clearInterval(interval)
-  }, [jobs.map(j => `${j.id}:${j.status}`).join(',')])
+  }, [jobs])
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {

@@ -31,7 +31,6 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [processing, setProcessing] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [optionsLoading, setOptionsLoading] = useState(false)
 
   const onDrop = useCallback((acceptedFiles: File[], rejections: import('react-dropzone').FileRejection[]) => {
     setError(null)
@@ -286,7 +285,6 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         isOpen={showOptions}
         onClose={() => setShowOptions(false)}
         onStart={handleStart}
-        loading={optionsLoading}
       />
     </div>
   )
