@@ -88,9 +88,9 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
       const supabase = createSupabaseClient()
       const { data: { session } } = await supabase.auth.getSession()
       const userId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
-      const url = userId ? `/api/jobs?userId=${userId}` : '/api/jobs'
-      // Always bust cache with timestamp
-      const res = await fetch(`${url}&_t=${Date.now()}`, { cache: 'no-store' })
+      const params = new URLSearchParams({ _t: String(Date.now()) })
+      if (userId) params.set('userId', userId)
+      const res = await fetch(`/api/jobs?${params.toString()}`, { cache: 'no-store' })
       if (res.ok) {
         const data = await res.json()
         const jobs = Array.isArray(data) ? data : []
