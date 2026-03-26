@@ -158,11 +158,19 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     const supabase = createSupabaseClient()
     const { data: { session } } = await supabase.auth.getSession()
     const userId = session?.user?.id
-    for (const id of Array.from(selected)) {
-      await fetch(`/api/jobs/${id}?userId=${userId || ''}`, { method: 'DELETE' })
+    if (!userId) {
+      console.warn('[delete] no userId — aborting')
+      return
     }
+    const ids = Array.from(selected)
+    await Promise.all(
+      ids.map(id =>
+        fetch(`/api/jobs/${id}?userId=${userId}`, { method: 'DELETE' })
+          .then(r => { if (!r.ok) console.warn(`[delete] job ${id} failed: ${r.status}`) })
+          .catch(e => console.error(`[delete] job ${id} error:`, e))
+      )
+    )
     clearSelection()
-    // Always refetch from server after delete
     await fetchJobs()
   }
 
