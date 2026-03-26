@@ -73,21 +73,27 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
-    const supabase = createSupabaseClient()
-    const { data: { session } } = await supabase.auth.getSession()
-
-    // Use userId as query param to avoid REQUEST_HEADER_TOO_LARGE from large JWTs
-    const userId = session?.user?.id
-    const url = userId ? `/api/jobs?userId=${userId}` : '/api/jobs'
-    const res = await fetch(url)
-    if (res.ok) {
-      const data = await res.json()
-      setJobs(Array.isArray(data) ? data : [])
-    } else {
-      console.warn('Jobs fetch failed:', res.status, await res.text())
+    try {
+      const supabase = createSupabaseClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+      const url = userId ? `/api/jobs?userId=${userId}` : '/api/jobs'
+      // Always bust cache with timestamp
+      const res = await fetch(`${url}&_t=${Date.now()}`, { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        const jobs = Array.isArray(data) ? data : []
+        setJobs(jobs)
+      } else {
+        console.warn('Jobs fetch failed:', res.status)
+        setJobs([])
+      }
+    } catch (err) {
+      console.error('Jobs fetch error:', err)
       setJobs([])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
 
   useEffect(() => {
