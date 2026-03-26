@@ -37,10 +37,9 @@ export async function transcribeUrl(
     },
     body: JSON.stringify({
       audio_url: videoUrl,
-      auto_highlights: true,       // detect key phrases + highlights
-      auto_chapters: true,         // chapter detection (useful for long videos)
-      sentiment_analysis: false,   // skip — not needed yet
-      entity_detection: false,
+      speech_model: 'universal-2',  // required by AssemblyAI v2 API
+      auto_highlights: true,
+      auto_chapters: true,
     }),
   })
 
