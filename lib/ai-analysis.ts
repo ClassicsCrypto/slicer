@@ -7,7 +7,6 @@
  * 3. Results used as Shotstack render start times
  */
 
-import OpenAI from 'openai'
 import { transcribeUrl } from '@/lib/assemblyai'
 import type { AIFocus } from '@/types'
 
@@ -37,119 +36,88 @@ const AI_FOCUS_DESCRIPTIONS: Record<AIFocus, string> = {
  */
 /**
  * Transcribe video using AssemblyAI — passes URL directly, no file upload.
- * Falls back gracefully if key not set or transcription fails.
  */
 async function transcribeVideo(videoUrl: string): Promise<{
   text: string
   segments: { start: number; end: number; text: string }[]
+  highlights: { text: string; rank: number; timestamps: { start: number; end: number }[] }[]
 }> {
   console.log('[ai-analysis] transcribing via AssemblyAI...')
   const result = await transcribeUrl(videoUrl, 50000)
   return {
     text: result.text,
-    // Convert ms → seconds for consistency with the rest of the pipeline
     segments: result.segments.map(s => ({
       start: s.start / 1000,
       end: s.end / 1000,
       text: s.text,
     })),
+    highlights: result.highlights,
   }
 }
 
 /**
- * Use GPT-4o to analyze the transcript and pick the best clip timestamps
- * based on the user's selected AI focus categories.
+ * Pick best clip timestamps using AssemblyAI's auto_highlights.
+ * Highlights are key phrases detected as important by AssemblyAI's model.
+ * Falls back to evenly-spaced segments if no highlights found.
  */
-async function analyzeTranscript(
+function pickHighlightsFromTranscript(
   transcript: { text: string; segments: { start: number; end: number; text: string }[] },
+  rawHighlights: { text: string; rank: number; timestamps: { start: number; end: number }[] }[],
   options: {
     clipDuration: number
     clipCount: number
     aiFocus: AIFocus[]
-    videoDurationEstimate?: number
   }
-): Promise<AIHighlight[]> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
+): AIHighlight[] {
   const { clipDuration, clipCount, aiFocus } = options
 
-  // Build category descriptions for the prompt
-  const categoryDescriptions = aiFocus
-    .map(f => `- ${f}: ${AI_FOCUS_DESCRIPTIONS[f]}`)
-    .join('\n')
+  // Build candidate moments from AssemblyAI highlights (sorted by rank desc)
+  const candidates: { startTime: number; text: string; rank: number }[] = []
 
-  // Format transcript segments for GPT
-  const formattedTranscript = transcript.segments
-    .map(s => `[${s.start.toFixed(1)}s - ${s.end.toFixed(1)}s]: ${s.text}`)
-    .join('\n')
-
-  const systemPrompt = `You are an expert video editor specializing in gaming and social media content.
-Your job is to analyze video transcripts and identify the best moments to clip for social media virality.
-You understand what makes content engaging on TikTok, Twitter, and YouTube Shorts.
-Always respond with valid JSON only, no markdown, no explanation outside the JSON.`
-
-  const transcriptSummary = formattedTranscript.length > 0
-    ? `Transcript:\n${formattedTranscript}`
-    : `Note: No speech detected in the first portion of this video. It may be music, ambient sound, or gameplay without commentary. Use your best judgment to pick ${clipCount} evenly-spaced clips that would likely capture engaging moments based on the selected categories.`
-
-  const lastSegmentTime = transcript.segments.length > 0
-    ? transcript.segments[transcript.segments.length - 1].end
-    : clipDuration * clipCount * 2
-
-  const userPrompt = `Analyze this video and identify the ${clipCount} best moments to clip for social media.
-
-Each clip should be ${clipDuration} seconds long.
-Select moments that match these categories:
-${categoryDescriptions}
-
-${transcriptSummary}
-
-Return a JSON object with a "clips" array of exactly ${clipCount} clips. Each clip must have:
-- startTime: number (seconds, the best start point for a ${clipDuration}s clip)
-- categories: array of category names from [${aiFocus.join(', ')}] that this clip matches
-- reason: string (1 sentence explaining why this moment is clip-worthy)
-- confidence: number 0-100
-
-Rules:
-- Clips must not overlap (leave at least ${clipDuration}s between start times)
-- First clip can start at 0
-- Spread clips across the video timeline (don't cluster them all at the start)
-- Estimated video duration to work with: ~${Math.max(lastSegmentTime * 3, clipDuration * clipCount * 3)} seconds
-- Return ONLY valid JSON with a "clips" key
-
-Example: {"clips": [{"startTime": 42.5, "categories": ["hype_moments"], "reason": "High energy action sequence", "confidence": 85}]}`
-
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  })
-
-  const raw = completion.choices[0]?.message?.content || '[]'
-
-  try {
-    // GPT returns { clips: [...] } or just [...] depending on mood
-    const parsed = JSON.parse(raw)
-    const clips: AIHighlight[] = Array.isArray(parsed) ? parsed : (parsed.clips || parsed.moments || Object.values(parsed)[0] || [])
-
-    return clips
-      .slice(0, clipCount)
-      .map((clip: Partial<AIHighlight>) => ({
-        startTime: Number(clip.startTime) || 0,
-        endTime: (Number(clip.startTime) || 0) + clipDuration,
-        categories: (clip.categories || aiFocus.slice(0, 1)) as AIFocus[],
-        reason: clip.reason || 'Selected by AI',
-        confidence: Number(clip.confidence) || 75,
-      }))
-      .sort((a, b) => a.startTime - b.startTime)
-  } catch (err) {
-    console.error('[ai-analysis] GPT response parse failed:', err, raw)
-    return []
+  for (const h of rawHighlights.sort((a, b) => b.rank - a.rank)) {
+    for (const ts of h.timestamps) {
+      const startTime = Math.max(0, ts.start / 1000 - clipDuration * 0.3) // start slightly before the highlight
+      candidates.push({ startTime, text: h.text, rank: h.rank })
+    }
   }
+
+  // If no highlights, fall back to evenly-spaced segments from transcript
+  if (candidates.length === 0 && transcript.segments.length > 0) {
+    const totalDuration = transcript.segments[transcript.segments.length - 1].end
+    const step = totalDuration / (clipCount + 1)
+    for (let i = 1; i <= clipCount; i++) {
+      candidates.push({
+        startTime: step * i,
+        text: transcript.segments.find(s => s.start >= step * i)?.text || 'Key moment',
+        rank: 1,
+      })
+    }
+  }
+
+  // Deduplicate — ensure clips don't overlap
+  const selected: { startTime: number; text: string; rank: number }[] = []
+  for (const c of candidates) {
+    if (selected.length >= clipCount) break
+    const overlaps = selected.some(s => Math.abs(s.startTime - c.startTime) < clipDuration)
+    if (!overlaps) selected.push(c)
+  }
+
+  // If still not enough, pad with sequential fallback
+  while (selected.length < clipCount) {
+    const lastStart = selected.length > 0 ? selected[selected.length - 1].startTime : 0
+    selected.push({ startTime: lastStart + clipDuration + 5, text: 'Additional clip', rank: 0 })
+  }
+
+  return selected
+    .slice(0, clipCount)
+    .sort((a, b) => a.startTime - b.startTime)
+    .map((s, i) => ({
+      startTime: s.startTime,
+      endTime: s.startTime + clipDuration,
+      categories: aiFocus.length <= 1 ? aiFocus : aiFocus.slice(0, Math.max(1, Math.round(aiFocus.length * (s.rank || 0.5)))) as AIFocus[],
+      reason: s.text || 'Detected highlight moment',
+      confidence: Math.min(100, Math.round(s.rank * 100)),
+    }))
 }
 
 /**
@@ -167,8 +135,8 @@ export async function detectHighlightsAI(
 ): Promise<AIHighlight[]> {
   const { clipDuration, clipCount, aiFocus } = options
 
-  if (!process.env.OPENAI_API_KEY && !process.env.ASSEMBLYAI_API_KEY) {
-    console.warn('[ai-analysis] No API keys set — using sequential fallback')
+  if (!process.env.ASSEMBLYAI_API_KEY) {
+    console.warn('[ai-analysis] ASSEMBLYAI_API_KEY not set — using sequential fallback')
     return sequentialFallback(clipDuration, clipCount, aiFocus)
   }
 
@@ -184,9 +152,9 @@ export async function detectHighlightsAI(
       return sequentialFallback(clipDuration, clipCount, aiFocus)
     }
 
-    console.log('[ai-analysis] analyzing with GPT-4o...')
-    const highlights = await analyzeTranscript(transcript, options)
-    console.log(`[ai-analysis] GPT returned ${highlights.length} highlights`)
+    console.log(`[ai-analysis] using AssemblyAI highlights (${transcript.highlights.length} found)`)
+    const highlights = pickHighlightsFromTranscript(transcript, transcript.highlights, options)
+    console.log(`[ai-analysis] picked ${highlights.length} highlight segments`)
 
     if (highlights.length === 0) {
       return sequentialFallback(clipDuration, clipCount, aiFocus)

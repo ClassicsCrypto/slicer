@@ -11,9 +11,16 @@ export interface TranscriptSegment {
   text: string
 }
 
+export interface HighlightResult {
+  text: string
+  rank: number
+  timestamps: { start: number; end: number }[]
+}
+
 export interface TranscriptResult {
   text: string
   segments: TranscriptSegment[]
+  highlights: HighlightResult[]
 }
 
 /**
@@ -70,10 +77,18 @@ export async function transcribeUrl(
     if (data.status === 'completed') {
       // Convert AssemblyAI word timestamps to our segment format
       const segments = buildSegments(data.words || [], data.auto_highlights?.results || [])
-      console.log(`[assemblyai] done: ${data.text?.length || 0} chars, ${segments.length} segments`)
+      const highlights: HighlightResult[] = (data.auto_highlights?.results || []).map(
+        (h: { text: string; rank: number; timestamps: { start: number; end: number }[] }) => ({
+          text: h.text,
+          rank: h.rank,
+          timestamps: h.timestamps,
+        })
+      )
+      console.log(`[assemblyai] done: ${data.text?.length || 0} chars, ${segments.length} segments, ${highlights.length} highlights`)
       return {
         text: data.text || '',
         segments,
+        highlights,
       }
     }
 
