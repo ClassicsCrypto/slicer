@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getRenderStatus } from '@/lib/shotstack'
 import { v4 as uuidv4 } from 'uuid'
+import type { AIFocus } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -75,7 +76,7 @@ export async function GET(
   let newCompletedCount = savedRenderIds.length
 
   // Per-clip category + reason assignments saved during process submission
-  const clipCategories: string[][] = job.progress?.clipCategories || []
+  const clipCategories: AIFocus[][] = (job.progress?.clipCategories || []) as AIFocus[][]
   const clipReasons: string[] = job.progress?.clipReasons || []
 
   for (let i = 0; i < renderIds.length; i++) {
@@ -108,7 +109,8 @@ export async function GET(
         })
         if (insertError) {
           // code 23505 = unique_violation — means already saved, not a real error
-          if ((insertError as { code?: string }).code === '23505') {
+          const errorCode = (insertError as unknown as { code?: string }).code
+          if (errorCode === '23505') {
             console.log(`[poll] clip already saved for render ${renderId} — skipping`)
             savedRenderIds.push(renderId)
             newCompletedCount++

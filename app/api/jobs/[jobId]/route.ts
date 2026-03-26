@@ -48,14 +48,15 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Get job to find storage keys
-  const { data: job } = await supabase
+  const { data: job, error: fetchError } = await supabase
     .from('jobs')
     .select('*, clips(*)')
     .eq('id', params.jobId)
     .eq('user_id', userId)
     .single()
 
-  if (!job) {
+  if (fetchError || !job) {
+    console.error('[jobs/DELETE] Job fetch failed:', fetchError?.message || 'not found')
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 

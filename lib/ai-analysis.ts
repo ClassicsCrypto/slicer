@@ -199,47 +199,6 @@ export async function detectHighlightsAI(
   }
 }
 
-/**
- * Generate the SRT subtitle track from Whisper segments for a specific clip window.
- */
-export async function generateSubtitlesForClip(
-  videoUrl: string,
-  clipStartTime: number,
-  clipDuration: number
-): Promise<{ start: number; end: number; text: string }[]> {
-  if (!process.env.OPENAI_API_KEY) return []
-
-  try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-    const response = await fetch(videoUrl)
-    if (!response.ok) return []
-
-    const buffer = await response.arrayBuffer()
-    const blob = new Blob([buffer], { type: 'video/mp4' })
-    const file = new File([blob], 'video.mp4', { type: 'video/mp4' })
-
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
-    })
-
-    // Filter segments that fall within this clip's window
-    const clipEnd = clipStartTime + clipDuration
-    return (transcription.segments || [])
-      .filter((s: { start: number; end: number }) => s.start >= clipStartTime && s.start < clipEnd)
-      .map((s: { start: number; end: number; text: string }) => ({
-        start: s.start - clipStartTime,   // relative to clip start
-        end: Math.min(s.end - clipStartTime, clipDuration),
-        text: s.text.trim(),
-      }))
-  } catch (err) {
-    console.error('[ai-analysis] subtitle generation failed:', err)
-    return []
-  }
-}
-
 function sequentialFallback(clipDuration: number, clipCount: number, aiFocus: AIFocus[]): AIHighlight[] {
   console.warn('[ai-analysis] using sequential fallback')
   return Array.from({ length: clipCount }, (_, i) => ({

@@ -35,7 +35,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const onDrop = useCallback((acceptedFiles: File[], rejections: import('react-dropzone').FileRejection[]) => {
     setError(null)
     if (rejections.length > 0) {
-      setError(rejections[0].errors[0]?.message || 'Invalid file')
+      const firstError = rejections[0]?.errors[0]
+      setError(firstError?.message || 'Invalid file')
       return
     }
     if (acceptedFiles.length > 0) {

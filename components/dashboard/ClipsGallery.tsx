@@ -212,10 +212,16 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
   // Reusable processing card renderer
   const renderProcessingCard = (job: Job) => {
     const prog = job.progress || {}
-    const renderPct = (prog as Record<string, unknown>).renderPct as number | undefined
+    const renderPct = typeof (prog as Record<string, unknown>).renderPct === 'number'
+      ? (prog as Record<string, unknown>).renderPct as number
+      : undefined
     const est = prog.estimatedSecondsRemaining
-    const completedCount = (prog as Record<string, unknown>).completedCount as number | undefined
-    const totalRenders = ((prog as Record<string, unknown>).renderIds as string[] | undefined)?.length
+    const completedCount = typeof (prog as Record<string, unknown>).completedCount === 'number'
+      ? (prog as Record<string, unknown>).completedCount as number
+      : undefined
+    const totalRenders = Array.isArray((prog as Record<string, unknown>).renderIds)
+      ? ((prog as Record<string, unknown>).renderIds as string[]).length
+      : undefined
     const hasRealProgress = renderPct != null && renderPct > 0
     return (
       <div key={job.id} className="bg-surface border border-primary/30 rounded-2xl p-4 flex items-center gap-4 mb-3">

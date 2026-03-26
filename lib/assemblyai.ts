@@ -87,13 +87,24 @@ export async function transcribeUrl(
   throw new Error('AssemblyAI transcription timed out')
 }
 
+interface AssemblyWord {
+  start: number
+  end: number
+  text: string
+}
+
+interface AssemblyHighlight {
+  text: string
+  timestamps: { start: number; end: number }[]
+}
+
 /**
  * Build time-grouped segments from AssemblyAI word-level timestamps.
  * Groups words into ~5-second segments for GPT analysis.
  */
 function buildSegments(
-  words: { start: number; end: number; text: string }[],
-  highlights: { text: string; timestamps: { start: number; end: number }[] }[]
+  words: AssemblyWord[],
+  highlights: AssemblyHighlight[]
 ): TranscriptSegment[] {
   if (words.length === 0) {
     // No words — use highlight timestamps if available

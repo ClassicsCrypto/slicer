@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
     const token = req.headers.get('Authorization')?.replace('Bearer ', '') || ''
     if (token.length > 10) {
       try {
-        const { data: { user } } = await supabase.auth.getUser(token)
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+        if (authError) {
+          console.error('[jobs/GET] Auth error:', authError.message)
+        }
         userId = user?.id || null
       } catch (err) {
         console.error('[jobs/GET] Auth token validation failed:', err instanceof Error ? err.message : String(err))
