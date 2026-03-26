@@ -94,6 +94,7 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
       if (res.ok) {
         const data = await res.json()
         const jobs = Array.isArray(data) ? data : []
+        console.log('[gallery] fetched jobs:', jobs.length, 'userId:', userId)
         setJobs(jobs)
       } else {
         console.warn('Jobs fetch failed:', res.status)
@@ -108,8 +109,11 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
   }, [])
 
   useEffect(() => {
+    // Clear any stale cached state on mount
     fetchJobs()
   }, [fetchJobs])
+
+
 
   // Refetch when window gets focus (handles tab switching)
   useEffect(() => {
