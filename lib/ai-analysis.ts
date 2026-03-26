@@ -8,6 +8,7 @@
  */
 
 import OpenAI from 'openai'
+import { transcribeUrl } from '@/lib/assemblyai'
 import type { AIFocus } from '@/types'
 
 export interface AIHighlight {
@@ -34,50 +35,23 @@ const AI_FOCUS_DESCRIPTIONS: Record<AIFocus, string> = {
  * Downloads only the audio stream via URL (Whisper accepts URLs directly).
  * Returns transcript with timestamps.
  */
+/**
+ * Transcribe video using AssemblyAI — passes URL directly, no file upload.
+ * Falls back gracefully if key not set or transcription fails.
+ */
 async function transcribeVideo(videoUrl: string): Promise<{
   text: string
   segments: { start: number; end: number; text: string }[]
 }> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  const { toFile } = await import('openai')
-
-  // Fetch only the first 4MB via HTTP Range — covers ~1-2 min of audio
-  const MAX_BYTES = 4 * 1024 * 1024 // 4MB
-  const controller = new AbortController()
-  const fetchTimeout = setTimeout(() => controller.abort(), 20000)
-
-  const response = await fetch(videoUrl, {
-    headers: { 'Range': `bytes=0-${MAX_BYTES - 1}` },
-    signal: controller.signal,
-  })
-  clearTimeout(fetchTimeout)
-
-  if (!response.ok && response.status !== 206) {
-    throw new Error(`Failed to fetch video: ${response.status}`)
-  }
-
-  // Use toFile with the response stream — avoids loading into memory + streams directly to OpenAI
-  const contentLength = response.headers.get('content-length')
-  console.log(`[ai-analysis] streaming ${contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(1)}MB` : 'chunk'} to Whisper`)
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const audioFile = await toFile(response.body as any, 'audio.mp4', { type: 'video/mp4' })
-
-  const transcription = await openai.audio.transcriptions.create({
-    file: audioFile,
-    model: 'whisper-1',
-    response_format: 'verbose_json',
-    timestamp_granularities: ['segment'],
-  })
-
-  console.log(`[ai-analysis] Whisper done: ${transcription.text.length} chars, ${(transcription.segments || []).length} segments`)
-
+  console.log('[ai-analysis] transcribing via AssemblyAI...')
+  const result = await transcribeUrl(videoUrl, 50000)
   return {
-    text: transcription.text,
-    segments: (transcription.segments || []).map((s: { start: number; end: number; text: string }) => ({
-      start: s.start,
-      end: s.end,
-      text: s.text.trim(),
+    text: result.text,
+    // Convert ms → seconds for consistency with the rest of the pipeline
+    segments: result.segments.map(s => ({
+      start: s.start / 1000,
+      end: s.end / 1000,
+      text: s.text,
     })),
   }
 }
@@ -193,8 +167,8 @@ export async function detectHighlightsAI(
 ): Promise<AIHighlight[]> {
   const { clipDuration, clipCount, aiFocus } = options
 
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn('[ai-analysis] OPENAI_API_KEY not set — using sequential fallback')
+  if (!process.env.OPENAI_API_KEY && !process.env.ASSEMBLYAI_API_KEY) {
+    console.warn('[ai-analysis] No API keys set — using sequential fallback')
     return sequentialFallback(clipDuration, clipCount, aiFocus)
   }
 
