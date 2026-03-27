@@ -56,13 +56,30 @@ export async function GET(
   const renderIds: string[] = job.progress?.renderIds || []
   console.log(`[poll] job ${params.jobId} renderIds: ${renderIds.length} shotstack_key: ${!!process.env.SHOTSTACK_API_KEY}`)
 
-  if (!renderIds.length || !process.env.SHOTSTACK_API_KEY) {
-    console.log(`[poll] no renderIds or no key — simulation mode`)
+  if (!process.env.SHOTSTACK_API_KEY) {
+    // No Shotstack key at all — simulation mode
+    console.log(`[poll] no shotstack key — simulation mode`)
     await supabase.from('jobs').update({
       status: 'complete',
       progress: { ...job.progress, rendering: 'done', finalizing: 'done', estimatedSecondsRemaining: 0 },
     }).eq('id', params.jobId)
     return NextResponse.json({ ...job, status: 'complete', clips: [] })
+  }
+
+  if (!renderIds.length) {
+    // renderIds not yet saved — process route is still running (AssemblyAI + Shotstack submission)
+    // Check how old the job is — if > 90s with no renderIds, something went wrong
+    const jobAge = Date.now() - new Date(job.created_at).getTime()
+    if (jobAge > 90000) {
+      console.log(`[poll] no renderIds after 90s — marking failed`)
+      await supabase.from('jobs').update({
+        status: 'failed',
+        progress: { ...job.progress, rendering: 'done', finalizing: 'done', estimatedSecondsRemaining: 0 },
+      }).eq('id', params.jobId)
+      return NextResponse.json({ ...job, status: 'failed', clips: [] })
+    }
+    console.log(`[poll] renderIds not yet saved (job age: ${Math.round(jobAge/1000)}s) — waiting`)
+    return NextResponse.json({ ...job, status: 'processing', clips: [] })
   }
 
   // Check each render
