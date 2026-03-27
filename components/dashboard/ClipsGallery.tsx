@@ -150,7 +150,8 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
     processingJobs.forEach(pollOne)
 
     return () => clearInterval(interval)
-  }, [jobs])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.map(j => `${j.id}:${j.status}`).join(',')])
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
