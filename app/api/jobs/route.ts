@@ -30,9 +30,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // DEV MODE bypass — use fixed dev user when SKIP_AUTH is enabled
-  if (!userId && process.env.SKIP_AUTH === 'true') {
-    userId = process.env.DEV_USER_ID || 'dev-user-fixed'
+  // DEV MODE bypass — only if a valid DEV_USER_ID is configured
+  if (!userId && process.env.SKIP_AUTH === 'true' && process.env.DEV_USER_ID) {
+    userId = process.env.DEV_USER_ID
   }
 
   if (!userId) {
@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false })
 
   if (error) {
+    console.error('[jobs/GET] DB error:', error.message, 'userId:', userId)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
