@@ -63,38 +63,13 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
     }
   ]
 
-  // Add subtitle overlays
-  if (spec.subtitles && spec.subtitles.length > 0) {
-    for (const cue of spec.subtitles) {
-      clips.push({
-        asset: {
-          type: 'html',
-          html: `<p style="color:${cue.color || '#ffffff'};font-size:40px;font-weight:bold;text-align:center;text-shadow:2px 2px 4px rgba(0,0,0,0.8)">${cue.text}</p>`,
-          width: outputRes.width,
-          height: 120,
-        },
-        start: 0,
-        length: duration,
-        position: 'bottom',
-        offset: { y: -0.1 },
-      })
-    }
-  }
+  // Subtitle overlays — disabled in sandbox (html asset type causes render hangs)
+  // TODO: re-enable in production with text asset type
+  // if (spec.subtitles && spec.subtitles.length > 0) { ... }
 
-  // Add "Made with Slicer" outro — text only (sandbox doesn't support color asset type)
-  if (spec.madeWithSlicer) {
-    clips.push({
-      asset: {
-        type: 'html',
-        html: `<div style="width:${outputRes.width}px;height:${outputRes.height}px;background-color:#00BFA5;display:table;"><div style="display:table-cell;vertical-align:middle;text-align:center;"><p style="color:#000000;font-size:64px;font-weight:900;font-family:Arial,sans-serif;margin:0;">Slicer</p><p style="color:#003D33;font-size:30px;font-family:Arial,sans-serif;margin:8px 0 0;">by Mars Cats Voyage</p></div></div>`,
-        width: outputRes.width,
-        height: outputRes.height,
-      },
-      start: duration,
-      length: 2,
-      position: 'center',
-    })
-  }
+  // "Made with Slicer" outro — disabled in sandbox (html asset type causes render hangs)
+  // TODO: re-enable in production with a proper image asset
+  // if (spec.madeWithSlicer) { ... }
 
   const payload = {
     timeline: {
