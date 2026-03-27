@@ -41,15 +41,13 @@ export async function GET(req: NextRequest) {
 
   const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(-8) || 'MISSING'
   console.log('[jobs/GET] querying for userId:', userId, 'key ends:', keyPreview)
-  // Debug: first check total row count with no filters
-  const { data: allJobs } = await supabase.from('jobs').select('id, user_id')
-  console.log('[jobs/GET] total rows in table:', allJobs?.length ?? 0, 'sample:', JSON.stringify(allJobs?.slice(0,2)))
-
+  // Fetch jobs without nested clips join (join was causing filter to return 0)
   const { data: jobs, error } = await supabase
     .from('jobs')
-    .select('*, clips(*)')
+    .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
+
   console.log('[jobs/GET] result count:', jobs?.length ?? 0, error?.message ?? 'no error')
 
   if (error) {
@@ -57,7 +55,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json(jobs, {
+  // Fetch clips separately for each job
+  const jobsWithClips = await Promise.all(
+    (jobs || []).map(async (job) => {
+      const { data: clips } = await supabase
+        .from('clips')
+        .select('*')
+        .eq('job_id', job.id)
+      return { ...job, clips: clips || [] }
+    })
+  )
+
+  return NextResponse.json(jobsWithClips, {
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',
