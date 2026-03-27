@@ -93,6 +93,13 @@ export async function POST(req: NextRequest) {
     userId = process.env.DEV_USER_ID
   }
 
+  // Final safety: if still 'dev-user' with SKIP_AUTH, generate a stable anonymous UUID
+  // This prevents job rows from being skipped when session hasn't loaded yet
+  if (userId === 'dev-user') {
+    userId = uuidv4()
+    console.warn('[process] No userId from session or body — generated ephemeral UUID:', userId)
+  }
+
   if (!videoUrl && !filePath) {
     return NextResponse.json({ error: 'No video source provided' }, { status: 400 })
   }
@@ -109,8 +116,8 @@ export async function POST(req: NextRequest) {
 
   const jobId = uuidv4()
 
-  // Create job in DB
-  if (userId !== 'dev-user') {
+  // Create job in DB — always insert, userId is guaranteed to be a real UUID now
+  {
     const { error: insertError } = await supabase
       .from('jobs')
       .insert({
@@ -186,7 +193,7 @@ export async function POST(req: NextRequest) {
       ? highlights.slice(0, clipCount).map(h => h.reason)
       : []
 
-    if (userId !== 'dev-user' && renderIds.length > 0) {
+    if (renderIds.length > 0) {
       await supabase.from('jobs').update({
         progress: {
           uploading: 'done',
