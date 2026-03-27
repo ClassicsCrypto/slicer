@@ -54,9 +54,10 @@ export async function GET(
   }
 
   const renderIds: string[] = job.progress?.renderIds || []
+  console.log(`[poll] job ${params.jobId} renderIds: ${renderIds.length} shotstack_key: ${!!process.env.SHOTSTACK_API_KEY}`)
 
   if (!renderIds.length || !process.env.SHOTSTACK_API_KEY) {
-    // No Shotstack renders — simulation mode, just mark complete
+    console.log(`[poll] no renderIds or no key — simulation mode`)
     await supabase.from('jobs').update({
       status: 'complete',
       progress: { ...job.progress, rendering: 'done', finalizing: 'done', estimatedSecondsRemaining: 0 },
