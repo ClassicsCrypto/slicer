@@ -41,6 +41,10 @@ export async function GET(req: NextRequest) {
 
   const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(-8) || 'MISSING'
   console.log('[jobs/GET] querying for userId:', userId, 'key ends:', keyPreview)
+  // Debug: first check total row count with no filters
+  const { data: allJobs } = await supabase.from('jobs').select('id, user_id')
+  console.log('[jobs/GET] total rows in table:', allJobs?.length ?? 0, 'sample:', JSON.stringify(allJobs?.slice(0,2)))
+
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*, clips(*)')
