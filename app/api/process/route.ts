@@ -163,6 +163,31 @@ export async function POST(req: NextRequest) {
       console.error('[process] AI analysis failed, falling back to sequential:', err)
     }
 
+    // Save per-clip categories + reasons from AI analysis (or fallback)
+    const clipCategories: AIFocus[][] = highlights
+      ? highlights.slice(0, clipCount).map(h => h.categories)
+      : Array.from({ length: clipCount }, (_, i) => assignCategoriesForClip(options.aiFocus || [], i, clipCount))
+
+    const clipReasons: string[] = highlights
+      ? highlights.slice(0, clipCount).map(h => h.reason)
+      : []
+
+    // Save categories/reasons immediately before submitting renders
+    // so they're available even if the function times out mid-loop
+    await supabase.from('jobs').update({
+      progress: {
+        uploading: 'done',
+        analyzing: 'done',
+        detecting: 'done',
+        subtitles: 'done',
+        rendering: true,
+        renderIds: [],
+        clipCategories,
+        clipReasons,
+        estimatedSecondsRemaining: 90,
+      }
+    }).eq('id', jobId)
+
     for (let i = 0; i < clipCount; i++) {
       // Use AI-detected timestamp if available, otherwise sequential fallback
       const startTime = highlights?.[i]?.startTime ?? i * Math.ceil(clipDuration / 2)
@@ -179,34 +204,25 @@ export async function POST(req: NextRequest) {
           subtitles: subtitleCues,
         })
         renderIds.push(renderId)
+        // Save renderIds incrementally after each submission
+        // This ensures renderIds are in DB even if function times out mid-loop
+        await supabase.from('jobs').update({
+          progress: {
+            uploading: 'done',
+            analyzing: 'done',
+            detecting: 'done',
+            subtitles: 'done',
+            rendering: true,
+            renderIds: [...renderIds],
+            clipCategories,
+            clipReasons,
+            estimatedSecondsRemaining: 90,
+          }
+        }).eq('id', jobId)
+        console.log(`[process] render ${i + 1}/${clipCount} submitted: ${renderId}`)
       } catch (err) {
         console.error(`Failed to submit render ${i}:`, err)
       }
-    }
-
-    // Save per-clip categories + reasons from AI analysis (or fallback)
-    const clipCategories: AIFocus[][] = highlights
-      ? highlights.slice(0, clipCount).map(h => h.categories)
-      : Array.from({ length: clipCount }, (_, i) => assignCategoriesForClip(options.aiFocus || [], i, clipCount))
-
-    const clipReasons: string[] = highlights
-      ? highlights.slice(0, clipCount).map(h => h.reason)
-      : []
-
-    if (renderIds.length > 0) {
-      await supabase.from('jobs').update({
-        progress: {
-          uploading: 'done',
-          analyzing: 'done',
-          detecting: 'done',
-          subtitles: 'done',
-          rendering: true,
-          renderIds,
-          clipCategories,
-          clipReasons,
-          estimatedSecondsRemaining: 90,
-        }
-      }).eq('id', jobId)
     }
   }
 
