@@ -43,7 +43,7 @@ async function transcribeVideo(videoUrl: string): Promise<{
   highlights: { text: string; rank: number; timestamps: { start: number; end: number }[] }[]
 }> {
   console.log('[ai-analysis] transcribing via AssemblyAI...')
-  const result = await transcribeUrl(videoUrl, 50000)
+  const result = await transcribeUrl(videoUrl, 10000)
   return {
     text: result.text,
     segments: result.segments.map(s => ({

@@ -70,7 +70,7 @@ export async function GET(
     // renderIds not yet saved — process route is still running (AssemblyAI + Shotstack submission)
     // Check how old the job is — if > 90s with no renderIds, something went wrong
     const jobAge = Date.now() - new Date(job.created_at).getTime()
-    if (jobAge > 90000) {
+    if (jobAge > 120000) {
       console.log(`[poll] no renderIds after 90s — marking failed`)
       await supabase.from('jobs').update({
         status: 'failed',
