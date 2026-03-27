@@ -39,11 +39,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  console.log('[jobs/GET] querying for userId:', userId)
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*, clips(*)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
+  console.log('[jobs/GET] result count:', jobs?.length ?? 0, error?.message ?? 'no error')
 
   if (error) {
     console.error('[jobs/GET] DB error:', error.message, 'userId:', userId)
