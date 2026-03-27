@@ -16,6 +16,9 @@ export const createSupabaseClient = () => {
       auth: {
         persistSession: true,
         storageKey: 'slicer-auth',
+        storage: window.localStorage,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
       },
     })
   }
