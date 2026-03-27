@@ -39,7 +39,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  console.log('[jobs/GET] querying for userId:', userId)
+  const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(-8) || 'MISSING'
+  console.log('[jobs/GET] querying for userId:', userId, 'key ends:', keyPreview)
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*, clips(*)')
