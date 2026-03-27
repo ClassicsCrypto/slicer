@@ -36,8 +36,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
+      if (session?.user) {
         setUser(session.user)
+        setLoading(false)
+      } else if (process.env.NEXT_PUBLIC_SKIP_AUTH === 'true') {
+        // Auto sign-in anonymously — persistent userId, no login screen
+        try {
+          const { data } = await supabase.auth.signInAnonymously()
+          if (data?.user) setUser(data.user)
+        } catch (e) {
+          console.error('[dashboard] anon sign-in failed:', e)
+        }
         setLoading(false)
       } else {
         setLoading(false)
