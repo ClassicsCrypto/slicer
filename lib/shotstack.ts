@@ -137,6 +137,8 @@ export async function getRenderStatus(renderId: string): Promise<{ status: strin
   const data = await response.json()
   const render = data.response
 
+  console.log(`[shotstack] render ${renderId} raw: status=${render.status} url=${render.url || 'none'} poster=${render.poster || 'none'}`)
+
   return {
     status: render.status, // queued | fetching | rendering | saving | done | failed
     url: render.url,       // available when status === 'done'
