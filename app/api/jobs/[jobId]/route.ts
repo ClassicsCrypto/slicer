@@ -27,7 +27,7 @@ export async function GET(
 
   const { data: job, error } = await supabase
     .from('jobs')
-    .select('*, clips(*)')
+    .select('*')
     .eq('id', params.jobId)
     .eq('user_id', userId)
     .single()
@@ -36,7 +36,8 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  return NextResponse.json(job)
+  const { data: jobClips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
+  return NextResponse.json({ ...job, clips: jobClips || [] })
 }
 
 export async function DELETE(
@@ -47,26 +48,28 @@ export async function DELETE(
   const userId = getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Get job to find storage keys
+  // Get job (fetch clips separately to avoid PostgREST nested join + filter bug)
   const { data: job, error: fetchError } = await supabase
     .from('jobs')
-    .select('*, clips(*)')
+    .select('*')
     .eq('id', params.jobId)
     .eq('user_id', userId)
     .single()
 
   if (fetchError || !job) {
-    console.error('[jobs/DELETE] Job fetch failed:', fetchError?.message || 'not found')
+    console.error('[jobs/DELETE] Job fetch failed:', fetchError?.message || 'not found', 'jobId:', params.jobId, 'userId:', userId)
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
+
+  const { data: clips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
 
   // Delete files from Supabase Storage (ignore errors — files may not exist)
   const keysToDelete: string[] = []
   if (job.r2_key && !job.r2_key.startsWith('pending/') && !job.r2_key.startsWith('http')) {
     keysToDelete.push(job.r2_key)
   }
-  if (job.clips) {
-    for (const clip of job.clips) {
+  if (clips) {
+    for (const clip of clips) {
       if (clip.r2_key && !clip.r2_key.startsWith('http')) {
         keysToDelete.push(clip.r2_key)
       }
