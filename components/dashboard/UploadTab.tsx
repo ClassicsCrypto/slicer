@@ -28,6 +28,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [urlInput, setUrlInput] = useState('')
   const [jobName, setJobName] = useState('')
   const [showOptions, setShowOptions] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -76,7 +77,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const handleStart = async (options: ProcessingOptions, modalTitle?: string) => {
     if (modalTitle) setJobName(modalTitle)
     setShowOptions(false)
-    setProcessing(true)
+    setSubmitting(true)
     setError(null)
 
     try {
@@ -132,24 +133,45 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       if (res.ok) {
         const { jobId: realJobId } = await res.json()
         setJobId(realJobId)
+        setSubmitting(false)
+        setProcessing(true)
       } else {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         setError(errData.error || `Server error: ${res.status}`)
-        setProcessing(false)
+        setSubmitting(false)
       }
     } catch (err) {
       console.error('Processing error:', err)
       setError('Failed to submit video. Please try again.')
-      setProcessing(false)
+      setSubmitting(false)
     }
   }
 
   const handleCancel = () => {
+    setSubmitting(false)
     setProcessing(false)
     setJobId(null)
     setFile(null)
     setUrl('')
     setUrlInput('')
+  }
+
+  if (submitting) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] py-12 px-4">
+        <div className="mb-6 relative flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full bg-primary/20 blur-3xl scale-125 animate-pulse" />
+          <video src="/slicer-cat.mp4" autoPlay loop muted playsInline width={180} height={180}
+            className="relative rounded-2xl drop-shadow-[0_0_32px_rgba(0,191,165,0.8)]" />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">⚡ Submitting Video...</h2>
+        <p className="text-muted text-sm mb-6">Setting up your clips — this only takes a moment</p>
+        <div className="w-full max-w-xs h-2 bg-white/10 rounded-full overflow-hidden">
+          <div className="h-full w-1/3 bg-gradient-to-r from-primary to-accent rounded-full"
+            style={{ animation: 'shimmer 1.5s ease-in-out infinite' }} />
+        </div>
+      </div>
+    )
   }
 
   if (processing) {
