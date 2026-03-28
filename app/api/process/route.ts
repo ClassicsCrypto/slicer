@@ -7,7 +7,8 @@ import type { ProcessingOptions, AIFocus } from '@/types'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const SHOTSTACK_ENABLED = !!process.env.SHOTSTACK_API_KEY
+// CLIP_MODE: "shotstack" = real renders (costs credits), "instant" = source URL segments (free)
+const CLIP_MODE = process.env.CLIP_MODE || (process.env.SHOTSTACK_API_KEY ? 'shotstack' : 'instant')
 
 function getSupabase() {
   return createClient(
@@ -16,9 +17,6 @@ function getSupabase() {
   )
 }
 
-/**
- * Distribute selected categories across clips so each clip gets a subset.
- */
 function assignCategoriesForClip(aiFocus: AIFocus[], clipIndex: number): AIFocus[] {
   if (!aiFocus || aiFocus.length === 0) return []
   if (aiFocus.length === 1) return aiFocus
@@ -32,20 +30,14 @@ function assignCategoriesForClip(aiFocus: AIFocus[], clipIndex: number): AIFocus
 export async function POST(req: NextRequest) {
   const supabase = getSupabase()
 
-  // --- Resolve userId ---
   const body = await req.json()
   const { videoUrl, filePath, publicUrl, options, title, userId: bodyUserId } = body as {
-    videoUrl?: string
-    filePath?: string
-    publicUrl?: string
-    options: ProcessingOptions
-    title?: string
-    userId?: string
+    videoUrl?: string; filePath?: string; publicUrl?: string
+    options: ProcessingOptions; title?: string; userId?: string
   }
 
-  // Priority: body userId (from frontend) > auth token > env fallback > generated
+  // Resolve userId
   let userId = bodyUserId || 'dev-user'
-
   if (userId === 'dev-user') {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     if (token.length > 10) {
@@ -55,40 +47,94 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
   }
-
   if (userId === 'dev-user' && process.env.SKIP_AUTH === 'true' && process.env.DEV_USER_ID) {
     userId = process.env.DEV_USER_ID
   }
-
   if (userId === 'dev-user') {
     userId = uuidv4()
-    console.warn('[process] generated ephemeral userId:', userId)
   }
 
-  // --- Validate input ---
   if (!videoUrl && !filePath) {
     return NextResponse.json({ error: 'No video source provided' }, { status: 400 })
   }
 
   const sourceUrl = publicUrl || (videoUrl?.startsWith('http') ? videoUrl : '')
 
-  if (SHOTSTACK_ENABLED && !sourceUrl) {
+  if (!sourceUrl) {
     return NextResponse.json({
       error: 'Please upload a video file directly — YouTube/Twitch URLs are not supported yet.'
     }, { status: 400 })
   }
 
-  // --- Create job ---
   const jobId = uuidv4()
   const jobTitle = title || (videoUrl
     ? new URL(videoUrl).pathname.split('/').pop()?.replace(/\.[^.]+$/, '') || 'Video'
     : 'Untitled')
 
+  const clipCount = Math.min(options.clipCount || 3, 10)
+  const clipDuration = Math.min(parseInt(options.clipLength as string) || 30, 60)
+
+  const clipCategories = Array.from({ length: clipCount }, (_, i) =>
+    assignCategoriesForClip(options.aiFocus || [], i)
+  )
+  const clipReasons = Array.from({ length: clipCount }, () => 'Sequential clip placement')
+
+  // --- INSTANT MODE: create clips immediately from source URL ---
+  if (CLIP_MODE === 'instant') {
+    const completedClips = Array.from({ length: clipCount }, (_, i) => {
+      const startTime = i * Math.ceil(clipDuration / 2)
+      const endTime = startTime + clipDuration
+      return {
+        id: uuidv4(),
+        job_id: jobId,
+        render_id: `instant-${i}`,
+        r2_key: `${sourceUrl}#t=${startTime},${endTime}`,
+        duration: clipDuration,
+        start_time: startTime,
+        end_time: endTime,
+        matched_categories: clipCategories[i] || [],
+        ai_reason: clipReasons[i] || 'Sequential clip placement',
+        created_at: new Date().toISOString(),
+      }
+    })
+
+    const { error: insertError } = await supabase.from('jobs').insert({
+      id: jobId,
+      user_id: userId,
+      title: jobTitle,
+      source_url: sourceUrl,
+      r2_key: filePath || null,
+      status: 'complete',
+      options,
+      progress: {
+        uploading: 'done',
+        analyzing: 'done',
+        detecting: 'done',
+        rendering: 'done',
+        renderIds: completedClips.map(c => c.render_id),
+        completedClips,
+        clipCategories,
+        clipReasons,
+        completedCount: clipCount,
+        estimatedSecondsRemaining: 0,
+      },
+    })
+
+    if (insertError) {
+      console.error('[process] insert error:', insertError)
+      return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
+    }
+
+    console.log(`[process] INSTANT job ${jobId} — ${clipCount} clips ready immediately`)
+    return NextResponse.json({ jobId })
+  }
+
+  // --- SHOTSTACK MODE: submit real renders ---
   const { error: insertError } = await supabase.from('jobs').insert({
     id: jobId,
     user_id: userId,
     title: jobTitle,
-    source_url: sourceUrl || videoUrl || null,
+    source_url: sourceUrl,
     r2_key: filePath || null,
     status: 'processing',
     options,
@@ -98,62 +144,43 @@ export async function POST(req: NextRequest) {
       detecting: 'done',
       rendering: true,
       renderIds: [],
+      clipCategories,
+      clipReasons,
       estimatedSecondsRemaining: 120,
     },
   })
 
   if (insertError) {
-    console.error('[process] job insert error:', insertError)
+    console.error('[process] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
   }
 
   console.log(`[process] job ${jobId} created for user ${userId}`)
 
-  // --- Submit Shotstack renders ---
-  if (SHOTSTACK_ENABLED && sourceUrl) {
-    const clipCount = Math.min(options.clipCount || 3, 10)
-    const clipDuration = Math.min(parseInt(options.clipLength as string) || 30, 60)
-    const renderIds: string[] = []
-
-    // Assign categories per clip
-    const clipCategories = Array.from({ length: clipCount }, (_, i) =>
-      assignCategoriesForClip(options.aiFocus || [], i)
-    )
-    const clipReasons = Array.from({ length: clipCount }, () => 'Sequential clip placement')
-
-    for (let i = 0; i < clipCount; i++) {
-      const startTime = i * Math.ceil(clipDuration / 2)
-      const endTime = startTime + clipDuration
-
-      try {
-        const renderId = await renderClip({
-          sourceUrl,
-          startTime,
-          endTime,
-          outputFormat: 'mp4',
-          outputQuality: options.outputQuality,
-          platformFormat: options.platformFormat,
-        })
-        renderIds.push(renderId)
-
-        // Save renderIds incrementally — survives Vercel timeout
-        await supabase.from('jobs').update({
-          progress: {
-            uploading: 'done',
-            analyzing: 'done',
-            detecting: 'done',
-            rendering: true,
-            renderIds: [...renderIds],
-            clipCategories,
-            clipReasons,
-            estimatedSecondsRemaining: 90,
-          },
-        }).eq('id', jobId)
-
-        console.log(`[process] render ${i + 1}/${clipCount} submitted: ${renderId}`)
-      } catch (err) {
-        console.error(`[process] render ${i} failed:`, err)
-      }
+  const renderIds: string[] = []
+  for (let i = 0; i < clipCount; i++) {
+    const startTime = i * Math.ceil(clipDuration / 2)
+    const endTime = startTime + clipDuration
+    try {
+      const renderId = await renderClip({
+        sourceUrl, startTime, endTime,
+        outputFormat: 'mp4',
+        outputQuality: options.outputQuality,
+        platformFormat: options.platformFormat,
+      })
+      renderIds.push(renderId)
+      await supabase.from('jobs').update({
+        progress: {
+          uploading: 'done', analyzing: 'done', detecting: 'done',
+          rendering: true,
+          renderIds: [...renderIds],
+          clipCategories, clipReasons,
+          estimatedSecondsRemaining: 90,
+        },
+      }).eq('id', jobId)
+      console.log(`[process] render ${i + 1}/${clipCount}: ${renderId}`)
+    } catch (err) {
+      console.error(`[process] render ${i} failed:`, err)
     }
   }
 
