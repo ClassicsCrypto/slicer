@@ -58,10 +58,11 @@ export async function GET(req: NextRequest) {
   // Fetch clips separately for each job
   const jobsWithClips = await Promise.all(
     (jobs || []).map(async (job) => {
-      const { data: clips } = await supabase
+      const { data: clips, error: clipsError } = await supabase
         .from('clips')
         .select('*')
         .eq('job_id', job.id)
+      console.log(`[jobs/GET] job ${job.id} clips: ${clips?.length ?? 0} error: ${clipsError?.message ?? 'none'}`)
       return { ...job, clips: clips || [] }
     })
   )
