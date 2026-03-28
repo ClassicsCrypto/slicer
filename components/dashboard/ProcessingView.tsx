@@ -15,6 +15,7 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
   const [totalClips, setTotalClips] = useState(0)
   const [eta, setEta] = useState<number | null>(null)
   const completed = useRef(false)
+  const hasShownRendering = useRef(false)
 
   useEffect(() => {
     if (completed.current) return
@@ -40,7 +41,8 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
         setTotalClips(renderIds.length)
         setClipsReady(clips.length)
 
-        if (renderIds.length > 0) {
+        if (renderIds.length > 0 && !hasShownRendering.current) {
+          hasShownRendering.current = true
           setPhase('rendering')
         }
 
@@ -51,9 +53,23 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
         if (data.status === 'complete') {
           if (!completed.current) {
             completed.current = true
-            setPhase('complete')
-            setClipsReady(clips.length || renderIds.length)
-            setTimeout(onComplete, 2000)
+            // If we never showed the rendering phase, show it briefly first
+            if (!hasShownRendering.current) {
+              hasShownRendering.current = true
+              setPhase('rendering')
+              setClipsReady(0)
+              setTotalClips(renderIds.length || clips.length)
+              // Show rendering for 2s, then complete for 2s, then redirect
+              setTimeout(() => {
+                setClipsReady(clips.length || renderIds.length)
+                setPhase('complete')
+                setTimeout(onComplete, 2000)
+              }, 2000)
+            } else {
+              setPhase('complete')
+              setClipsReady(clips.length || renderIds.length)
+              setTimeout(onComplete, 2000)
+            }
           }
         } else if (data.status === 'failed') {
           setPhase('failed')
