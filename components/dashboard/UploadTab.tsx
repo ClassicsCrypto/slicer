@@ -85,10 +85,11 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     const run = async () => {
       try {
         const supabase = createSupabaseClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        // Dev mode: always use fixed UUID — skip session lookup to avoid rotation
+        const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
+        const currentUserId = devUserId || (await supabase.auth.getSession()).data?.session?.user?.id
         // Pass userId in body to avoid REQUEST_HEADER_TOO_LARGE from large JWTs
         const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-        const currentUserId = session?.user?.id || process.env.NEXT_PUBLIC_DEV_USER_ID
 
         const finalTitle = modalTitle?.trim() || jobName.trim() || undefined
         let body: Record<string, unknown> = { options, userId: currentUserId, title: finalTitle }
