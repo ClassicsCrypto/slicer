@@ -20,189 +20,116 @@ export async function GET(
 ) {
   const supabase = getSupabase()
 
-  const reqUrl = new URL(req.url)
-  const queryUserId = reqUrl.searchParams.get('userId')
-  let userId = queryUserId || 'dev-user'
-
-  if (!queryUserId) {
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '') || ''
-    if (token.length > 10) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser(token)
-        if (user) userId = user.id
-      } catch (err) {
-        console.error('[poll/GET] Auth token validation failed:', err instanceof Error ? err.message : String(err))
-      }
-    }
-  }
-
-  // Get job + current progress — no user_id filter here, service role handles auth
-  const { data: job, error: jobError } = await supabase
+  // Get job
+  const { data: job, error } = await supabase
     .from('jobs')
     .select('*')
     .eq('id', params.jobId)
     .single()
 
-  if (jobError || !job) {
+  if (error || !job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  // Already done or failed — just return current state
+  // Already done or failed
   if (job.status === 'complete' || job.status === 'failed') {
-    const { data: clips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
-    return NextResponse.json({ ...job, clips: clips || [] })
+    return NextResponse.json({
+      ...job,
+      clips: job.progress?.completedClips || [],
+    })
   }
 
   const renderIds: string[] = job.progress?.renderIds || []
-  console.log(`[poll] job ${params.jobId} renderIds: ${renderIds.length} shotstack_key: ${!!process.env.SHOTSTACK_API_KEY}`)
 
-  if (!process.env.SHOTSTACK_API_KEY) {
-    // No Shotstack key at all — simulation mode
-    console.log(`[poll] no shotstack key — simulation mode`)
-    await supabase.from('jobs').update({
-      status: 'complete',
-      progress: { ...job.progress, rendering: 'done', finalizing: 'done', estimatedSecondsRemaining: 0 },
-    }).eq('id', params.jobId)
-    return NextResponse.json({ ...job, status: 'complete', clips: [] })
-  }
-
+  // No renderIds yet — process route still running
   if (!renderIds.length) {
-    // renderIds not yet saved — process route is still running (AssemblyAI + Shotstack submission)
-    // Check how old the job is — if > 90s with no renderIds, something went wrong
     const jobAge = Date.now() - new Date(job.created_at).getTime()
     if (jobAge > 120000) {
-      console.log(`[poll] no renderIds after 90s — marking failed`)
       await supabase.from('jobs').update({
         status: 'failed',
-        progress: { ...job.progress, rendering: 'done', finalizing: 'done', estimatedSecondsRemaining: 0 },
+        progress: { ...job.progress, completedClips: [] },
       }).eq('id', params.jobId)
       return NextResponse.json({ ...job, status: 'failed', clips: [] })
     }
-    console.log(`[poll] renderIds not yet saved (job age: ${Math.round(jobAge/1000)}s) — waiting`)
-    return NextResponse.json({ ...job, status: 'processing', clips: [] })
+    return NextResponse.json({ ...job, clips: [] })
   }
 
-  // Check each render
-  const options = job.options || {}
-  const clipDuration = parseInt(options.clipLength as string) || 30
+  // Check Shotstack renders
+  const completedClips = [...(job.progress?.completedClips || [])]
+  const savedRenderIds = completedClips.map((c: { render_id: string }) => c.render_id)
+  const clipCategories: AIFocus[][] = job.progress?.clipCategories || []
+  const clipReasons: string[] = job.progress?.clipReasons || []
+  const clipDuration = parseInt(job.options?.clipLength as string) || 30
   let allDone = true
   let anyFailed = false
 
-  // Track which renderIds have already been saved — prevents duplicate inserts on every poll
-  const savedRenderIds: string[] = job.progress?.savedRenderIds || []
-  let newCompletedCount = savedRenderIds.length
-
-  // Per-clip category + reason assignments saved during process submission
-  const clipCategories: AIFocus[][] = (job.progress?.clipCategories || []) as AIFocus[][]
-  const clipReasons: string[] = job.progress?.clipReasons || []
-
   for (let i = 0; i < renderIds.length; i++) {
     const renderId = renderIds[i]
-
-    // Skip if already saved in a previous poll
     if (savedRenderIds.includes(renderId)) continue
 
     try {
       const result = await getRenderStatus(renderId)
-      console.log(`[poll] render ${renderId} status: ${result.status} url: ${result.url || 'none'}`)
+      console.log(`[poll] render ${renderId} status: ${result.status}`)
 
       if (result.status === 'done' && result.url) {
-        const startTime = i * Math.ceil(clipDuration / 2)
-        const endTime = startTime + clipDuration
-        const matchedCategories = clipCategories[i] || []
-
-        const { error: insertError } = await supabase.from('clips').insert({
+        completedClips.push({
           id: uuidv4(),
           job_id: params.jobId,
-          user_id: userId,
-          r2_key: result.url,
           render_id: renderId,
+          r2_key: result.url,
           duration: clipDuration,
-          start_time: startTime,
-          end_time: endTime,
-          matched_categories: matchedCategories,
-          ai_reason: clipReasons[i] || null,
+          start_time: i * Math.ceil(clipDuration / 2),
+          end_time: i * Math.ceil(clipDuration / 2) + clipDuration,
+          matched_categories: clipCategories[i] || [],
+          ai_reason: clipReasons[i] || 'Sequential clip placement',
           created_at: new Date().toISOString(),
         })
-        if (insertError) {
-          // code 23505 = unique_violation — means already saved, not a real error
-          const errorCode = (insertError as unknown as { code?: string }).code
-          if (errorCode === '23505') {
-            console.log(`[poll] clip already saved for render ${renderId} — skipping`)
-            savedRenderIds.push(renderId)
-            newCompletedCount++
-          } else {
-            console.error(`[poll] clip insert failed for render ${renderId}:`, JSON.stringify(insertError))
-          }
-        } else {
-          console.log(`[poll] clip saved for render ${renderId} url: ${result.url}`)
-          savedRenderIds.push(renderId)
-          newCompletedCount++
-        }
       } else if (result.status === 'failed') {
         anyFailed = true
-        console.error(`Render ${renderId} failed`)
       } else {
-        // Still rendering
         allDone = false
       }
     } catch (err) {
-      console.error(`Error checking render ${renderId}:`, err)
+      console.error(`[poll] error checking ${renderId}:`, err)
       allDone = false
     }
   }
 
-  // If all renders were skipped (already saved), check actual DB clip count
-  if (allDone && newCompletedCount === 0) {
-    const { count } = await supabase.from('clips').select('*', { count: 'exact', head: true }).in('job_id', [params.jobId])
-    newCompletedCount = count || 0
-    console.log(`[poll] all skipped — actual DB clips: ${newCompletedCount}`)
-  }
+  const done = allDone || completedClips.length === renderIds.length
 
-  const pct = Math.round((newCompletedCount / renderIds.length) * 100)
-  const remaining = Math.max(0, (renderIds.length - newCompletedCount) * 30)
-
-  if (allDone || newCompletedCount === renderIds.length) {
-    // All renders complete — mark job done
-    await supabase.from('jobs').update({
-      status: anyFailed && newCompletedCount === 0 ? 'failed' : 'complete',
-      progress: {
-        ...job.progress,
-        rendering: 'done',
-        finalizing: 'done',
-        estimatedSecondsRemaining: 0,
-        completedCount: newCompletedCount,
-        savedRenderIds,
-      },
-    }).eq('id', params.jobId)
-  } else {
-    // Still in progress — update progress
-    await supabase.from('jobs').update({
-      progress: {
-        ...job.progress,
-        rendering: true,
-        renderPct: pct,
-        estimatedSecondsRemaining: remaining,
-        completedCount: newCompletedCount,
-        savedRenderIds,
-      },
-    }).eq('id', params.jobId)
-  }
-
-  // Return updated job + clips (use .in() to avoid PostgREST .eq() UUID filter bug)
-  const { data: clips } = await supabase.from('clips').select('*').in('job_id', [params.jobId])
-  const updatedJob = {
-    ...job,
-    status: allDone || newCompletedCount === renderIds.length
-      ? (anyFailed && newCompletedCount === 0 ? 'failed' : 'complete')
-      : 'processing',
+  // Update job with progress + embedded clips
+  await supabase.from('jobs').update({
+    status: done ? (anyFailed && completedClips.length === 0 ? 'failed' : 'complete') : 'processing',
     progress: {
       ...job.progress,
-      renderPct: pct,
-      estimatedSecondsRemaining: remaining,
-      completedCount: newCompletedCount,
+      completedClips,
+      completedCount: completedClips.length,
+      renderPct: Math.round((completedClips.length / renderIds.length) * 100),
+      estimatedSecondsRemaining: done ? 0 : (renderIds.length - completedClips.length) * 30,
+      rendering: done ? 'done' : true,
     },
+  }).eq('id', params.jobId)
+
+  // Also write to clips table (best effort, for future queries)
+  for (const clip of completedClips) {
+    if (!savedRenderIds.includes(clip.render_id)) {
+      await supabase.from('clips').upsert({
+        ...clip,
+        user_id: job.user_id,
+      }, { onConflict: 'job_id,render_id' }).then(() => {})
+    }
   }
 
-  return NextResponse.json({ ...updatedJob, clips: clips || [] })
+  return NextResponse.json({
+    ...job,
+    status: done ? 'complete' : 'processing',
+    clips: completedClips,
+    progress: {
+      ...job.progress,
+      completedClips,
+      completedCount: completedClips.length,
+      renderPct: Math.round((completedClips.length / renderIds.length) * 100),
+      estimatedSecondsRemaining: done ? 0 : (renderIds.length - completedClips.length) * 30,
+    },
+  })
 }
