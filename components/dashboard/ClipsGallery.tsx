@@ -1,11 +1,49 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
 import { createSupabaseClient } from '@/lib/supabase'
 import type { Job, JobStatus, AIFocus, Clip } from '@/types'
+
+/** Video player that enforces start/end times for instant-mode clips */
+function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: number; endTime?: number }) {
+  const ref = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const video = ref.current
+    if (!video || startTime == null) return
+
+    const handleLoaded = () => {
+      video.currentTime = startTime
+    }
+
+    const handleTimeUpdate = () => {
+      if (endTime != null && video.currentTime >= endTime) {
+        video.pause()
+        video.currentTime = startTime
+      }
+    }
+
+    video.addEventListener('loadedmetadata', handleLoaded)
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    return () => {
+      video.removeEventListener('loadedmetadata', handleLoaded)
+      video.removeEventListener('timeupdate', handleTimeUpdate)
+    }
+  }, [startTime, endTime])
+
+  return (
+    <video
+      ref={ref}
+      src={src}
+      controls
+      className="w-full h-full object-cover"
+      preload="metadata"
+    />
+  )
+}
 
 const AI_FOCUS_META: Record<AIFocus, { label: string; icon: string; color: string }> = {
   funny_moments:  { label: 'Funny',    icon: '😂', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
@@ -464,11 +502,10 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
                     {/* Clip player — shows video if r2_key has a URL, otherwise placeholder */}
                     <div className="relative bg-black h-36 flex items-center justify-center">
                       {clip.r2_key && clip.r2_key.startsWith('http') ? (
-                        <video
-                          src={clip.r2_key}
-                          controls
-                          className="w-full h-full object-cover"
-                          preload="metadata"
+                        <ClipPlayer
+                          src={clip.r2_key.split('#')[0]}
+                          startTime={clip.start_time ?? undefined}
+                          endTime={clip.end_time ?? undefined}
                         />
                       ) : (
                         <div className="text-center">
