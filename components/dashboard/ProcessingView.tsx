@@ -14,13 +14,51 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
   const [clipsReady, setClipsReady] = useState(0)
   const [totalClips, setTotalClips] = useState(0)
   const [eta, setEta] = useState<number | null>(null)
+  const [progressPct, setProgressPct] = useState(0)
   const completed = useRef(false)
-  const hasShownRendering = useRef(false)
+  const phaseStartTime = useRef(Date.now())
+  const pendingComplete = useRef(false)
+
+  // Smooth progress animation
+  useEffect(() => {
+    if (phase === 'submitting') {
+      // Animate from 0 to 30% over 2 seconds
+      const start = Date.now()
+      const tick = () => {
+        const elapsed = Date.now() - start
+        const pct = Math.min(30, (elapsed / 2000) * 30)
+        setProgressPct(pct)
+        if (elapsed < 2000 && phase === 'submitting') requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    } else if (phase === 'rendering') {
+      // Animate from 30% toward 90%, with real clip progress mixed in
+      const basePct = 30
+      const targetPct = totalClips > 0 ? basePct + (clipsReady / totalClips) * 60 : basePct + 20
+      setProgressPct(Math.min(90, targetPct))
+    } else if (phase === 'complete') {
+      setProgressPct(100)
+    }
+  }, [phase, clipsReady, totalClips])
+
+  // Enforce minimum phase durations before transitioning
+  const tryTransition = (nextPhase: 'rendering' | 'complete', minMs: number) => {
+    const elapsed = Date.now() - phaseStartTime.current
+    if (elapsed >= minMs) {
+      phaseStartTime.current = Date.now()
+      setPhase(nextPhase)
+      return true
+    }
+    // Schedule delayed transition
+    setTimeout(() => {
+      phaseStartTime.current = Date.now()
+      setPhase(nextPhase)
+    }, minMs - elapsed)
+    return false
+  }
 
   useEffect(() => {
     if (completed.current) return
-
-    // Don't poll temp job IDs — wait for real one
     if (jobId.startsWith('dev-') || jobId.startsWith('pending-')) return
 
     const pollJob = async () => {
@@ -38,13 +76,8 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
         const renderIds = progress.renderIds || []
         const clips = progress.completedClips || []
 
-        setTotalClips(renderIds.length)
+        setTotalClips(renderIds.length || clips.length)
         setClipsReady(clips.length)
-
-        if (renderIds.length > 0 && !hasShownRendering.current) {
-          hasShownRendering.current = true
-          setPhase('rendering')
-        }
 
         if (progress.estimatedSecondsRemaining != null) {
           setEta(progress.estimatedSecondsRemaining)
@@ -53,45 +86,45 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
         if (data.status === 'complete') {
           if (!completed.current) {
             completed.current = true
-            // If we never showed the rendering phase, show it briefly first
-            if (!hasShownRendering.current) {
-              hasShownRendering.current = true
-              setPhase('rendering')
-              setClipsReady(0)
-              setTotalClips(renderIds.length || clips.length)
-              // Show rendering for 2s, then complete for 2s, then redirect
+            setClipsReady(clips.length || renderIds.length)
+            setTotalClips(renderIds.length || clips.length)
+
+            // Ensure we show rendering phase for at least 1.5s before complete
+            if (phase === 'submitting') {
+              tryTransition('rendering', 1500)
               setTimeout(() => {
-                setClipsReady(clips.length || renderIds.length)
                 setPhase('complete')
-                setTimeout(onComplete, 2000)
-              }, 2000)
+                setTimeout(onComplete, 1800)
+              }, 3000)
             } else {
-              setPhase('complete')
-              setClipsReady(clips.length || renderIds.length)
-              setTimeout(onComplete, 2000)
+              tryTransition('complete', 1500)
+              setTimeout(onComplete, 1800)
             }
           }
         } else if (data.status === 'failed') {
           setPhase('failed')
+        } else if (renderIds.length > 0 && phase === 'submitting') {
+          tryTransition('rendering', 1500)
         }
       } catch (err) {
         console.error('[ProcessingView] poll error:', err)
       }
     }
 
-    // Poll immediately, then every 6 seconds
-    pollJob()
-    const interval = setInterval(pollJob, 6000)
-    return () => clearInterval(interval)
-  }, [jobId, onComplete])
-
-  const pct = totalClips > 0 ? Math.round((clipsReady / totalClips) * 100) : 0
+    // Poll immediately, then every 5 seconds
+    const timer = setTimeout(pollJob, 800) // slight delay so user sees submitting phase
+    const interval = setInterval(pollJob, 5000)
+    return () => { clearTimeout(timer); clearInterval(interval) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, onComplete, phase])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] py-12 px-4">
       {/* Cat animation */}
       <div className="mb-8 relative flex items-center justify-center">
-        <div className="absolute inset-0 rounded-full bg-primary/20 blur-3xl scale-125 animate-pulse" />
+        <div className={`absolute inset-0 rounded-full blur-3xl scale-125 ${
+          phase === 'complete' ? 'bg-green-500/30' : 'bg-primary/20 animate-pulse'
+        }`} />
         <video
           src="/slicer-cat.mp4"
           autoPlay loop muted playsInline
@@ -101,74 +134,91 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       </div>
 
       {/* Status heading */}
-      <h2 className="text-2xl font-bold mb-1 text-white">
+      <h2 className="text-2xl font-bold mb-1 text-white transition-all duration-500">
         {phase === 'complete' ? '✅ Clips Ready!' :
          phase === 'failed' ? '❌ Processing Failed' :
          phase === 'rendering' ? '🎬 Rendering Clips...' :
-         '⚡ Submitting to Shotstack...'}
+         '⚡ Submitting Video...'}
       </h2>
-      <p className="text-muted text-sm mb-8">
+      <p className="text-muted text-sm mb-8 transition-all duration-500">
         {phase === 'complete' ? 'Redirecting to your clips...' :
          phase === 'failed' ? 'Something went wrong. Try again.' :
          phase === 'rendering'
-           ? `${clipsReady} of ${totalClips} clips done`
-           : 'Setting up your video for processing'}
+           ? totalClips > 0 ? `${clipsReady} of ${totalClips} clips rendered` : 'Waiting for Shotstack...'
+           : 'Preparing your video for processing'}
       </p>
 
       {/* Progress bar */}
       <div className="w-full max-w-sm mb-8">
         <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
-          {phase === 'complete' ? (
-            <div className="h-full w-full bg-gradient-to-r from-primary to-accent rounded-full" />
-          ) : phase === 'rendering' && pct > 0 ? (
-            <div
-              className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-700"
-              style={{ width: `${pct}%` }}
-            />
-          ) : (
-            <div
-              className="h-full w-1/3 bg-gradient-to-r from-primary to-accent rounded-full"
-              style={{ animation: 'shimmer 1.5s ease-in-out infinite' }}
-            />
+          <div
+            className={`h-full rounded-full transition-all duration-700 ease-out ${
+              phase === 'complete'
+                ? 'bg-green-500'
+                : 'bg-gradient-to-r from-primary to-accent'
+            }`}
+            style={{ width: `${Math.max(5, progressPct)}%` }}
+          />
+        </div>
+        <div className="flex justify-between mt-2">
+          <span className="text-xs text-muted">
+            {phase === 'complete' ? 'Done!' :
+             phase === 'rendering' && totalClips > 0 ? `${clipsReady}/${totalClips} clips` :
+             'Processing...'}
+          </span>
+          {eta != null && eta > 0 && phase === 'rendering' && (
+            <span className="text-xs text-muted">
+              ~{eta >= 60 ? `${Math.ceil(eta / 60)}m` : `${eta}s`}
+            </span>
           )}
         </div>
-        {eta != null && eta > 0 && phase === 'rendering' && (
-          <p className="text-xs text-muted mt-2 text-center">
-            ~{eta >= 60 ? `${Math.ceil(eta / 60)} min` : `${eta}s`} remaining
-          </p>
-        )}
       </div>
 
-      {/* Step indicators */}
-      <div className="w-full max-w-sm space-y-3 mb-8">
+      {/* Steps */}
+      <div className="w-full max-w-sm space-y-4 mb-8">
         {[
-          { label: 'Video submitted', done: phase !== 'submitting' },
-          { label: 'Rendering clips', done: phase === 'complete', active: phase === 'rendering' },
+          { label: 'Video submitted', done: phase !== 'submitting', active: phase === 'submitting' },
+          { label: 'Rendering clips', done: phase === 'complete', active: phase === 'rendering',
+            detail: phase === 'rendering' && totalClips > 0 ? `${clipsReady}/${totalClips}` : undefined },
           { label: 'Clips ready', done: phase === 'complete' },
         ].map((step, i) => (
-          <div key={i} className={`flex items-center gap-3 ${!step.done && !step.active ? 'opacity-40' : 'opacity-100'}`}>
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-              step.done ? 'bg-primary text-background' :
-              step.active ? 'border-2 border-primary' :
-              'border-2 border-white/20'
+          <div
+            key={i}
+            className={`flex items-center gap-3 transition-all duration-500 ${
+              !step.done && !step.active ? 'opacity-30' : 'opacity-100'
+            }`}
+          >
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500 ${
+              step.done ? 'bg-primary text-background scale-100' :
+              step.active ? 'border-2 border-primary scale-110' :
+              'border-2 border-white/20 scale-100'
             }`}>
               {step.done && (
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               )}
-              {step.active && <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+              {step.active && <div className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />}
             </div>
-            <span className={`text-sm ${step.done ? 'text-primary' : step.active ? 'text-white font-semibold' : 'text-muted'}`}>
-              {step.label}
-              {step.active && totalClips > 0 ? ` (${clipsReady}/${totalClips})` : ''}
-            </span>
+            <div className="flex-1">
+              <span className={`text-sm font-medium transition-colors duration-500 ${
+                step.done ? 'text-primary' : step.active ? 'text-white' : 'text-muted'
+              }`}>
+                {step.label}
+              </span>
+              {step.detail && (
+                <span className="text-xs text-muted ml-2">({step.detail})</span>
+              )}
+            </div>
           </div>
         ))}
       </div>
 
-      {phase !== 'complete' && (
+      {phase !== 'complete' && phase !== 'failed' && (
         <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+      )}
+      {phase === 'failed' && (
+        <Button variant="primary" size="sm" onClick={onCancel}>Try Again</Button>
       )}
     </div>
   )

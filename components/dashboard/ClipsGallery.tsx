@@ -7,13 +7,13 @@ import Modal from '@/components/ui/Modal'
 import { createSupabaseClient } from '@/lib/supabase'
 import type { Job, JobStatus, AIFocus, Clip } from '@/types'
 
-/** Video player that enforces start/end times for instant-mode clips */
+/** Custom video player with clip-scoped timeline */
 function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: number; endTime?: number }) {
   const ref = useRef<HTMLVideoElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [currentSec, setCurrentSec] = useState(0)
   const hasClipTimes = startTime != null && endTime != null && endTime > startTime
-
-  // Use Media Fragment URI for initial seek
-  const videoSrc = hasClipTimes ? `${src}#t=${startTime},${endTime}` : src
+  const clipDuration = hasClipTimes ? endTime! - startTime! : 0
 
   useEffect(() => {
     const video = ref.current
@@ -29,6 +29,10 @@ function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: numb
       if (video.currentTime >= endTime!) {
         video.pause()
         video.currentTime = startTime!
+        setPlaying(false)
+        setCurrentSec(0)
+      } else {
+        setCurrentSec(video.currentTime - startTime!)
       }
     }
 
@@ -36,13 +40,16 @@ function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: numb
       if (video.currentTime < startTime! || video.currentTime >= endTime!) {
         video.currentTime = startTime!
       }
+      setPlaying(true)
     }
+
+    const handlePause = () => setPlaying(false)
 
     video.addEventListener('loadedmetadata', seekToStart)
     video.addEventListener('canplay', seekToStart)
     video.addEventListener('timeupdate', enforceEnd)
     video.addEventListener('play', handlePlay)
-    // Also seek immediately if already loaded
+    video.addEventListener('pause', handlePause)
     if (video.readyState >= 1) seekToStart()
 
     return () => {
@@ -50,17 +57,80 @@ function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: numb
       video.removeEventListener('canplay', seekToStart)
       video.removeEventListener('timeupdate', enforceEnd)
       video.removeEventListener('play', handlePlay)
+      video.removeEventListener('pause', handlePause)
     }
   }, [startTime, endTime, hasClipTimes])
 
+  const togglePlay = () => {
+    const video = ref.current
+    if (!video) return
+    if (video.paused) { video.play() } else { video.pause() }
+  }
+
+  const handleScrub = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!hasClipTimes || !ref.current) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    ref.current.currentTime = startTime! + pct * clipDuration
+  }
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  // For Shotstack-rendered clips (no clip times), use native controls
+  if (!hasClipTimes) {
+    return <video ref={ref} src={src} controls className="w-full h-full object-cover" preload="metadata" />
+  }
+
+  const pct = clipDuration > 0 ? (currentSec / clipDuration) * 100 : 0
+
   return (
-    <video
-      ref={ref}
-      src={videoSrc}
-      controls
-      className="w-full h-full object-cover"
-      preload="metadata"
-    />
+    <div className="relative w-full h-full group">
+      <video
+        ref={ref}
+        src={`${src}#t=${startTime},${endTime}`}
+        className="w-full h-full object-cover cursor-pointer"
+        preload="metadata"
+        onClick={togglePlay}
+      />
+      {/* Play/pause overlay */}
+      <div
+        className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity ${
+          playing ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
+        }`}
+      >
+        <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center backdrop-blur-sm">
+          {playing ? (
+            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          )}
+        </div>
+      </div>
+      {/* Custom scrubber */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+        <div
+          className="w-full h-1.5 bg-white/20 rounded-full cursor-pointer mb-1"
+          onClick={handleScrub}
+        >
+          <div
+            className="h-full bg-primary rounded-full transition-all duration-100"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] text-white/70">
+          <span>{formatTime(currentSec)}</span>
+          <span>{formatTime(clipDuration)}</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
