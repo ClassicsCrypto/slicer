@@ -55,25 +55,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Fetch clips separately for each job
-  const { data: allClips, error: allClipsError } = await supabase.from('clips').select('*')
-  console.log(`[jobs/GET] ALL clips unfiltered: ${allClips?.length ?? 0} error: ${allClipsError?.message ?? 'none'}`)
+  // Fetch ALL clips in one query, then group by job_id in JS
+  // (avoids PostgREST .eq() filter bug on UUID columns)
+  const { data: allClips, error: allClipsError } = await supabase
+    .from('clips')
+    .select('*')
+    .in('job_id', (jobs || []).map(j => j.id))
+  console.log(`[jobs/GET] clips fetch: ${allClips?.length ?? 0} error: ${allClipsError?.message ?? 'none'}`)
 
-  const jobsWithClips = await Promise.all(
-    (jobs || []).map(async (job) => {
-      const jobIdVal = String(job.id).trim()
-      console.log(`[jobs/GET] filtering clips by job_id="${jobIdVal}" len=${jobIdVal.length}`)
-      const { data: clips, error: clipsError } = await supabase
-        .from('clips')
-        .select('*')
-        .eq('job_id', jobIdVal)
-      console.log(`[jobs/GET] job ${jobIdVal} clips: ${clips?.length ?? 0} error: ${clipsError?.message ?? 'none'}`)
-      // Also check if any of the allClips match manually
-      const manualMatch = (allClips || []).filter(c => String(c.job_id).trim() === jobIdVal)
-      console.log(`[jobs/GET] manual match: ${manualMatch.length} clips for job ${jobIdVal}`)
-      return { ...job, clips: clips || [] }
-    })
-  )
+  const clipsByJob = new Map<string, typeof allClips>()
+  for (const clip of allClips || []) {
+    const key = String(clip.job_id)
+    if (!clipsByJob.has(key)) clipsByJob.set(key, [])
+    clipsByJob.get(key)!.push(clip)
+  }
+
+  const jobsWithClips = (jobs || []).map(job => ({
+    ...job,
+    clips: clipsByJob.get(String(job.id)) || [],
+  }))
 
   return NextResponse.json(jobsWithClips, {
     headers: {
