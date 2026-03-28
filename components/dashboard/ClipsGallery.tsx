@@ -295,14 +295,18 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
 
   const deleteJob = async (id: string) => {
     setDeletingId(id)
-    const supabase = createSupabaseClient()
-    const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
-    const userId = devUserId || (await supabase.auth.getSession()).data?.session?.user?.id
-    await fetch(`/api/jobs/${id}?userId=${userId || ''}`, { method: 'DELETE' })
-    setDeletingId(null)
+    // Remove from UI immediately
+    setJobs(prev => prev.filter(j => j.id !== id))
     setConfirmDelete(null)
     setSelected(new Set())
-    // Always refetch from server after delete
+    // Fire delete in background
+    try {
+      await fetch(`/api/jobs/${id}`, { method: 'DELETE' })
+    } catch (err) {
+      console.error('[delete] error:', err)
+    }
+    setDeletingId(null)
+    // Refetch to sync
     await fetchJobs()
   }
 
