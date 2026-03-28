@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
-  if (error) console.error('[jobs/GET] DB error:', error.message)
+  console.log(`[jobs/GET] userId: ${userId} jobs: ${jobs?.length ?? 0}`)
 
   if (error) {
     console.error('[jobs/GET] DB error:', error.message, 'userId:', userId)
@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     .from('clips')
     .select('*')
     .in('job_id', (jobs || []).map(j => j.id))
+  console.log(`[jobs/GET] clips: ${allClips?.length ?? 0} jobIds: ${(jobs || []).map(j => j.id).join(',')}`)
   if (allClipsError) console.error('[jobs/GET] clips fetch error:', allClipsError.message)
 
   const clipsByJob = new Map<string, typeof allClips>()
