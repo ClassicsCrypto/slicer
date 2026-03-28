@@ -61,11 +61,16 @@ export async function GET(req: NextRequest) {
 
   const jobsWithClips = await Promise.all(
     (jobs || []).map(async (job) => {
+      const jobIdVal = String(job.id).trim()
+      console.log(`[jobs/GET] filtering clips by job_id="${jobIdVal}" len=${jobIdVal.length}`)
       const { data: clips, error: clipsError } = await supabase
         .from('clips')
         .select('*')
-        .eq('job_id', job.id)
-      console.log(`[jobs/GET] job ${job.id} clips: ${clips?.length ?? 0} error: ${clipsError?.message ?? 'none'}`)
+        .eq('job_id', jobIdVal)
+      console.log(`[jobs/GET] job ${jobIdVal} clips: ${clips?.length ?? 0} error: ${clipsError?.message ?? 'none'}`)
+      // Also check if any of the allClips match manually
+      const manualMatch = (allClips || []).filter(c => String(c.job_id).trim() === jobIdVal)
+      console.log(`[jobs/GET] manual match: ${manualMatch.length} clips for job ${jobIdVal}`)
       return { ...job, clips: clips || [] }
     })
   )
