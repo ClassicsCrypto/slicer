@@ -166,7 +166,7 @@ export default function DashboardPage() {
       {/* Content */}
       <main className="flex-1 max-w-4xl mx-auto w-full">
         {tab === 'upload' && (
-          <UploadTab onJobCreated={() => setTab('clips')} />
+          <UploadTab onJobCreated={() => { setClipsKey(k => k + 1); setTab('clips') }} />
         )}
         {tab === 'clips' && <ClipsGallery key={clipsKey} onUploadNew={() => setTab('upload')} />}
         {tab === 'settings' && <SettingsTab user={user} onSaved={() => {}} />}
