@@ -1,24 +1,23 @@
 /**
- * Shotstack API integration for video clipping + subtitle rendering
+ * Shotstack API integration for video clipping
  * Docs: https://shotstack.io/docs/api/
+ * 
+ * SHOTSTACK_ENV controls sandbox vs production:
+ *   - "stage" (default) → sandbox, 24h URLs, free, slower
+ *   - "v1" → production, 7-day URLs, paid, faster
  */
 
-const SHOTSTACK_API_URL = 'https://api.shotstack.io/stage/render' // sandbox
+const SHOTSTACK_ENV = process.env.SHOTSTACK_ENV || 'stage'
+const SHOTSTACK_BASE = `https://api.shotstack.io/${SHOTSTACK_ENV}`
 const SHOTSTACK_API_KEY = process.env.SHOTSTACK_API_KEY || ''
 
 export interface ShotstackClipSpec {
-  sourceUrl: string       // public URL of the source video
-  startTime: number       // seconds into source video
-  endTime: number         // seconds into source video
-  subtitles?: {
-    text: string
-    style: string
-    color: string
-  }[]
+  sourceUrl: string
+  startTime: number
+  endTime: number
   outputFormat: 'mp4'
   outputQuality: '720p' | '1080p' | '4k'
   platformFormat: 'tiktok' | 'twitter' | 'youtube_shorts' | 'custom'
-  madeWithSlicer: boolean
 }
 
 function getResolution(quality: string) {
@@ -33,11 +32,11 @@ function getAspectRatio(format: string) {
   switch (format) {
     case 'tiktok':
     case 'youtube_shorts':
-      return { width: 1080, height: 1920 } // 9:16
+      return { width: 1080, height: 1920 }
     case 'twitter':
-      return { width: 1920, height: 1080 } // 16:9
+      return { width: 1920, height: 1080 }
     default:
-      return null // original
+      return null
   }
 }
 
@@ -49,40 +48,29 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
   const aspect = getAspectRatio(spec.platformFormat)
   const outputRes = aspect || res
 
-  // Build Shotstack render payload
-  const clips: object[] = [
-    {
-      asset: {
-        type: 'video',
-        src: spec.sourceUrl,
-        trim: spec.startTime,
-      },
-      start: 0,
-      length: duration,
-      fit: aspect ? 'crop' : 'contain',
-    }
-  ]
-
-  // Subtitle overlays — disabled in sandbox (html asset type causes render hangs)
-  // TODO: re-enable in production with text asset type
-  // if (spec.subtitles && spec.subtitles.length > 0) { ... }
-
-  // "Made with Slicer" outro — disabled in sandbox (html asset type causes render hangs)
-  // TODO: re-enable in production with a proper image asset
-  // if (spec.madeWithSlicer) { ... }
-
   const payload = {
     timeline: {
-      tracks: [{ clips }],
+      tracks: [{
+        clips: [{
+          asset: {
+            type: 'video',
+            src: spec.sourceUrl,
+            trim: spec.startTime,
+          },
+          start: 0,
+          length: duration,
+          fit: aspect ? 'crop' : 'contain',
+        }],
+      }],
     },
     output: {
       format: 'mp4',
-      resolution: `${outputRes.width <= 1280 ? 'sd' : outputRes.width <= 1920 ? 'hd' : '4k'}`,
+      resolution: outputRes.width <= 1280 ? 'sd' : outputRes.width <= 1920 ? 'hd' : '4k',
       size: { width: outputRes.width, height: outputRes.height },
     },
   }
 
-  const response = await fetch(SHOTSTACK_API_URL, {
+  const response = await fetch(`${SHOTSTACK_BASE}/render`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -97,13 +85,13 @@ export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
   }
 
   const data = await response.json()
-  return data.response.id as string // render ID to poll
+  return data.response.id as string
 }
 
 export async function getRenderStatus(renderId: string): Promise<{ status: string; url?: string }> {
   if (!SHOTSTACK_API_KEY) throw new Error('SHOTSTACK_API_KEY not set')
 
-  const response = await fetch(`https://api.shotstack.io/stage/render/${renderId}`, {
+  const response = await fetch(`${SHOTSTACK_BASE}/render/${renderId}`, {
     headers: { 'x-api-key': SHOTSTACK_API_KEY },
   })
 
@@ -113,7 +101,7 @@ export async function getRenderStatus(renderId: string): Promise<{ status: strin
   const render = data.response
 
   return {
-    status: render.status, // queued | fetching | rendering | saving | done | failed
-    url: render.url,       // available when status === 'done'
+    status: render.status,
+    url: render.url,
   }
 }

@@ -154,7 +154,7 @@ export async function GET(
 
   // If all renders were skipped (already saved), check actual DB clip count
   if (allDone && newCompletedCount === 0) {
-    const { count } = await supabase.from('clips').select('*', { count: 'exact', head: true }).eq('job_id', params.jobId)
+    const { count } = await supabase.from('clips').select('*', { count: 'exact', head: true }).in('job_id', [params.jobId])
     newCompletedCount = count || 0
     console.log(`[poll] all skipped — actual DB clips: ${newCompletedCount}`)
   }
@@ -189,8 +189,8 @@ export async function GET(
     }).eq('id', params.jobId)
   }
 
-  // Return updated job + clips
-  const { data: clips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
+  // Return updated job + clips (use .in() to avoid PostgREST .eq() UUID filter bug)
+  const { data: clips } = await supabase.from('clips').select('*').in('job_id', [params.jobId])
   const updatedJob = {
     ...job,
     status: allDone || newCompletedCount === renderIds.length

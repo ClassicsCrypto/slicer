@@ -11,10 +11,7 @@ function getSupabase() {
 }
 
 function getUserId(req: NextRequest): string | null {
-  const url = new URL(req.url)
-  const queryUserId = url.searchParams.get('userId')
-  if (queryUserId) return queryUserId
-  return null
+  return new URL(req.url).searchParams.get('userId')
 }
 
 export async function GET(
@@ -25,18 +22,28 @@ export async function GET(
   const userId = getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Fetch job by ID only (service role bypasses RLS)
   const { data: job, error } = await supabase
     .from('jobs')
     .select('*')
     .eq('id', params.jobId)
-    .eq('user_id', userId)
     .single()
 
   if (error || !job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  const { data: jobClips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
+  // Verify ownership
+  if (job.user_id !== userId) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
+
+  // Fetch clips with .in() to avoid PostgREST .eq() UUID filter bug
+  const { data: jobClips } = await supabase
+    .from('clips')
+    .select('*')
+    .in('job_id', [params.jobId])
+
   return NextResponse.json({ ...job, clips: jobClips || [] })
 }
 
@@ -48,47 +55,32 @@ export async function DELETE(
   const userId = getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Get job (fetch clips separately to avoid PostgREST nested join + filter bug)
+  // Verify job exists and belongs to user
   const { data: job, error: fetchError } = await supabase
     .from('jobs')
-    .select('*')
+    .select('id, user_id, r2_key')
     .eq('id', params.jobId)
-    .eq('user_id', userId)
     .single()
 
   if (fetchError || !job) {
-    console.error('[jobs/DELETE] Job fetch failed:', fetchError?.message || 'not found', 'jobId:', params.jobId, 'userId:', userId)
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  const { data: clips } = await supabase.from('clips').select('*').eq('job_id', params.jobId)
-
-  // Delete files from Supabase Storage (ignore errors — files may not exist)
-  const keysToDelete: string[] = []
-  if (job.r2_key && !job.r2_key.startsWith('pending/') && !job.r2_key.startsWith('http')) {
-    keysToDelete.push(job.r2_key)
-  }
-  if (clips) {
-    for (const clip of clips) {
-      if (clip.r2_key && !clip.r2_key.startsWith('http')) {
-        keysToDelete.push(clip.r2_key)
-      }
-    }
+  if (job.user_id !== userId) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   }
 
-  if (keysToDelete.length > 0) {
-    await supabase.storage.from('slicer-videos').remove(keysToDelete)
-  }
+  // Delete clips first (FK constraint)
+  await supabase.from('clips').delete().in('job_id', [params.jobId])
 
-  await supabase.from('clips').delete().eq('job_id', params.jobId)
-
+  // Delete job
   const { error: deleteError } = await supabase
     .from('jobs')
     .delete()
     .eq('id', params.jobId)
-    .eq('user_id', userId)
 
   if (deleteError) {
+    console.error('[jobs/DELETE] error:', deleteError)
     return NextResponse.json({ error: deleteError.message }, { status: 500 })
   }
 
