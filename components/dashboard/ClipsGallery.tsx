@@ -10,34 +10,53 @@ import type { Job, JobStatus, AIFocus, Clip } from '@/types'
 /** Video player that enforces start/end times for instant-mode clips */
 function ClipPlayer({ src, startTime, endTime }: { src: string; startTime?: number; endTime?: number }) {
   const ref = useRef<HTMLVideoElement>(null)
+  const hasClipTimes = startTime != null && endTime != null && endTime > startTime
+
+  // Use Media Fragment URI for initial seek
+  const videoSrc = hasClipTimes ? `${src}#t=${startTime},${endTime}` : src
 
   useEffect(() => {
     const video = ref.current
-    if (!video || startTime == null) return
+    if (!video || !hasClipTimes) return
 
-    const handleLoaded = () => {
-      video.currentTime = startTime
-    }
-
-    const handleTimeUpdate = () => {
-      if (endTime != null && video.currentTime >= endTime) {
-        video.pause()
-        video.currentTime = startTime
+    const seekToStart = () => {
+      if (video.currentTime < startTime! || video.currentTime > endTime!) {
+        video.currentTime = startTime!
       }
     }
 
-    video.addEventListener('loadedmetadata', handleLoaded)
-    video.addEventListener('timeupdate', handleTimeUpdate)
-    return () => {
-      video.removeEventListener('loadedmetadata', handleLoaded)
-      video.removeEventListener('timeupdate', handleTimeUpdate)
+    const enforceEnd = () => {
+      if (video.currentTime >= endTime!) {
+        video.pause()
+        video.currentTime = startTime!
+      }
     }
-  }, [startTime, endTime])
+
+    const handlePlay = () => {
+      if (video.currentTime < startTime! || video.currentTime >= endTime!) {
+        video.currentTime = startTime!
+      }
+    }
+
+    video.addEventListener('loadedmetadata', seekToStart)
+    video.addEventListener('canplay', seekToStart)
+    video.addEventListener('timeupdate', enforceEnd)
+    video.addEventListener('play', handlePlay)
+    // Also seek immediately if already loaded
+    if (video.readyState >= 1) seekToStart()
+
+    return () => {
+      video.removeEventListener('loadedmetadata', seekToStart)
+      video.removeEventListener('canplay', seekToStart)
+      video.removeEventListener('timeupdate', enforceEnd)
+      video.removeEventListener('play', handlePlay)
+    }
+  }, [startTime, endTime, hasClipTimes])
 
   return (
     <video
       ref={ref}
-      src={src}
+      src={videoSrc}
       controls
       className="w-full h-full object-cover"
       preload="metadata"
