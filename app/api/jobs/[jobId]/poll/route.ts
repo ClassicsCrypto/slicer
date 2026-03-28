@@ -152,6 +152,13 @@ export async function GET(
     }
   }
 
+  // If all renders were skipped (already saved), check actual DB clip count
+  if (allDone && newCompletedCount === 0) {
+    const { count } = await supabase.from('clips').select('*', { count: 'exact', head: true }).eq('job_id', params.jobId)
+    newCompletedCount = count || 0
+    console.log(`[poll] all skipped — actual DB clips: ${newCompletedCount}`)
+  }
+
   const pct = Math.round((newCompletedCount / renderIds.length) * 100)
   const remaining = Math.max(0, (renderIds.length - newCompletedCount) * 30)
 
