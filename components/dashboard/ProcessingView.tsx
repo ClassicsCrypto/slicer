@@ -59,7 +59,7 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
 
   useEffect(() => {
     if (completed.current) return
-    if (jobId.startsWith('dev-') || jobId.startsWith('pending-')) return
+    if (!jobId || jobId.startsWith('dev-') || jobId.startsWith('pending-')) return
 
     const pollJob = async () => {
       if (completed.current) return

@@ -73,24 +73,18 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setShowOptions(true)
   }
 
-  const handleStart = (options: ProcessingOptions, modalTitle?: string) => {
+  const handleStart = async (options: ProcessingOptions, modalTitle?: string) => {
     if (modalTitle) setJobName(modalTitle)
-    // Close modal and show processing screen IMMEDIATELY — no async blocking
-    const tempJobId = `dev-${Date.now()}`
     setShowOptions(false)
     setProcessing(true)
-    setJobId(tempJobId)
+    setError(null)
 
-    // Fire API in background — don't await in the render path
-    const run = async () => {
-      try {
-        const supabase = createSupabaseClient()
-        // Dev mode: always use fixed UUID — skip session lookup to avoid rotation
-        const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
-        const sessionData = devUserId ? null : (await supabase.auth.getSession()).data?.session
-        const currentUserId = devUserId || sessionData?.user?.id
-        // Pass userId in body to avoid REQUEST_HEADER_TOO_LARGE from large JWTs
-        const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+    try {
+      const supabase = createSupabaseClient()
+      const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
+      const sessionData = devUserId ? null : (await supabase.auth.getSession()).data?.session
+      const currentUserId = devUserId || sessionData?.user?.id
+      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
 
         const finalTitle = modalTitle?.trim() || jobName.trim() || undefined
         let body: Record<string, unknown> = { options, userId: currentUserId, title: finalTitle }
@@ -130,23 +124,24 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           body.title = url
         }
 
-        const res = await fetch('/api/process', {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify(body),
-        })
-        if (res.ok) {
-          const { jobId: realJobId } = await res.json()
-          setJobId(realJobId)
-          // Don't call onJobCreated here — let ProcessingView handle the transition
-          // onJobCreated is called in onComplete after clips are ready
-        }
-      } catch (err) {
-        console.error('Processing error:', err)
+      const res = await fetch('/api/process', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        const { jobId: realJobId } = await res.json()
+        setJobId(realJobId)
+      } else {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        setError(errData.error || `Server error: ${res.status}`)
+        setProcessing(false)
       }
+    } catch (err) {
+      console.error('Processing error:', err)
+      setError('Failed to submit video. Please try again.')
+      setProcessing(false)
     }
-
-    run()
   }
 
   const handleCancel = () => {
@@ -157,10 +152,10 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setUrlInput('')
   }
 
-  if (processing && jobId) {
+  if (processing) {
     return (
       <ProcessingView
-        jobId={jobId}
+        jobId={jobId || ''}
         onCancel={handleCancel}
         onComplete={() => {
           // Stay on processing screen briefly so user sees "Done!" state
@@ -170,7 +165,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
             setFile(null)
             setUrl('')
             setUrlInput('')
-            onJobCreated(jobId) // triggers tab switch to Clips
+            if (jobId) onJobCreated(jobId) // triggers tab switch to Clips
           }, 2500)
         }}
       />
