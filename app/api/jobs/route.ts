@@ -56,6 +56,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Fetch clips separately for each job
+  const { data: allClips, error: allClipsError } = await supabase.from('clips').select('*')
+  console.log(`[jobs/GET] ALL clips unfiltered: ${allClips?.length ?? 0} error: ${allClipsError?.message ?? 'none'}`)
+
   const jobsWithClips = await Promise.all(
     (jobs || []).map(async (job) => {
       const { data: clips, error: clipsError } = await supabase
