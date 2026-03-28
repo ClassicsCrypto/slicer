@@ -138,7 +138,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         if (res.ok) {
           const { jobId: realJobId } = await res.json()
           setJobId(realJobId)
-          onJobCreated(realJobId)
+          // Don't call onJobCreated here — let ProcessingView handle the transition
+          // onJobCreated is called in onComplete after clips are ready
         }
       } catch (err) {
         console.error('Processing error:', err)
