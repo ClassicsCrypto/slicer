@@ -39,8 +39,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(-8) || 'MISSING'
-  console.log('[jobs/GET] querying for userId:', userId, 'key ends:', keyPreview)
+
   // Fetch jobs without nested clips join (join was causing filter to return 0)
   const { data: jobs, error } = await supabase
     .from('jobs')
@@ -48,7 +47,7 @@ export async function GET(req: NextRequest) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
-  console.log('[jobs/GET] result count:', jobs?.length ?? 0, error?.message ?? 'no error')
+  if (error) console.error('[jobs/GET] DB error:', error.message)
 
   if (error) {
     console.error('[jobs/GET] DB error:', error.message, 'userId:', userId)
@@ -61,7 +60,7 @@ export async function GET(req: NextRequest) {
     .from('clips')
     .select('*')
     .in('job_id', (jobs || []).map(j => j.id))
-  console.log(`[jobs/GET] clips fetch: ${allClips?.length ?? 0} error: ${allClipsError?.message ?? 'none'}`)
+  if (allClipsError) console.error('[jobs/GET] clips fetch error:', allClipsError.message)
 
   const clipsByJob = new Map<string, typeof allClips>()
   for (const clip of allClips || []) {
