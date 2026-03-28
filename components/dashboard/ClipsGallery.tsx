@@ -295,19 +295,15 @@ export default function ClipsGallery({ onUploadNew }: ClipsGalleryProps) {
 
   const deleteJob = async (id: string) => {
     setDeletingId(id)
-    // Remove from UI immediately
+    // Remove from UI immediately — optimistic
     setJobs(prev => prev.filter(j => j.id !== id))
     setConfirmDelete(null)
     setSelected(new Set())
-    // Fire delete in background
-    try {
-      await fetch(`/api/jobs/${id}`, { method: 'DELETE' })
-    } catch (err) {
-      console.error('[delete] error:', err)
-    }
     setDeletingId(null)
-    // Refetch to sync
-    await fetchJobs()
+    // Fire delete in background — don't refetch (causes race condition)
+    fetch(`/api/jobs/${id}`, { method: 'DELETE' }).catch(err =>
+      console.error('[delete] error:', err)
+    )
   }
 
   const deleteSelected = async () => {
