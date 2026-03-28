@@ -12,17 +12,11 @@ function getSupabase() {
 
 export async function GET(req: NextRequest) {
   const supabase = getSupabase()
-  const userId = new URL(req.url).searchParams.get('userId')
 
-  if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // Single query — clips are embedded in job.progress.completedClips
+  // Fetch all jobs — internal tool, no multi-tenancy
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -30,7 +24,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Map completedClips from progress into the clips field the frontend expects
+  console.log(`[jobs/GET] found ${jobs?.length ?? 0} jobs`)
+
   const result = (jobs || []).map(job => ({
     ...job,
     clips: job.progress?.completedClips || [],
