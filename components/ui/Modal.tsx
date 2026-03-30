@@ -23,16 +23,16 @@ export default function Modal({ open, onClose, children, title, maxWidth = 'max-
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Panel */}
       <div
-        className={`relative z-10 w-full ${maxWidth} rounded-2xl border border-white/10 p-6 shadow-2xl`}
+        className={`relative z-10 w-full ${maxWidth} rounded-2xl border border-white/10 p-6 shadow-2xl my-8 max-h-[90vh] overflow-y-auto`}
         style={{ background: '#15151F' }}
       >
         {title && (
