@@ -1,10 +1,120 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingOptions, Job } from '@/types'
 import Button from '@/components/ui/Button'
 import OptionsModal from '@/components/dashboard/OptionsModal'
+
+const STEPS = [
+  { key: 'submitting', label: 'Submitting Video', icon: '📤' },
+  { key: 'transcribing', label: 'AI Transcribing Audio', icon: '🎙️' },
+  { key: 'scoring', label: 'AI Selecting Best Moments', icon: '🧠' },
+  { key: 'complete', label: 'Clips Ready!', icon: '✅' },
+]
+
+function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: () => void }) {
+  const [phase, setPhase] = useState('submitting')
+  const [elapsed, setElapsed] = useState(0)
+  const completedRef = useRef(false)
+  const startTime = useRef(Date.now())
+
+  // Timer
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime.current) / 1000)), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Poll
+  useEffect(() => {
+    if (completedRef.current) return
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/poll`)
+        if (!res.ok) return
+        const data = await res.json()
+        
+        if (data.phase) setPhase(data.phase)
+        if (data.status === 'complete' && !completedRef.current) {
+          completedRef.current = true
+          setPhase('complete')
+          setTimeout(onComplete, 2000)
+        }
+        if (data.status === 'failed') {
+          setPhase('failed')
+        }
+      } catch {}
+    }
+
+    // First poll after 2s (give process route time to submit to AssemblyAI)
+    const initial = setTimeout(poll, 2000)
+    const interval = setInterval(poll, 5000)
+    return () => { clearTimeout(initial); clearInterval(interval) }
+  }, [jobId, onComplete])
+
+  const stepIndex = STEPS.findIndex(s => s.key === phase)
+  const progress = phase === 'complete' ? 100 : phase === 'failed' ? 0 : Math.min(90, (stepIndex / STEPS.length) * 100 + elapsed * 0.5)
+
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-4">
+      {/* Animated ring */}
+      <div className="relative mb-8">
+        <div className={`w-24 h-24 rounded-full border-4 ${phase === 'complete' ? 'border-green-500' : 'border-white/10'}`}>
+          <div className={`w-full h-full rounded-full flex items-center justify-center text-4xl ${phase === 'complete' ? '' : 'animate-pulse'}`}>
+            {STEPS[Math.max(0, stepIndex)]?.icon ?? '⏳'}
+          </div>
+        </div>
+        {phase !== 'complete' && phase !== 'failed' && (
+          <div className="absolute inset-0 rounded-full border-4 border-t-red-500 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+        )}
+      </div>
+
+      {/* Status */}
+      <h2 className="text-xl font-bold text-white mb-2">
+        {phase === 'failed' ? '❌ Processing Failed' : STEPS[Math.max(0, stepIndex)]?.label ?? 'Processing...'}
+      </h2>
+      <p className="text-white/40 text-sm mb-6">
+        {phase === 'complete' ? 'Redirecting to your clips...' :
+         phase === 'failed' ? 'Something went wrong. Try again.' :
+         `${elapsed}s elapsed`}
+      </p>
+
+      {/* Progress bar */}
+      <div className="w-full max-w-sm mb-8">
+        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${progress}%`,
+              background: phase === 'complete' ? '#22c55e' : 'linear-gradient(90deg, #FF4D4D, #FF6B6B)',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Steps */}
+      <div className="w-full max-w-xs space-y-3">
+        {STEPS.map((step, i) => {
+          const isDone = i < stepIndex || phase === 'complete'
+          const isActive = i === stepIndex && phase !== 'complete' && phase !== 'failed'
+          return (
+            <div key={step.key} className={`flex items-center gap-3 transition-all duration-300 ${isDone || isActive ? 'opacity-100' : 'opacity-30'}`}>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-all ${
+                isDone ? 'bg-green-500 text-white' : isActive ? 'border-2 border-red-500' : 'border border-white/20'
+              }`}>
+                {isDone ? '✓' : isActive ? <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> : ''}
+              </div>
+              <span className={`text-sm ${isDone ? 'text-green-400' : isActive ? 'text-white font-semibold' : 'text-white/40'}`}>
+                {step.label}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 const DEFAULT_OPTIONS: ProcessingOptions = {
   clipCount: 5,
@@ -23,6 +133,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [options, setOptions] = useState<ProcessingOptions>(DEFAULT_OPTIONS)
   const [showOptions, setShowOptions] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [processingJobId, setProcessingJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const onDrop = useCallback((files: File[]) => {
@@ -71,21 +182,9 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         return
       }
 
-      // Build a minimal Job object from what we know — no need to re-fetch
-      const newJob: Job = {
-        id: data.jobId,
-        user_id: '',
-        title: extractTitle(url.trim()),
-        source_url: url.trim(),
-        status: 'processing',
-        options,
-        progress: { phase: 'submitting', completedClips: [] },
-        clips: [],
-        created_at: new Date().toISOString(),
-      }
-
+      // Show processing screen and start polling
       setShowOptions(false)
-      onJobCreated(newJob)
+      setProcessingJobId(data.jobId)
     } catch (err) {
       setError(`Network error: ${err}`)
     } finally {
@@ -99,6 +198,33 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     } catch {
       return 'Untitled'
     }
+  }
+
+  // Show processing view while job is running
+  if (processingJobId) {
+    return (
+      <InlineProcessing
+        jobId={processingJobId}
+        onComplete={() => {
+          setProcessingJobId(null)
+          setUrl('')
+          setIsSubmitting(false)
+          // Build minimal job and switch to clips
+          const completedJob: Job = {
+            id: processingJobId,
+            user_id: '',
+            title: extractTitle(url.trim() || 'Video'),
+            source_url: url.trim(),
+            status: 'complete',
+            options,
+            progress: { phase: 'complete' },
+            clips: [],
+            created_at: new Date().toISOString(),
+          }
+          onJobCreated(completedJob)
+        }}
+      />
+    )
   }
 
   return (
