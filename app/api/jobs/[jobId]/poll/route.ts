@@ -113,6 +113,22 @@ export async function GET(
       moments = []
     }
 
+    // If no moments from AI, create sequential fallback clips
+    if (moments.length === 0) {
+      console.log(`[poll] no AI moments — using sequential fallback`)
+      const clipCount = job.options?.clipCount ?? 3
+      const clipLength = parseInt(job.options?.clipLength ?? '30')
+      for (let i = 0; i < clipCount; i++) {
+        moments.push({
+          start_time: i * Math.ceil(clipLength / 2),
+          end_time: i * Math.ceil(clipLength / 2) + clipLength,
+          virality_score: 5,
+          matched_categories: job.options?.aiFocus?.slice(0, 1) ?? [],
+          ai_reason: 'Sequential clip placement (no speech detected)',
+        })
+      }
+    }
+
     const clipMode = process.env.CLIP_MODE ?? 'instant'
     const clips: Clip[] = moments.map((m) => {
       const clipId = uuidv4()

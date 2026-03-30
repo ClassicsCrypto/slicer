@@ -23,10 +23,10 @@ function buildPrompt(
     `[${i}] ${(ch.start / 1000).toFixed(1)}s–${(ch.end / 1000).toFixed(1)}s: ${ch.headline} — ${ch.summary}`
   ).join('\n') ?? ''
 
-  const highlights = transcript.auto_highlights_result?.results
+  const highlights = (transcript.auto_highlights_result?.results ?? [])
     .slice(0, 20)
     .map(h => `"${h.text}" (rank ${h.rank.toFixed(2)}, at ${h.timestamps.map(t => `${(t.start / 1000).toFixed(1)}s`).join(', ')})`)
-    .join('\n') ?? ''
+    .join('\n')
 
   const focusStr = aiFocus.join(', ')
 
