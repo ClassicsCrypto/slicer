@@ -38,6 +38,7 @@ export async function submitTranscription(audioUrl: string): Promise<string> {
     },
     body: JSON.stringify({
       audio_url: audioUrl,
+      speech_model: 'universal-2',
       auto_highlights: true,
       auto_chapters: true,
     }),
