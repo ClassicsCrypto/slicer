@@ -14,12 +14,13 @@ export async function GET(
 
   try {
     // Fetch job
-    const { data: job, error: jobError } = await supabase
+    const { data: jobs, error: jobError } = await supabase
       .from('jobs')
       .select('*')
       .eq('id', jobId)
-      .single()
+      .limit(1)
 
+    const job = jobs?.[0]
     if (jobError || !job) {
       console.error(`[poll] job ${jobId} not found:`, jobError?.message)
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
