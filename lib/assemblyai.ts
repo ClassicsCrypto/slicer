@@ -64,7 +64,7 @@ export async function pollTranscription(transcriptId: string): Promise<AssemblyA
   }
 
   const raw = await res.text()
-  console.log(`[assemblyai] poll ${transcriptId}: raw_length=${raw.length} key_prefix=${ASSEMBLYAI_API_KEY?.slice(0, 6) ?? 'MISSING'}`)
+  console.log(`[assemblyai] poll ${transcriptId}: raw_preview=${raw.slice(0, 300)}`)
   const data = JSON.parse(raw) as AssemblyAIResult
   console.log(`[assemblyai] poll ${transcriptId}: status=${data.status} text_length=${data.text?.length ?? 0}`)
   return data
