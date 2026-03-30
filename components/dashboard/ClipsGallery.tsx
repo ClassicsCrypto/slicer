@@ -195,6 +195,17 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     fetchJobs()
   }, [fetchJobs])
 
+  // Also merge initialJobs (from onJobCreated) into state
+  useEffect(() => {
+    if (initialJobs.length > 0) {
+      setJobs(prev => {
+        const ids = new Set(prev.map(j => j.id))
+        const newJobs = initialJobs.filter(j => !ids.has(j.id))
+        return newJobs.length > 0 ? [...newJobs, ...prev] : prev
+      })
+    }
+  }, [initialJobs])
+
   const handleDelete = (jobId: string) => {
     // Optimistic delete
     setJobs((prev) => prev.filter((j) => j.id !== jobId))

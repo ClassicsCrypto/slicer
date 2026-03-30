@@ -78,7 +78,7 @@ export default function DashboardPage() {
         )}
 
         {activeTab === 'clips' && (
-          <ClipsGallery key={galleryKey} />
+          <ClipsGallery key={galleryKey} initialJobs={processingJobs} />
         )}
       </main>
     </div>

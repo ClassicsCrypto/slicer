@@ -21,8 +21,10 @@ export async function GET(
       .single()
 
     if (jobError || !job) {
+      console.error(`[poll] job ${jobId} not found:`, jobError?.message)
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
+    console.log(`[poll] job ${jobId} status=${job.status} phase=${job.progress?.phase}`)
 
     // Already complete or failed — return current state
     if (job.status === 'complete' || job.status === 'failed') {
