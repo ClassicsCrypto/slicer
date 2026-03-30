@@ -3,10 +3,11 @@
 @tailwind utilities;
 
 :root {
-  --primary: #00BFA5;
-  --accent: #00E676;
-  --background: #0A0E1A;
-  --surface: #111827;
+  --primary: #FF4D4D;
+  --primary-light: #FF6B6B;
+  --teal: #00BFA5;
+  --background: #0A0A0F;
+  --surface: #15151F;
 }
 
 * {
@@ -19,7 +20,7 @@ html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-  background-color: #0A0E1A;
+  background-color: #0A0A0F;
   color: #ffffff;
 }
 
@@ -33,98 +34,44 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #111827;
+  background: #15151F;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #00BFA5;
+  background: #FF4D4D;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #00E676;
+  background: #FF6B6B;
 }
 
 /* Glow effects */
+.glow-red {
+  box-shadow: 0 0 20px rgba(255, 77, 77, 0.3);
+}
+
 .glow-teal {
   box-shadow: 0 0 20px rgba(0, 191, 165, 0.3);
 }
 
-.glow-teal-strong {
-  box-shadow: 0 0 40px rgba(0, 191, 165, 0.5);
-}
-
-.text-gradient {
-  background: linear-gradient(135deg, #00BFA5, #00E676);
+.text-gradient-red {
+  background: linear-gradient(135deg, #FF4D4D, #FF6B6B);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Marquee animation */
-@keyframes marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 77, 77, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(255, 77, 77, 0.6); }
 }
 
-.animate-marquee {
-  animation: marquee 30s linear infinite;
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
-.animate-marquee:hover {
-  animation-play-state: paused;
-}
-
-/* Cat float animation */
-@keyframes catFloat {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-20px); }
-}
-
-.cat-float {
-  animation: catFloat 3s ease-in-out infinite;
-}
-
-/* Glow pulse */
-@keyframes glowPulse {
-  0%, 100% { filter: drop-shadow(0 0 8px #00BFA5); }
-  50% { filter: drop-shadow(0 0 32px #00E676); }
-}
-
-.glow-pulse {
-  animation: glowPulse 2s ease-in-out infinite;
-}
-
-/* Checklist item animation */
-@keyframes checkIn {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-.check-in {
-  animation: checkIn 0.4s ease-out forwards;
-}
-
-/* Tab underline */
-.tab-active {
-  border-bottom: 2px solid #00BFA5;
-  color: #00BFA5;
-}
-
-/* Input focus styles */
-input:focus, textarea:focus, select:focus {
-  outline: none;
-  border-color: #00BFA5;
-  box-shadow: 0 0 0 2px rgba(0, 191, 165, 0.2);
-}
-
-/* Drag zone active */
-.drag-active {
-  border-color: #00E676 !important;
-  background-color: rgba(0, 230, 118, 0.05) !important;
-}
-
-/* Shimmer animation for indeterminate progress bar */
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
@@ -132,4 +79,26 @@ input:focus, textarea:focus, select:focus {
 
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Input focus */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #FF4D4D;
+  box-shadow: 0 0 0 2px rgba(255, 77, 77, 0.2);
+}
+
+/* Drag zone */
+.drag-active {
+  border-color: #FF4D4D !important;
+  background-color: rgba(255, 77, 77, 0.05) !important;
 }

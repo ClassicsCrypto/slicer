@@ -1,311 +1,176 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
+import { ProcessingOptions, Job } from '@/types'
 import Button from '@/components/ui/Button'
-import OptionsModal from './OptionsModal'
-import ProcessingView from './ProcessingView'
-import { createSupabaseClient } from '@/lib/supabase'
-import type { ProcessingOptions } from '@/types'
+import OptionsModal from '@/components/dashboard/OptionsModal'
 
-const ACCEPTED_TYPES = {
-  'video/mp4': ['.mp4'],
-  'video/quicktime': ['.mov'],
-  'video/x-msvideo': ['.avi'],
-  'video/webm': ['.webm'],
-  'video/x-matroska': ['.mkv'],
+const DEFAULT_OPTIONS: ProcessingOptions = {
+  clipCount: 5,
+  clipLength: '30',
+  aiFocus: ['funny_moments', 'hype_moments', 'intense_action'],
+  outputQuality: '720p',
+  platformFormat: 'twitter',
 }
 
-const MAX_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
-
 interface UploadTabProps {
-  onJobCreated: (jobId: string) => void
+  onJobCreated: (job: Job) => void
 }
 
 export default function UploadTab({ onJobCreated }: UploadTabProps) {
-  const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState('')
-  const [urlInput, setUrlInput] = useState('')
-  const [jobName, setJobName] = useState('')
+  const [options, setOptions] = useState<ProcessingOptions>(DEFAULT_OPTIONS)
   const [showOptions, setShowOptions] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [processing, setProcessing] = useState(false)
-  const [jobId, setJobId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const onDrop = useCallback((acceptedFiles: File[], rejections: import('react-dropzone').FileRejection[]) => {
-    setError(null)
-    if (rejections.length > 0) {
-      const firstError = rejections[0]?.errors[0]
-      setError(firstError?.message || 'Invalid file')
-      return
-    }
-    if (acceptedFiles.length > 0) {
-      setFile(acceptedFiles[0])
-      setUrl('')
-      setUrlInput('')
-      setShowOptions(true)
+  const onDrop = useCallback((files: File[]) => {
+    // For now just show the filename — actual upload not implemented yet
+    if (files[0]) {
+      setUrl(`[File: ${files[0].name}]`)
     }
   }, [])
 
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: ACCEPTED_TYPES,
-    maxSize: MAX_SIZE,
-    maxFiles: 1,
+    accept: { 'video/*': [] },
+    multiple: false,
     noClick: true,
   })
 
-  const handleUrlPaste = () => {
-    const trimmed = urlInput.trim()
-    if (!trimmed) return
-    if (!trimmed.match(/^https?:\/\/.+/)) {
-      setError('Please enter a valid URL')
-      return
-    }
-    // Warn about unsupported platforms
-    if (trimmed.match(/youtube\.com|youtu\.be|twitch\.tv|twitter\.com|tiktok\.com/i)) {
-      setError('⚠️ YouTube, Twitch, and social media URLs are not supported yet. Please upload a video file directly using drag & drop or Browse Files.')
+  const handleOpenOptions = () => {
+    if (!url.trim()) {
+      setError('Please paste a video URL first')
       return
     }
     setError(null)
-    setUrl(trimmed)
-    setFile(null)
     setShowOptions(true)
   }
 
-  const handleStart = async (options: ProcessingOptions, modalTitle?: string) => {
-    if (modalTitle) setJobName(modalTitle)
-    setShowOptions(false)
-    setSubmitting(true)
+  const handleSubmit = async () => {
+    setIsSubmitting(true)
     setError(null)
 
     try {
-      const supabase = createSupabaseClient()
-      const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
-      const sessionData = devUserId ? null : (await supabase.auth.getSession()).data?.session
-      const currentUserId = devUserId || sessionData?.user?.id
-      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-
-        const finalTitle = modalTitle?.trim() || jobName.trim() || undefined
-        let body: Record<string, unknown> = { options, userId: currentUserId, title: finalTitle }
-
-        if (file) {
-          if (sessionData?.access_token) {
-            // Step 1: Get a signed upload URL (no file size limit)
-            const urlRes = await fetch('/api/upload-url', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ filename: file.name, contentType: file.type, userId: currentUserId }),
-            })
-            if (urlRes.ok) {
-              const { signedUrl, storageKey, publicUrl } = await urlRes.json()
-              // Step 2: Upload directly from browser to Supabase Storage (bypasses Vercel limits)
-              const uploadRes = await fetch(signedUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': file.type },
-                body: file,
-              })
-              if (uploadRes.ok) {
-                body.filePath = storageKey
-                body.publicUrl = publicUrl
-              } else {
-                console.error('Direct upload failed:', uploadRes.status)
-                body.filePath = `pending/${file.name}`
-              }
-            } else {
-              body.filePath = `pending/${file.name}`
-            }
-          } else {
-            body.filePath = `pending/${file.name}`
-          }
-          body.title = file.name
-        } else if (url) {
-          body.videoUrl = url
-          body.title = url
-        }
-
       const res = await fetch('/api/process', {
         method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceUrl: url.trim(),
+          title: extractTitle(url.trim()),
+          options,
+        }),
       })
-      if (res.ok) {
-        const { jobId: realJobId } = await res.json()
-        setJobId(realJobId)
-        setSubmitting(false)
-        setProcessing(true)
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to start processing')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Fetch the created job
+      const jobsRes = await fetch('/api/jobs')
+      const { jobs } = await jobsRes.json()
+      const newJob = jobs?.find((j: Job) => j.id === data.jobId)
+
+      if (newJob) {
+        setShowOptions(false)
+        onJobCreated(newJob)
       } else {
-        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
-        setError(errData.error || `Server error: ${res.status}`)
-        setSubmitting(false)
+        setError('Job created but could not fetch it')
       }
     } catch (err) {
-      console.error('Processing error:', err)
-      setError('Failed to submit video. Please try again.')
-      setSubmitting(false)
+      setError(`Network error: ${err}`)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const handleCancel = () => {
-    setSubmitting(false)
-    setProcessing(false)
-    setJobId(null)
-    setFile(null)
-    setUrl('')
-    setUrlInput('')
-  }
-
-  if (submitting) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] py-12 px-4">
-        <div className="mb-6 relative flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-primary/20 blur-3xl scale-125 animate-pulse" />
-          <video src="/slicer-cat.mp4" autoPlay loop muted playsInline width={180} height={180}
-            className="relative rounded-2xl drop-shadow-[0_0_32px_rgba(0,191,165,0.8)]" />
-        </div>
-        <h2 className="text-xl font-bold text-white mb-2">⚡ Submitting Video...</h2>
-        <p className="text-muted text-sm mb-6">Setting up your clips — this only takes a moment</p>
-        <div className="w-full max-w-xs h-2 bg-white/10 rounded-full overflow-hidden">
-          <div className="h-full w-1/3 bg-gradient-to-r from-primary to-accent rounded-full"
-            style={{ animation: 'shimmer 1.5s ease-in-out infinite' }} />
-        </div>
-      </div>
-    )
-  }
-
-  if (processing) {
-    return (
-      <ProcessingView
-        jobId={jobId || ''}
-        onCancel={handleCancel}
-        onComplete={() => {
-          // Stay on processing screen briefly so user sees "Done!" state
-          setTimeout(() => {
-            setProcessing(false)
-            setJobId(null)
-            setFile(null)
-            setUrl('')
-            setUrlInput('')
-            if (jobId) onJobCreated(jobId) // triggers tab switch to Clips
-          }, 2500)
-        }}
-      />
-    )
+  function extractTitle(srcUrl: string): string {
+    try {
+      return new URL(srcUrl).hostname
+    } catch {
+      return 'Untitled'
+    }
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      {/* Drag & Drop Zone */}
+    <div className="max-w-2xl mx-auto py-12">
+      {/* Drop zone + URL input */}
       <div
         {...getRootProps()}
-        className={`
-          relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200
-          ${isDragActive ? 'border-accent bg-accent/5 drag-active' : 'border-white/10 hover:border-primary/50 hover:bg-primary/5'}
-        `}
+        className={`rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
+          isDragActive ? 'drag-active' : 'border-white/10 hover:border-white/20'
+        }`}
+        style={{ background: '#15151F' }}
       >
         <input {...getInputProps()} />
+
         <div className="flex flex-col items-center gap-4">
-          <div className="text-6xl">{isDragActive ? '📂' : '🎬'}</div>
+          <div className="text-5xl animate-float">🎬</div>
+
           <div>
-            <p className="text-xl font-bold text-white mb-1">
-              {isDragActive ? 'Drop it!' : 'Drop your video here'}
-            </p>
-            <p className="text-muted text-sm">
-              MP4, MOV, AVI, WebM, MKV — up to 2GB
-            </p>
+            <h3 className="text-xl font-bold text-white mb-1">Drop a video or paste a URL</h3>
+            <p className="text-white/40 text-sm">Supports direct video URLs (MP4, etc.)</p>
           </div>
-          <div className="flex items-center gap-3 w-full">
-            <div className="flex-1 h-px bg-white/10" />
-            <span className="text-muted text-xs uppercase tracking-widest">or</span>
-            <div className="flex-1 h-px bg-white/10" />
-          </div>
-          <Button variant="ghost" size="md" onClick={(e) => { e.stopPropagation(); open() }}>
-            Browse Files
-          </Button>
-        </div>
-      </div>
 
-      {/* File selected preview */}
-      {file && !processing && (
-        <>
-          <div className="mt-4 flex items-center gap-3 p-4 bg-surface rounded-xl border border-primary/30">
-            <span className="text-2xl">🎬</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{file.name}</p>
-              <p className="text-xs text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+          <div className="w-full max-w-lg">
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://example.com/video.mp4"
+                value={url}
+                onChange={(e) => { setUrl(e.target.value); setError(null) }}
+                onKeyDown={(e) => e.key === 'Enter' && handleOpenOptions()}
+                className="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 text-sm"
+              />
+              <Button
+                variant="primary"
+                onClick={handleOpenOptions}
+                disabled={!url.trim()}
+              >
+                Analyze →
+              </Button>
             </div>
-            <button onClick={() => { setFile(null); setShowOptions(false); setJobName('') }} className="text-muted hover:text-red-400 transition-colors">
-              ✕
-            </button>
-          </div>
-          <input
-            type="text"
-            placeholder="Name this session (optional)"
-            value={jobName}
-            onChange={(e) => setJobName(e.target.value)}
-            className="mt-3 w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
-          />
-          <Button
-            variant="primary"
-            size="lg"
-            className="mt-3 w-full"
-            onClick={() => setShowOptions(true)}
-          >
-            ⚡ Set Options &amp; Process
-          </Button>
-        </>
-      )}
 
-      {/* URL Input */}
-      <div className="mt-6">
-        <p className="text-sm font-semibold text-muted mb-3 uppercase tracking-wider">Or paste a video URL</p>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="YouTube, Twitch, or Twitter/X URL..."
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleUrlPaste()}
-            className="flex-1 bg-background border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
-          />
-          <Button variant="ghost" onClick={handleUrlPaste} disabled={!urlInput.trim()}>
-            Use URL
-          </Button>
+            {error && (
+              <p className="mt-2 text-red-400 text-sm">{error}</p>
+            )}
+          </div>
+
+          <p className="text-white/20 text-xs">or drag & drop a video file</p>
         </div>
-        {url && (
-          <>
-            <p className="mt-2 text-xs text-primary truncate">✓ URL ready: {url}</p>
-            <input
-              type="text"
-              placeholder="Name this session (optional)"
-              value={jobName}
-              onChange={(e) => setJobName(e.target.value)}
-              className="mt-3 w-full bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-primary transition-colors"
-            />
-            <Button
-              variant="primary"
-              size="lg"
-              className="mt-3 w-full"
-              onClick={() => setShowOptions(true)}
-            >
-              ⚡ Set Options &amp; Process
-            </Button>
-          </>
-        )}
       </div>
 
-      {error && (
-        <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-          {error}
-        </div>
-      )}
+      {/* Tips */}
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        {[
+          { icon: '🔗', label: 'Direct URLs', desc: 'Paste any publicly accessible video URL' },
+          { icon: '🎮', label: 'Gaming Content', desc: 'Optimized for kills, highlights, fails' },
+          { icon: '⚡', label: 'Instant Mode', desc: 'Clips ready in seconds, no rendering wait' },
+        ].map((tip) => (
+          <div
+            key={tip.label}
+            className="rounded-xl p-4 border border-white/5 text-center"
+            style={{ background: '#15151F' }}
+          >
+            <div className="text-2xl mb-2">{tip.icon}</div>
+            <div className="text-xs font-semibold text-white mb-1">{tip.label}</div>
+            <div className="text-xs text-white/30">{tip.desc}</div>
+          </div>
+        ))}
+      </div>
 
-      {/* Options Modal */}
       <OptionsModal
-        isOpen={showOptions}
+        open={showOptions}
         onClose={() => setShowOptions(false)}
-        onStart={handleStart}
+        options={options}
+        onChange={setOptions}
+        onConfirm={handleSubmit}
+        isSubmitting={isSubmitting}
       />
     </div>
   )

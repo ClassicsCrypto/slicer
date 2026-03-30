@@ -1,26 +1,22 @@
-import React from 'react'
+'use client'
 
-type BadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'default'
+import { ReactNode } from 'react'
 
 interface BadgeProps {
-  variant?: BadgeVariant
-  children: React.ReactNode
-  className?: string
+  children: ReactNode
+  variant?: 'red' | 'teal' | 'dark' | 'green'
 }
 
-const variantClasses: Record<BadgeVariant, string> = {
-  success: 'bg-green-500/15 text-green-400 border-green-500/30',
-  warning: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
-  error: 'bg-red-500/15 text-red-400 border-red-500/30',
-  info: 'bg-primary/15 text-primary border-primary/30',
-  default: 'bg-white/10 text-muted border-white/20',
-}
+export default function Badge({ children, variant = 'dark' }: BadgeProps) {
+  const variants = {
+    red: 'bg-red-500/20 text-red-400 border-red-500/30',
+    teal: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+    dark: 'bg-white/5 text-white/60 border-white/10',
+    green: 'bg-green-500/20 text-green-400 border-green-500/30',
+  }
 
-export default function Badge({ variant = 'default', children, className = '' }: BadgeProps) {
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${variantClasses[variant]} ${className}`}
-    >
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${variants[variant]}`}>
       {children}
     </span>
   )

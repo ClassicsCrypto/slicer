@@ -1,37 +1,21 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Singleton — one client instance to avoid storage lock conflicts
-let clientInstance: SupabaseClient | null = null
-
-export const createSupabaseClient = () => {
-  if (typeof window === 'undefined') {
-    // Server-side: always create fresh
-    return createClient(supabaseUrl, supabaseAnonKey)
-  }
-  if (!clientInstance) {
-    clientInstance = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        storageKey: 'slicer-auth',
-        storage: window.localStorage,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-      },
-    })
-  }
-  return clientInstance
+// Server client — uses service role, bypasses RLS
+export function createServerClient() {
+  return createClient(supabaseUrl, supabaseServiceKey)
 }
 
-// Server-side client (no singleton needed)
-export const createSupabaseServerClient = () =>
-  createClient(supabaseUrl, supabaseAnonKey)
+// Browser client singleton
+let browserClient: ReturnType<typeof createClient> | null = null
 
-// Service role client for admin operations (API routes only)
-export const createSupabaseAdmin = () =>
-  createClient(
-    supabaseUrl,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+export function createBrowserClient() {
+  if (browserClient) return browserClient
+  browserClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: true },
+  })
+  return browserClient
+}

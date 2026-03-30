@@ -1,40 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase'
+import { Clip } from '@/types'
 
-export const dynamic = 'force-dynamic'
+export async function GET() {
+  try {
+    const supabase = createServerClient()
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+    const { data: jobs, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-export async function GET(req: NextRequest) {
-  const supabase = getSupabase()
+    if (error) {
+      console.error('Jobs fetch error:', error)
+      return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 })
+    }
 
-  // Fetch all jobs — internal tool, no multi-tenancy
-  const { data: jobs, error } = await supabase
-    .from('jobs')
-    .select('*')
-    .order('created_at', { ascending: false })
+    // Map progress.completedClips → clips field
+    const mapped = (jobs ?? []).map((job) => {
+      const completedClips = (job.progress?.completedClips ?? []) as Clip[]
+      return { ...job, clips: completedClips }
+    })
 
-  if (error) {
-    console.error('[jobs/GET] error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ jobs: mapped })
+  } catch (err) {
+    console.error('Jobs route error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-
-  console.log(`[jobs/GET] found ${jobs?.length ?? 0} jobs`)
-
-  const result = (jobs || []).map(job => ({
-    ...job,
-    clips: job.progress?.completedClips || [],
-  }))
-
-  return NextResponse.json(result, {
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'Pragma': 'no-cache',
-    },
-  })
 }

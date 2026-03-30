@@ -1,107 +1,89 @@
-/**
- * Shotstack API integration for video clipping
- * Docs: https://shotstack.io/docs/api/
- * 
- * SHOTSTACK_ENV controls sandbox vs production:
- *   - "stage" (default) → sandbox, 24h URLs, free, slower
- *   - "v1" → production, 7-day URLs, paid, faster
- */
+const SHOTSTACK_API_KEY = process.env.SHOTSTACK_API_KEY!
+const SHOTSTACK_ENV = process.env.SHOTSTACK_ENV ?? 'stage'
+const BASE_URL = `https://api.shotstack.io/${SHOTSTACK_ENV}`
 
-const SHOTSTACK_ENV = process.env.SHOTSTACK_ENV || 'stage'
-const SHOTSTACK_BASE = `https://api.shotstack.io/${SHOTSTACK_ENV}`
-const SHOTSTACK_API_KEY = process.env.SHOTSTACK_API_KEY || ''
-
-export interface ShotstackClipSpec {
-  sourceUrl: string
-  startTime: number
-  endTime: number
-  outputFormat: 'mp4'
-  outputQuality: '720p' | '1080p' | '4k'
-  platformFormat: 'tiktok' | 'twitter' | 'youtube_shorts' | 'custom'
+export interface RenderResult {
+  renderId: string
+  status: string
 }
 
-function getResolution(quality: string) {
-  switch (quality) {
-    case '4k':   return { width: 3840, height: 2160 }
-    case '1080p': return { width: 1920, height: 1080 }
-    default:      return { width: 1280, height: 720 }
-  }
+export interface RenderStatus {
+  renderId: string
+  status: 'queued' | 'fetching' | 'rendering' | 'saving' | 'done' | 'failed'
+  url?: string
+  error?: string
 }
 
-function getAspectRatio(format: string) {
-  switch (format) {
-    case 'tiktok':
-    case 'youtube_shorts':
-      return { width: 1080, height: 1920 }
-    case 'twitter':
-      return { width: 1920, height: 1080 }
-    default:
-      return null
-  }
-}
+export async function renderClip(
+  sourceUrl: string,
+  startTime: number,
+  endTime: number,
+  outputQuality: '720p' | '1080p' = '720p',
+): Promise<RenderResult> {
+  const resolution = outputQuality === '1080p' ? 'hd' : 'sd'
+  const duration = endTime - startTime
 
-export async function renderClip(spec: ShotstackClipSpec): Promise<string> {
-  if (!SHOTSTACK_API_KEY) throw new Error('SHOTSTACK_API_KEY not set')
-
-  const duration = spec.endTime - spec.startTime
-  const res = getResolution(spec.outputQuality)
-  const aspect = getAspectRatio(spec.platformFormat)
-  const outputRes = aspect || res
-
-  const payload = {
-    timeline: {
-      tracks: [{
-        clips: [{
-          asset: {
-            type: 'video',
-            src: spec.sourceUrl,
-            trim: spec.startTime,
+  const timeline = {
+    tracks: [
+      {
+        clips: [
+          {
+            asset: {
+              type: 'video',
+              src: sourceUrl,
+              trim: startTime,
+            },
+            start: 0,
+            length: duration,
           },
-          start: 0,
-          length: duration,
-          fit: aspect ? 'crop' : 'contain',
-        }],
-      }],
-    },
-    output: {
-      format: 'mp4',
-      resolution: outputRes.width <= 1280 ? 'sd' : outputRes.width <= 1920 ? 'hd' : '4k',
-      size: { width: outputRes.width, height: outputRes.height },
-    },
+        ],
+      },
+    ],
   }
 
-  const response = await fetch(`${SHOTSTACK_BASE}/render`, {
+  const output = {
+    format: 'mp4',
+    resolution,
+  }
+
+  const res = await fetch(`${BASE_URL}/render`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
       'x-api-key': SHOTSTACK_API_KEY,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ timeline, output }),
   })
 
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Shotstack render failed: ${response.status} ${text}`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Shotstack render failed: ${res.status} ${body}`)
   }
 
-  const data = await response.json()
-  return data.response.id as string
+  const data = await res.json()
+  return {
+    renderId: data.response?.id ?? data.id,
+    status: data.response?.status ?? 'queued',
+  }
 }
 
-export async function getRenderStatus(renderId: string): Promise<{ status: string; url?: string }> {
-  if (!SHOTSTACK_API_KEY) throw new Error('SHOTSTACK_API_KEY not set')
-
-  const response = await fetch(`${SHOTSTACK_BASE}/render/${renderId}`, {
+export async function getRenderStatus(renderId: string): Promise<RenderStatus> {
+  const res = await fetch(`${BASE_URL}/render/${renderId}`, {
     headers: { 'x-api-key': SHOTSTACK_API_KEY },
   })
 
-  if (!response.ok) throw new Error(`Status check failed: ${response.status}`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Shotstack status check failed: ${res.status} ${body}`)
+  }
 
-  const data = await response.json()
-  const render = data.response
+  const data = await res.json()
+  const resp = data.response ?? data
 
   return {
-    status: render.status,
-    url: render.url,
+    renderId: resp.id ?? renderId,
+    status: resp.status,
+    url: resp.url,
+    error: resp.error,
   }
 }

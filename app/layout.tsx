@@ -2,23 +2,14 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Slicer — AI Video Clipping by MCV',
-  description: 'AI-Powered Clips. Zero Effort. The premier video clipping and subtitle tool by Mars Cats Voyage.',
-  icons: {
-    icon: '/favicon.svg',
-  },
+  title: 'Slicer — AI Video Clips by Mars Cats Voyage',
+  description: 'AI-powered video clipping for Mars Cats Voyage content.',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-background text-white antialiased min-h-screen">
-        {children}
-      </body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
   )
 }
