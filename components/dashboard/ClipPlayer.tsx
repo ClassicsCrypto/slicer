@@ -1,7 +1,72 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Clip } from '@/types'
+import { useEffect, useRef, useState, useMemo } from 'react'
+import { Clip, SubtitleWord } from '@/types'
+
+/**
+ * Groups words into display lines (~4-6 words each) and shows the
+ * current line with word-level highlight animation.
+ */
+function SubtitleOverlay({
+  words,
+  currentTime,
+  isPlaying,
+}: {
+  words: SubtitleWord[]
+  currentTime: number
+  isPlaying: boolean
+}) {
+  // Group words into lines of ~5 words
+  const lines = useMemo(() => {
+    const result: SubtitleWord[][] = []
+    for (let i = 0; i < words.length; i += 5) {
+      result.push(words.slice(i, i + 5))
+    }
+    return result
+  }, [words])
+
+  // Find current line based on playback time
+  const currentLine = useMemo(() => {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]
+      if (line.length > 0 && currentTime >= line[0].start - 0.1) {
+        // Check if we haven't passed this line entirely
+        const lastWord = line[line.length - 1]
+        if (currentTime <= lastWord.end + 1.0) {
+          return { index: i, words: line }
+        }
+      }
+    }
+    return null
+  }, [lines, currentTime])
+
+  if (!isPlaying || !currentLine) return null
+
+  return (
+    <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-none px-4">
+      <div className="bg-black/70 backdrop-blur-sm rounded-lg px-4 py-2 max-w-[90%]">
+        <p className="text-center text-sm md:text-base font-bold leading-relaxed">
+          {currentLine.words.map((word, i) => {
+            const isActive = currentTime >= word.start - 0.05
+            const isHighlighted = currentTime >= word.start - 0.05 && currentTime <= word.end + 0.3
+            return (
+              <span
+                key={`${currentLine.index}-${i}`}
+                className="transition-all duration-150"
+                style={{
+                  color: isHighlighted ? '#FF4D4D' : isActive ? '#ffffff' : 'rgba(255,255,255,0.4)',
+                  textShadow: isHighlighted ? '0 0 12px rgba(255,77,77,0.6)' : 'none',
+                }}
+              >
+                {word.text}{' '}
+              </span>
+            )
+          })}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 interface ClipPlayerProps {
   clip: Clip
@@ -108,6 +173,15 @@ export default function ClipPlayer({ clip, sourceUrl }: ClipPlayerProps) {
           <button
             onClick={togglePlay}
             className="absolute inset-0 bg-transparent"
+          />
+        )}
+
+        {/* Animated subtitles */}
+        {clip.subtitles && clip.subtitles.length > 0 && (
+          <SubtitleOverlay
+            words={clip.subtitles}
+            currentTime={currentRelative}
+            isPlaying={isPlaying}
           />
         )}
       </div>

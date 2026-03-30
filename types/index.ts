@@ -12,6 +12,12 @@ export type ClipLength = '15' | '30' | '45' | '60'
 
 export type JobStatus = 'processing' | 'complete' | 'failed'
 
+export interface SubtitleWord {
+  text: string
+  start: number  // seconds relative to clip start
+  end: number    // seconds relative to clip start
+}
+
 export interface Clip {
   id: string
   job_id: string
@@ -23,6 +29,7 @@ export interface Clip {
   matched_categories: AIFocus[]
   ai_reason: string
   virality_score?: number
+  subtitles?: SubtitleWord[]
   created_at: string
 }
 

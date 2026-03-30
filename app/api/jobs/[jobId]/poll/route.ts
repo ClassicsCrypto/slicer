@@ -2,8 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { pollTranscription } from '@/lib/assemblyai'
 import { scoreTranscriptWithGroq } from '@/lib/groq'
-import { Clip } from '@/types'
+import { Clip, SubtitleWord } from '@/types'
+import { AssemblyAIResult } from '@/lib/assemblyai'
 import { v4 as uuidv4 } from 'uuid'
+
+/**
+ * Extract word-level subtitles for a clip from AssemblyAI transcript words.
+ * Times are converted to seconds relative to clip start.
+ */
+function extractSubtitles(
+  transcript: AssemblyAIResult,
+  clipStartSec: number,
+  clipEndSec: number,
+): SubtitleWord[] {
+  const words = transcript.words ?? []
+  const subs: SubtitleWord[] = []
+
+  for (const w of words) {
+    const wordStartSec = w.start / 1000
+    const wordEndSec = w.end / 1000
+
+    // Only include words that fall within the clip's time range
+    if (wordStartSec >= clipStartSec && wordEndSec <= clipEndSec + 0.5) {
+      subs.push({
+        text: w.text,
+        start: parseFloat((wordStartSec - clipStartSec).toFixed(2)),
+        end: parseFloat((wordEndSec - clipStartSec).toFixed(2)),
+      })
+    }
+  }
+
+  return subs
+}
 
 export async function GET(
   _req: NextRequest,
@@ -91,6 +121,9 @@ export async function GET(
           ? `${job.source_url}#t=${m.start_time},${m.end_time}`
           : `clips/${jobId}/${clipId}.mp4`
 
+      // Extract word-level subtitles for this clip's time range
+      const subtitles = extractSubtitles(transcript, m.start_time, m.end_time)
+
       return {
         id: clipId,
         job_id: jobId,
@@ -102,6 +135,7 @@ export async function GET(
         matched_categories: m.matched_categories,
         ai_reason: m.ai_reason,
         virality_score: m.virality_score,
+        subtitles,
         created_at: new Date().toISOString(),
       }
     })
