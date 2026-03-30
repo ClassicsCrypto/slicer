@@ -71,17 +71,21 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         return
       }
 
-      // Fetch the created job
-      const jobsRes = await fetch('/api/jobs')
-      const { jobs } = await jobsRes.json()
-      const newJob = jobs?.find((j: Job) => j.id === data.jobId)
-
-      if (newJob) {
-        setShowOptions(false)
-        onJobCreated(newJob)
-      } else {
-        setError('Job created but could not fetch it')
+      // Build a minimal Job object from what we know — no need to re-fetch
+      const newJob: Job = {
+        id: data.jobId,
+        user_id: '',
+        title: extractTitle(url.trim()),
+        source_url: url.trim(),
+        status: 'processing',
+        options,
+        progress: { phase: 'submitting', completedClips: [] },
+        clips: [],
+        created_at: new Date().toISOString(),
       }
+
+      setShowOptions(false)
+      onJobCreated(newJob)
     } catch (err) {
       setError(`Network error: ${err}`)
     } finally {
