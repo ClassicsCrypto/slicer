@@ -43,32 +43,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
     }
 
-    // Submit AssemblyAI transcription — fire & forget
-    ;(async () => {
-      try {
-        const transcriptId = await submitTranscription(sourceUrl)
+    // Submit AssemblyAI transcription BEFORE returning (Vercel kills async after response)
+    try {
+      const transcriptId = await submitTranscription(sourceUrl)
+      console.log(`[process] AssemblyAI submitted: ${transcriptId}`)
 
-        await supabase
-          .from('jobs')
-          .update({
-            progress: {
-              phase: 'transcribing',
-              transcriptId,
-              completedClips: [],
-            },
-          })
-          .eq('id', jobId)
-      } catch (err) {
-        console.error('AssemblyAI submission error:', err)
-        await supabase
-          .from('jobs')
-          .update({
-            status: 'failed',
-            progress: { phase: 'failed', error: String(err), completedClips: [] },
-          })
-          .eq('id', jobId)
-      }
-    })()
+      await supabase
+        .from('jobs')
+        .update({
+          progress: {
+            phase: 'transcribing',
+            transcriptId,
+            completedClips: [],
+          },
+        })
+        .eq('id', jobId)
+    } catch (err) {
+      console.error('AssemblyAI submission error:', err)
+      // Don't fail the job — poll will handle fallback
+      await supabase
+        .from('jobs')
+        .update({
+          progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
+        })
+        .eq('id', jobId)
+    }
 
     return NextResponse.json({ jobId }, { status: 201 })
   } catch (err) {
