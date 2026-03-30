@@ -54,8 +54,9 @@ export async function submitTranscription(audioUrl: string): Promise<string> {
 }
 
 export async function pollTranscription(transcriptId: string): Promise<AssemblyAIResult> {
-  const res = await fetch(`${BASE_URL}/transcript/${transcriptId}`, {
+  const res = await fetch(`${BASE_URL}/transcript/${transcriptId}?_t=${Date.now()}`, {
     headers: { Authorization: ASSEMBLYAI_API_KEY },
+    cache: 'no-store',
   })
 
   if (!res.ok) {
