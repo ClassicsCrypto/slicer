@@ -137,15 +137,15 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       <h2 className="text-2xl font-bold mb-1 text-white transition-all duration-500">
         {phase === 'complete' ? '✅ Clips Ready!' :
          phase === 'failed' ? '❌ Processing Failed' :
-         phase === 'rendering' ? '🎬 Rendering Clips...' :
-         '⚡ Submitting Video...'}
+         phase === 'rendering' ? '🎬 Creating Clips...' :
+         '🧠 AI Analyzing Video...'}
       </h2>
       <p className="text-muted text-sm mb-8 transition-all duration-500">
         {phase === 'complete' ? 'Redirecting to your clips...' :
          phase === 'failed' ? 'Something went wrong. Try again.' :
          phase === 'rendering'
-           ? totalClips > 0 ? `${clipsReady} of ${totalClips} clips rendered` : 'Waiting for Shotstack...'
-           : 'Preparing your video for processing'}
+           ? totalClips > 0 ? `${clipsReady} of ${totalClips} clips rendered` : 'Building your clips...'
+           : 'Finding the best moments in your video'}
       </p>
 
       {/* Progress bar */}
@@ -177,8 +177,8 @@ export default function ProcessingView({ jobId, onCancel, onComplete }: Processi
       {/* Steps */}
       <div className="w-full max-w-sm space-y-4 mb-8">
         {[
-          { label: 'Video submitted', done: phase !== 'submitting', active: phase === 'submitting' },
-          { label: 'Rendering clips', done: phase === 'complete', active: phase === 'rendering',
+          { label: 'AI analyzing video', done: phase === 'rendering' || phase === 'complete', active: phase === 'submitting' },
+          { label: 'Creating clips', done: phase === 'complete', active: phase === 'rendering',
             detail: phase === 'rendering' && totalClips > 0 ? `${clipsReady}/${totalClips}` : undefined },
           { label: 'Clips ready', done: phase === 'complete' },
         ].map((step, i) => (
