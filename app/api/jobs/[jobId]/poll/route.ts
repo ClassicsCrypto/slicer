@@ -61,17 +61,27 @@ export async function GET(
     }
 
     // Transcript complete — score with Groq
+    console.log(`[poll] transcript complete! Calling Groq for scoring...`)
     await supabase.from('jobs').update({
       progress: { ...job.progress, phase: 'scoring' },
     }).eq('id', jobId)
 
     const options = job.options
-    const moments = await scoreTranscriptWithGroq(
-      transcript,
-      options.aiFocus ?? [],
-      options.clipCount ?? 5,
-      parseInt(options.clipLength ?? '30'),
-    )
+    console.log(`[poll] options: clipCount=${options.clipCount} clipLength=${options.clipLength} aiFocus=${JSON.stringify(options.aiFocus)}`)
+    
+    let moments: Awaited<ReturnType<typeof scoreTranscriptWithGroq>> = []
+    try {
+      moments = await scoreTranscriptWithGroq(
+        transcript,
+        options.aiFocus ?? [],
+        options.clipCount ?? 5,
+        parseInt(options.clipLength ?? '30'),
+      )
+      console.log(`[poll] Groq returned ${moments.length} moments`)
+    } catch (groqErr) {
+      console.error(`[poll] Groq scoring FAILED:`, groqErr)
+      moments = []
+    }
 
     const clipMode = process.env.CLIP_MODE ?? 'instant'
     const clips: Clip[] = moments.map((m) => {
