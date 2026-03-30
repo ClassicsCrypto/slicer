@@ -155,7 +155,7 @@ function JobCard({
           title={`Clip • ${Math.round(previewClip.duration)}s`}
           maxWidth="max-w-2xl"
         >
-          <ClipPlayer clip={previewClip} sourceUrl={job.source_url} />
+          <ClipPlayer clip={previewClip} sourceUrl={job.source_url} subtitleOptions={job.options?.subtitles} />
           <div className="mt-4 space-y-2">
             <p className="text-sm text-white/60">{previewClip.ai_reason}</p>
             <div className="flex flex-wrap gap-1">

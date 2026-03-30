@@ -45,10 +45,27 @@ export interface Job {
   created_at: string
 }
 
+export type SubtitleSize = 'small' | 'medium' | 'large'
+export type SubtitleColor = '#ffffff' | '#ffff00' | '#FF4D4D' | 'custom'
+export type SubtitlePosition = 'bottom' | 'center' | 'top'
+export type SubtitleStyle = 'bold' | 'outline' | 'shadow' | 'karaoke'
+export type SubtitleBackground = 'none' | 'blur' | 'solid'
+
+export interface SubtitleOptions {
+  enabled: boolean
+  size: SubtitleSize
+  color: SubtitleColor
+  customColor?: string
+  position: SubtitlePosition
+  style: SubtitleStyle
+  background: SubtitleBackground
+}
+
 export interface ProcessingOptions {
   clipCount: number
   clipLength: ClipLength
   aiFocus: AIFocus[]
   outputQuality: '720p' | '1080p'
   platformFormat: 'tiktok' | 'twitter' | 'youtube_shorts' | 'custom'
+  subtitles: SubtitleOptions
 }

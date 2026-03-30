@@ -122,6 +122,14 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
   aiFocus: ['funny_moments', 'hype_moments', 'intense_action'],
   outputQuality: '720p',
   platformFormat: 'twitter',
+  subtitles: {
+    enabled: true,
+    size: 'medium',
+    color: '#ffffff',
+    position: 'bottom',
+    style: 'karaoke',
+    background: 'blur',
+  },
 }
 
 interface UploadTabProps {
