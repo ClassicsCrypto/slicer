@@ -1,16 +1,16 @@
 /**
  * Slicer YouTube Download API
- * 
+ *
  * Local server that runs yt-dlp to download YouTube/Twitch videos,
  * uploads to Supabase Storage, and returns the public URL.
- * 
- * Runs on Jay's machine — always on.
- * 
+ *
+ * Runs on Jay's machine - always on.
+ *
  * Usage: node server/youtube-api.js
  * Endpoint: POST http://localhost:3001/download
  * Body: { "url": "https://youtube.com/watch?v=..." }
  * Returns: { "publicUrl": "https://...", "duration": 120, "title": "..." }
- * 
+ *
  * Limits:
  *   - Max 15 minutes video duration
  *   - Max 100MB file size
@@ -65,14 +65,14 @@ function getVideoInfo(url) {
 }
 
 /**
- * Download best audio stream (no ffmpeg needed — downloads native format)
+ * Download best audio stream (no ffmpeg needed - downloads native format)
  */
 function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
     const cmd = `yt-dlp -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
-    
+
     exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
       if (err) {
         console.error('[yt-dlp] error:', stderr)
@@ -126,7 +126,7 @@ async function handleDownload(req, res) {
   // Parse body
   let body = ''
   for await (const chunk of req) body += chunk
-  
+
   let parsed
   try {
     parsed = JSON.parse(body)
@@ -158,7 +158,7 @@ async function handleDownload(req, res) {
     // Find the output file (yt-dlp may change extension)
     const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(fileId))
     if (files.length === 0) throw new Error('No output file found after download')
-    
+
     const outputFile = path.join(TEMP_DIR, files[0])
     const fileSize = fs.statSync(outputFile).size
     console.log(`[download] file: ${files[0]} size: ${(fileSize / 1024 / 1024).toFixed(1)}MB`)
@@ -204,7 +204,7 @@ function sendJson(res, status, data) {
 }
 
 /**
- * Handle clip export — FFmpeg cuts a segment from a source URL
+ * Handle clip export - FFmpeg cuts a segment from a source URL
  * POST /clip { sourceUrl, startTime, endTime, title? }
  * Returns the MP4 file as a download
  */
@@ -253,27 +253,37 @@ async function handleClip(req, res) {
       // Convert RGB hex to ASS BGR format
       const r = hexColor.slice(0, 2), g = hexColor.slice(2, 4), b = hexColor.slice(4, 6)
       const primaryColour = `&H00${b}${g}${r}`  // white = &H00FFFFFF
-      
-      // Font selection — 3 MCV-branded options
-      const fontMap = {
+
+      // Font selection - 3 MCV-branded options
+      // Use local font files bundled with the server
+      const fontsDir = path.join(__dirname, 'fonts')
+      const fontFileMap = {
+        'impact': null,  // Impact is built into Windows
+        'bebas': path.join(fontsDir, 'BebasNeue-Regular.ttf'),
+        'montserrat': path.join(fontsDir, 'Montserrat-Bold.ttf'),
+      }
+      const fontNameMap = {
         'impact': 'Impact',
         'bebas': 'Bebas Neue',
         'montserrat': 'Montserrat',
       }
-      const fontName = fontMap[opts.font] || 'Impact'
-      
+      const fontFile = fontFileMap[opts.font] || null
+      const fontName = fontNameMap[opts.font] || 'Impact'
+
       // BorderStyle=1 = outline+shadow (NO black box), BorderStyle=3 = opaque box
       const borderStyle = 1
       const outlineSize = 2
       const shadowSize = 1
-      
+
       // Position: bottom with margin, matching the web preview
       const alignment = opts.position === 'top' ? 8 : opts.position === 'center' ? 5 : 2
       const marginV = opts.position === 'top' ? 25 : 30
 
-      // Escape path for FFmpeg (Windows needs special handling)
+      // Escape paths for FFmpeg (Windows needs special handling)
       const escapedSrt = srtFile.replace(/\\/g, '/').replace(/:/g, '\\:')
-      subtitleFilter = `-vf "subtitles='${escapedSrt}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1,Italic=${opts.style === 'italic' ? 1 : 0}'"`
+      const fontsDirEscaped = fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:')
+      const fontsDirOption = fontFile ? `:fontsdir='${fontsDirEscaped}'` : ''
+      subtitleFilter = `-vf "subtitles='${escapedSrt}'${fontsDirOption}:force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1'"` 
     }
 
     // FFmpeg: seek to start, cut for duration, burn subtitles, re-encode to MP4
@@ -335,7 +345,7 @@ async function handleClip(req, res) {
 function generateSRT(words, clipStartTime = 0) {
   const WORDS_PER_LINE = 4
   const chunks = []
-  
+
   for (let i = 0; i < words.length; i += WORDS_PER_LINE) {
     const group = words.slice(i, i + WORDS_PER_LINE)
     const text = group.map(w => w.text).join(' ')
@@ -381,9 +391,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n🎬 Slicer Local API running on http://localhost:${PORT}`)
-  console.log(`   POST /download  — Download YouTube/Twitch video`)
-  console.log(`   POST /clip      — Export clip segment via FFmpeg`)
-  console.log(`   GET  /health    — Health check`)
+  console.log(`   POST /download  - Download YouTube/Twitch video`)
+  console.log(`   POST /clip      - Export clip segment via FFmpeg`)
+  console.log(`   GET  /health    - Health check`)
   console.log(`   Max duration: ${MAX_DURATION_SEC / 60} minutes`)
   console.log(`   Max file size: ${MAX_FILE_SIZE / 1024 / 1024}MB`)
   console.log(`   Supabase: ${SUPABASE_URL ? '✅ configured' : '❌ missing NEXT_PUBLIC_SUPABASE_URL'}`)
