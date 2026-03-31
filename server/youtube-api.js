@@ -69,8 +69,8 @@ function getVideoInfo(url) {
  */
 function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
-    // Use -f ba (best audio) without post-processing — avoids ffmpeg requirement
-    const cmd = `yt-dlp -f "ba" --no-post-overwrites -o "${outputPath}" "${url}"`
+    // Download best video+audio merged (mp4 preferred)
+    const cmd = `yt-dlp -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
     
     exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
@@ -93,10 +93,11 @@ async function uploadToSupabase(filePath, fileName) {
   const storagePath = `youtube/${fileName}`
 
   const ext = path.extname(fileName).toLowerCase()
-  const contentType = ext === '.mp3' ? 'audio/mpeg'
+  const contentType = ext === '.mp4' ? 'video/mp4'
+    : ext === '.webm' ? 'video/webm'
+    : ext === '.mkv' ? 'video/x-matroska'
+    : ext === '.mp3' ? 'audio/mpeg'
     : ext === '.m4a' ? 'audio/mp4'
-    : ext === '.webm' ? 'audio/webm'
-    : ext === '.opus' ? 'audio/opus'
     : 'application/octet-stream'
 
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/slicer-videos/${storagePath}`, {
