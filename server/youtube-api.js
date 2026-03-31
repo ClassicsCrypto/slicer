@@ -217,7 +217,7 @@ async function handleClip(req, res) {
     return sendJson(res, 400, { error: 'Invalid JSON' })
   }
 
-  const { sourceUrl, startTime, endTime, title } = parsed
+  const { sourceUrl, startTime, endTime, title, subtitles, subtitleOptions } = parsed
   if (!sourceUrl || startTime == null || endTime == null) {
     return sendJson(res, 400, { error: 'sourceUrl, startTime, endTime required' })
   }
@@ -231,14 +231,36 @@ async function handleClip(req, res) {
 
   const fileId = crypto.randomBytes(8).toString('hex')
   const outputFile = path.join(TEMP_DIR, `${fileId}-clip.mp4`)
+  const srtFile = path.join(TEMP_DIR, `${fileId}.srt`)
 
   try {
-    // FFmpeg: seek to start, cut for duration, re-encode to MP4
+    // Generate SRT subtitle file if subtitles provided
+    let subtitleFilter = ''
+    if (subtitles && subtitles.length > 0 && subtitleOptions?.enabled !== false) {
+      const srtContent = generateSRT(subtitles, startTime)
+      fs.writeFileSync(srtFile, srtContent, 'utf8')
+      console.log(`[clip] generated SRT: ${subtitles.length} words, offset by ${startTime}s`)
+
+      // Build FFmpeg subtitle style
+      const opts = subtitleOptions || {}
+      const fontSize = opts.size === 'small' ? 16 : opts.size === 'large' ? 28 : 22
+      const color = (opts.color || '#ffffff').replace('#', '')
+      const outline = opts.style === 'outline' ? 2 : 1
+      const shadow = opts.style === 'shadow' ? 2 : 0
+      const alignment = opts.position === 'top' ? 8 : opts.position === 'center' ? 5 : 2
+      const bgAlpha = opts.background === 'solid' ? '80' : opts.background === 'blur' ? '40' : '00'
+
+      // Escape path for FFmpeg (Windows needs special handling)
+      const escapedSrt = srtFile.replace(/\\/g, '/').replace(/:/g, '\\:')
+      subtitleFilter = `-vf "subtitles='${escapedSrt}':force_style='FontSize=${fontSize},PrimaryColour=&H00${color.slice(4,6)}${color.slice(2,4)}${color.slice(0,2)},OutlineColour=&H00000000,BorderStyle=3,Outline=${outline},Shadow=${shadow},Alignment=${alignment},BackColour=&H${bgAlpha}000000,MarginV=20,Bold=1'"`
+    }
+
+    // FFmpeg: seek to start, cut for duration, burn subtitles, re-encode to MP4
     await new Promise((resolve, reject) => {
-      const cmd = `ffmpeg -ss ${startTime} -i "${sourceUrl.split('#')[0]}" -t ${duration} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
+      const cmd = `ffmpeg -ss ${startTime} -i "${sourceUrl.split('#')[0]}" -t ${duration} ${subtitleFilter} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
       console.log(`[clip] ffmpeg: ${cmd}`)
 
-      exec(cmd, { timeout: 120000 }, (err, stdout, stderr) => {
+      exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
         if (err) {
           console.error('[clip] ffmpeg error:', stderr?.slice(-500))
           reject(new Error('FFmpeg clipping failed'))
@@ -267,19 +289,50 @@ async function handleClip(req, res) {
     const stream = fs.createReadStream(outputFile)
     stream.pipe(res)
     stream.on('end', () => {
-      // Cleanup temp file
       try { fs.unlinkSync(outputFile) } catch {}
+      try { fs.unlinkSync(srtFile) } catch {}
     })
     stream.on('error', () => {
       try { fs.unlinkSync(outputFile) } catch {}
+      try { fs.unlinkSync(srtFile) } catch {}
       res.end()
     })
 
   } catch (err) {
     console.error(`[clip] ERROR:`, err.message)
     try { fs.unlinkSync(outputFile) } catch {}
+    try { fs.unlinkSync(srtFile) } catch {}
     sendJson(res, 500, { error: err.message })
   }
+}
+
+/**
+ * Generate SRT subtitle content from word-level timestamps.
+ * Groups words into ~4-word chunks for readable subtitles.
+ * Timestamps are relative (0-based for the clip).
+ */
+function generateSRT(words, clipStartTime = 0) {
+  const WORDS_PER_LINE = 4
+  const chunks = []
+  
+  for (let i = 0; i < words.length; i += WORDS_PER_LINE) {
+    const group = words.slice(i, i + WORDS_PER_LINE)
+    const text = group.map(w => w.text).join(' ')
+    const start = group[0].start - clipStartTime
+    const end = (group[group.length - 1].end || group[group.length - 1].start + 0.5) - clipStartTime
+    chunks.push({ text, start: Math.max(0, start), end: Math.max(0, end) })
+  }
+
+  return chunks.map((chunk, i) => {
+    const fmtTime = (s) => {
+      const hrs = Math.floor(s / 3600)
+      const mins = Math.floor((s % 3600) / 60)
+      const secs = Math.floor(s % 60)
+      const ms = Math.floor((s % 1) * 1000)
+      return `${String(hrs).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')},${String(ms).padStart(3,'0')}`
+    }
+    return `${i + 1}\n${fmtTime(chunk.start)} --> ${fmtTime(chunk.end)}\n${chunk.text}`
+  }).join('\n\n')
 }
 
 // Create server

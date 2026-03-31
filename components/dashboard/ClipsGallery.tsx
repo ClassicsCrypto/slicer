@@ -12,7 +12,7 @@ interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
-function DownloadClipButton({ clip, sourceUrl, title }: { clip: Clip; sourceUrl: string; title: string }) {
+function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState('')
 
@@ -29,6 +29,8 @@ function DownloadClipButton({ clip, sourceUrl, title }: { clip: Clip; sourceUrl:
           startTime: clip.start_time,
           endTime: clip.end_time,
           title: `${title}-clip-${clip.start_time.toFixed(0)}s`,
+          subtitles: clip.subtitles || [],
+          subtitleOptions: subtitleOptions || { enabled: true, size: 'medium', color: '#ffffff', position: 'bottom', style: 'bold', background: 'none' },
         }),
       })
 
@@ -236,7 +238,7 @@ function JobCard({
             </div>
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} />
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={job.options?.subtitles} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}
