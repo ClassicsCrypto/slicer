@@ -167,17 +167,46 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setShowOptions(true)
   }
 
+  const isYouTubeUrl = (u: string) => /youtube\.com|youtu\.be|twitch\.tv/i.test(u)
+
   const handleSubmit = async () => {
     setIsSubmitting(true)
     setError(null)
 
     try {
+      let sourceUrl = url.trim()
+      let title = extractTitle(sourceUrl)
+
+      // YouTube/Twitch: route through local yt-dlp API
+      if (isYouTubeUrl(sourceUrl)) {
+        setError(null)
+        try {
+          const ytRes = await fetch('http://localhost:3001/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: sourceUrl }),
+          })
+          const ytData = await ytRes.json()
+          if (!ytRes.ok) {
+            setError(ytData.error || 'YouTube download failed')
+            setIsSubmitting(false)
+            return
+          }
+          sourceUrl = ytData.publicUrl
+          title = ytData.title || title
+        } catch {
+          setError('YouTube download server not available. Is the local API running? (node server/youtube-api.js)')
+          setIsSubmitting(false)
+          return
+        }
+      }
+
       const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceUrl: url.trim(),
-          title: extractTitle(url.trim()),
+          sourceUrl,
+          title,
           options,
         }),
       })
