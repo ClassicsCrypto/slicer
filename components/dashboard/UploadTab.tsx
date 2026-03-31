@@ -138,16 +138,25 @@ interface UploadTabProps {
 
 export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [url, setUrl] = useState('')
+  const [file, setFile] = useState<File | null>(null)
   const [options, setOptions] = useState<ProcessingOptions>(DEFAULT_OPTIONS)
   const [showOptions, setShowOptions] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [processingJobId, setProcessingJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const onDrop = useCallback((files: File[]) => {
-    // For now just show the filename — actual upload not implemented yet
     if (files[0]) {
-      setUrl(`[File: ${files[0].name}]`)
+      const f = files[0]
+      // Max 500MB
+      if (f.size > 500 * 1024 * 1024) {
+        setError('File too large — max 500MB')
+        return
+      }
+      setFile(f)
+      setUrl(`📁 ${f.name}`)
+      setError(null)
     }
   }, [])
 
@@ -159,8 +168,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   })
 
   const handleOpenOptions = () => {
-    if (!url.trim()) {
-      setError('Please paste a video URL first')
+    if (!url.trim() && !file) {
+      setError('Please paste a video URL or drop a file')
       return
     }
     setError(null)
@@ -175,10 +184,50 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
     try {
       let sourceUrl = url.trim()
-      let title = extractTitle(sourceUrl)
+      let title = file ? file.name : extractTitle(sourceUrl)
+
+      // Local file upload: upload to Supabase Storage first
+      if (file) {
+        setUploadProgress('Uploading video...')
+        try {
+          const fileId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          const ext = file.name.split('.').pop() || 'mp4'
+          const storagePath = `uploads/${fileId}.${ext}`
+
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+          const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+          const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/slicer-videos/${storagePath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': file.type || 'video/mp4',
+              'x-upsert': 'true',
+            },
+            body: file,
+          })
+
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text()
+            setError(`Upload failed: ${errText}`)
+            setIsSubmitting(false)
+            setUploadProgress(null)
+            return
+          }
+
+          sourceUrl = `${supabaseUrl}/storage/v1/object/public/slicer-videos/${storagePath}`
+          title = file.name.replace(/\.[^.]+$/, '')
+          setUploadProgress(null)
+        } catch (uploadErr) {
+          setError(`Upload error: ${uploadErr}`)
+          setIsSubmitting(false)
+          setUploadProgress(null)
+          return
+        }
+      }
 
       // YouTube/Twitch: route through local yt-dlp API
-      if (isYouTubeUrl(sourceUrl)) {
+      if (!file && isYouTubeUrl(sourceUrl)) {
         setError(null)
         try {
           const ytRes = await fetch('http://localhost:3001/download', {
@@ -280,27 +329,63 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           <div className="text-5xl animate-float">🎬</div>
 
           <div>
-            <h3 className="text-xl font-bold text-white mb-1">Drop a video or paste a URL</h3>
-            <p className="text-white/40 text-sm">Supports direct video URLs (MP4, etc.)</p>
+            <h3 className="text-xl font-bold text-white mb-1">Drop a video, browse, or paste a URL</h3>
+            <p className="text-white/40 text-sm">YouTube, Twitch, direct URLs, or local video files</p>
           </div>
 
           <div className="w-full max-w-lg">
             <div className="flex gap-2">
               <input
-                type="url"
-                placeholder="https://example.com/video.mp4"
+                type="text"
+                placeholder="https://youtube.com/watch?v=... or drop a file"
                 value={url}
-                onChange={(e) => { setUrl(e.target.value); setError(null) }}
+                onChange={(e) => { setUrl(e.target.value); setFile(null); setError(null) }}
                 onKeyDown={(e) => e.key === 'Enter' && handleOpenOptions()}
                 className="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 text-sm"
+                readOnly={!!file}
               />
               <Button
                 variant="primary"
                 onClick={handleOpenOptions}
-                disabled={!url.trim()}
+                disabled={!url.trim() && !file}
               >
                 Analyze →
               </Button>
+            </div>
+
+            {/* Browse button */}
+            <div className="flex items-center gap-3 mt-3">
+              <label className="cursor-pointer px-4 py-2 rounded-lg border border-white/10 text-white/60 text-sm hover:border-white/30 hover:text-white transition-all">
+                📂 Browse Files
+                <input
+                  type="file"
+                  accept="video/*,audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) {
+                      if (f.size > 500 * 1024 * 1024) {
+                        setError('File too large — max 500MB')
+                        return
+                      }
+                      setFile(f)
+                      setUrl(`📁 ${f.name}`)
+                      setError(null)
+                    }
+                  }}
+                />
+              </label>
+              {file && (
+                <button
+                  onClick={() => { setFile(null); setUrl('') }}
+                  className="text-white/30 hover:text-red-400 text-xs transition-colors"
+                >
+                  ✕ Clear
+                </button>
+              )}
+              {uploadProgress && (
+                <span className="text-xs text-yellow-400 animate-pulse">{uploadProgress}</span>
+              )}
             </div>
 
             {error && (
@@ -308,16 +393,16 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
             )}
           </div>
 
-          <p className="text-white/20 text-xs">or drag & drop a video file</p>
+          <p className="text-white/20 text-xs">Drag & drop works too — just drop your video here</p>
         </div>
       </div>
 
       {/* Tips */}
       <div className="mt-6 grid grid-cols-3 gap-3">
         {[
-          { icon: '🔗', label: 'Direct URLs', desc: 'Paste any publicly accessible video URL' },
-          { icon: '🎮', label: 'Gaming Content', desc: 'Optimized for kills, highlights, fails' },
-          { icon: '⚡', label: 'Instant Mode', desc: 'Clips ready in seconds, no rendering wait' },
+          { icon: '📺', label: 'YouTube & Twitch', desc: 'Paste any YouTube or Twitch URL' },
+          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 500MB' },
+          { icon: '🧠', label: 'AI Powered', desc: 'Groq + AssemblyAI find best moments' },
         ].map((tip) => (
           <div
             key={tip.label}
