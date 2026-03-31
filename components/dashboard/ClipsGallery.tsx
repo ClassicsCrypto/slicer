@@ -19,6 +19,9 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip:
   const handleDownload = async () => {
     setDownloading(true)
     setProgress('Cutting clip...')
+    
+    console.log('[Slicer] Export clip subtitles:', clip.subtitles?.length || 0, 'words')
+    console.log('[Slicer] First 3 words:', JSON.stringify(clip.subtitles?.slice(0, 3)))
 
     try {
       const res = await fetch('http://localhost:3001/clip', {
