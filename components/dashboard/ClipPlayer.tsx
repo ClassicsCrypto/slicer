@@ -18,7 +18,7 @@ function SubtitleOverlay({
   isPlaying: boolean
   options: SubtitleOptions
 }) {
-  const fontSize = options.size === 'small' ? 'text-xs' : options.size === 'large' ? 'text-lg md:text-xl' : 'text-sm md:text-base'
+  const fontSize = options.size === 'small' ? 'text-sm md:text-base' : options.size === 'large' ? 'text-xl md:text-2xl' : 'text-base md:text-lg'
   const activeColor = options.color === 'custom' ? (options.customColor ?? '#FF4D4D') : options.color
   const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
   // Font family matching FFmpeg export
@@ -51,19 +51,25 @@ function SubtitleOverlay({
 
   if (!isPlaying || !currentLine) return null
 
-  // Match FFmpeg export: bold text with black outline (BorderStyle=1, Outline=2)
-  const textStroke = '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 1px 1px 2px rgba(0,0,0,0.5)'
+  // Match FFmpeg export exactly: thick black outline (BorderStyle=1, Outline=2, Shadow=1)
+  const textStroke = [
+    '-2px -2px 0 #000', '2px -2px 0 #000', '-2px 2px 0 #000', '2px 2px 0 #000',
+    '-3px 0 0 #000', '3px 0 0 #000', '0 -3px 0 #000', '0 3px 0 #000',
+    '-1px -1px 0 #000', '1px -1px 0 #000', '-1px 1px 0 #000', '1px 1px 0 #000',
+    '2px 2px 3px rgba(0,0,0,0.6)',
+  ].join(', ')
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
       <div className="max-w-[90%]">
-        <p className={`text-center ${fontSize} font-bold leading-relaxed`} style={{ fontFamily }}>
+        <p className={`text-center ${fontSize} leading-relaxed`} style={{ fontFamily, fontWeight: 700, letterSpacing: '0.02em' }}>
           {currentLine.words.map((word, i) => (
             <span
               key={`${currentLine.index}-${i}`}
               style={{
                 color: activeColor,
                 textShadow: textStroke,
+                textTransform: 'uppercase' as const,
               }}
             >
               {word.text}{' '}

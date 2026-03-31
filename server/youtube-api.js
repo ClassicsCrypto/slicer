@@ -348,7 +348,7 @@ function generateSRT(words, clipStartTime = 0) {
 
   for (let i = 0; i < words.length; i += WORDS_PER_LINE) {
     const group = words.slice(i, i + WORDS_PER_LINE)
-    const text = group.map(w => w.text).join(' ')
+    const text = group.map(w => w.text).join(' ').toUpperCase()
     const start = group[0].start - clipStartTime
     const end = (group[group.length - 1].end || group[group.length - 1].start + 0.5) - clipStartTime
     chunks.push({ text, start: Math.max(0, start), end: Math.max(0, end) })
