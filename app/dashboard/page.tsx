@@ -5,8 +5,9 @@ import Image from 'next/image'
 import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
+import UsageTab from '@/components/dashboard/UsageTab'
 
-type Tab = 'upload' | 'clips'
+type Tab = 'upload' | 'clips' | 'usage'
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>('upload')
@@ -51,6 +52,7 @@ export default function DashboardPage() {
             {([
               { key: 'upload', label: '📤 Upload', },
               { key: 'clips', label: '🎬 Clips' },
+              { key: 'usage', label: '📊 Usage' },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
@@ -79,6 +81,10 @@ export default function DashboardPage() {
 
         {activeTab === 'clips' && (
           <ClipsGallery key={galleryKey} initialJobs={processingJobs} />
+        )}
+
+        {activeTab === 'usage' && (
+          <UsageTab />
         )}
       </main>
     </div>

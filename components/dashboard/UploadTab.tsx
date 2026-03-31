@@ -423,6 +423,29 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         ))}
       </div>
 
+      {/* Limits info */}
+      <div className="mt-4 rounded-xl p-4 border border-white/5" style={{ background: '#15151F' }}>
+        <p className="text-xs text-white/40 font-semibold uppercase tracking-wider mb-2">Upload Limits</p>
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="flex justify-between">
+            <span className="text-white/30">Max file size</span>
+            <span className="text-white/60 font-semibold">2 GB</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-white/30">Max video length</span>
+            <span className="text-white/60 font-semibold">5 hours</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-white/30">Supported formats</span>
+            <span className="text-white/60 font-semibold">MP4, MOV, WebM, MKV</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-white/30">Transcription</span>
+            <span className="text-white/60 font-semibold">5 hrs/month (free tier)</span>
+          </div>
+        </div>
+      </div>
+
       <OptionsModal
         open={showOptions}
         onClose={() => setShowOptions(false)}
