@@ -1,6 +1,6 @@
 'use client'
 
-import { ProcessingOptions, AIFocus, ClipLength, SubtitleOptions, SubtitleSize, SubtitleColor, SubtitlePosition, SubtitleStyle, SubtitleBackground } from '@/types'
+import { ProcessingOptions, AIFocus, ClipLength, SubtitleOptions, SubtitleSize, SubtitleColor, SubtitlePosition, SubtitleStyle, SubtitleBackground, SubtitleFont } from '@/types'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 
@@ -219,6 +219,31 @@ export default function OptionsModal({
                     >
                       <div className="font-semibold">{s.label}</div>
                       <div className="text-white/30 text-[10px]">{s.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Font */}
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5">Font</label>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'impact' as SubtitleFont, label: 'Impact', desc: 'Classic meme font' },
+                    { value: 'bebas' as SubtitleFont, label: 'Bebas Neue', desc: 'Clean & tall' },
+                    { value: 'montserrat' as SubtitleFont, label: 'Montserrat', desc: 'Modern geometric' },
+                  ]).map(f => (
+                    <button
+                      key={f.value}
+                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, font: f.value } })}
+                      className={`flex-1 py-2 rounded-lg border text-xs text-center transition-all ${
+                        (options.subtitles.font || 'impact') === f.value
+                          ? 'border-red-500 text-red-400 bg-red-500/10'
+                          : 'border-white/10 text-white/50 hover:border-white/30'
+                      }`}
+                    >
+                      <div className="font-semibold">{f.label}</div>
+                      <div className="text-white/30 text-[10px]">{f.desc}</div>
                     </button>
                   ))}
                 </div>

@@ -245,18 +245,35 @@ async function handleClip(req, res) {
       console.log(`[clip] generated SRT: ${subtitles.length} words`)
       console.log(`[clip] SRT preview:\n${srtContent.slice(0, 500)}`)
 
-      // Build FFmpeg subtitle style
+      // Build FFmpeg subtitle style (ASS format)
+      // ASS color format: &HAABBGGRR (hex, AA=alpha 00=opaque FF=transparent)
       const opts = subtitleOptions || {}
-      const fontSize = opts.size === 'small' ? 16 : opts.size === 'large' ? 28 : 22
-      const color = (opts.color || '#ffffff').replace('#', '')
-      const outline = opts.style === 'outline' ? 2 : 1
-      const shadow = opts.style === 'shadow' ? 2 : 0
+      const fontSize = opts.size === 'small' ? 18 : opts.size === 'large' ? 32 : 24
+      const hexColor = (opts.color || '#ffffff').replace('#', '')
+      // Convert RGB hex to ASS BGR format
+      const r = hexColor.slice(0, 2), g = hexColor.slice(2, 4), b = hexColor.slice(4, 6)
+      const primaryColour = `&H00${b}${g}${r}`  // white = &H00FFFFFF
+      
+      // Font selection — 3 MCV-branded options
+      const fontMap = {
+        'impact': 'Impact',
+        'bebas': 'Bebas Neue',
+        'montserrat': 'Montserrat',
+      }
+      const fontName = fontMap[opts.font] || 'Impact'
+      
+      // BorderStyle=1 = outline+shadow (NO black box), BorderStyle=3 = opaque box
+      const borderStyle = 1
+      const outlineSize = 2
+      const shadowSize = 1
+      
+      // Position: bottom with margin, matching the web preview
       const alignment = opts.position === 'top' ? 8 : opts.position === 'center' ? 5 : 2
-      const bgAlpha = opts.background === 'solid' ? '80' : opts.background === 'blur' ? '40' : '00'
+      const marginV = opts.position === 'top' ? 25 : 30
 
       // Escape path for FFmpeg (Windows needs special handling)
       const escapedSrt = srtFile.replace(/\\/g, '/').replace(/:/g, '\\:')
-      subtitleFilter = `-vf "subtitles='${escapedSrt}':force_style='FontSize=${fontSize},PrimaryColour=&H00${color.slice(4,6)}${color.slice(2,4)}${color.slice(0,2)},OutlineColour=&H00000000,BorderStyle=3,Outline=${outline},Shadow=${shadow},Alignment=${alignment},BackColour=&H${bgAlpha}000000,MarginV=20,Bold=1'"`
+      subtitleFilter = `-vf "subtitles='${escapedSrt}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1,Italic=${opts.style === 'italic' ? 1 : 0}'"`
     }
 
     // FFmpeg: seek to start, cut for duration, burn subtitles, re-encode to MP4

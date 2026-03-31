@@ -50,6 +50,7 @@ export type SubtitleColor = '#ffffff' | '#ffff00' | '#FF4D4D' | 'custom'
 export type SubtitlePosition = 'bottom' | 'center' | 'top'
 export type SubtitleStyle = 'bold' | 'outline' | 'shadow' | 'karaoke'
 export type SubtitleBackground = 'none' | 'blur' | 'solid'
+export type SubtitleFont = 'impact' | 'bebas' | 'montserrat'
 
 export interface SubtitleOptions {
   enabled: boolean
@@ -59,6 +60,7 @@ export interface SubtitleOptions {
   position: SubtitlePosition
   style: SubtitleStyle
   background: SubtitleBackground
+  font?: SubtitleFont
 }
 
 export interface ProcessingOptions {
