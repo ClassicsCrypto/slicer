@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Job, Clip } from '@/types'
+import { Job, Clip, SubtitleWord } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -162,6 +162,8 @@ function JobCard({
   onJobComplete: (job: Job) => void
 }) {
   const [previewClip, setPreviewClip] = useState<Clip | null>(null)
+  const [editedTranscript, setEditedTranscript] = useState<string>('')
+  const [showTranscript, setShowTranscript] = useState(false)
 
   const isProcessing = job.status === 'processing'
   const clips = job.clips ?? []
@@ -241,6 +243,52 @@ function JobCard({
                 <span>🔥 Virality: {previewClip.virality_score}/10</span>
               )}
             </div>
+            {/* Transcript editor */}
+            <div className="pt-2">
+              <button
+                onClick={() => {
+                  if (!showTranscript && previewClip.subtitles) {
+                    setEditedTranscript(previewClip.subtitles.map(w => w.text).join(' '))
+                  }
+                  setShowTranscript(!showTranscript)
+                }}
+                className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
+              >
+                {showTranscript ? '▼' : '▶'} Edit Transcript
+              </button>
+              {showTranscript && (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    value={editedTranscript}
+                    onChange={(e) => setEditedTranscript(e.target.value)}
+                    className="w-full h-24 bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white/80 resize-none focus:border-red-500 focus:outline-none"
+                    placeholder="Edit the transcribed text..."
+                  />
+                  <button
+                    onClick={() => {
+                      if (!previewClip.subtitles?.length) return
+                      // Rebuild subtitle words with edited text, keeping original timing
+                      const newWords = editedTranscript.trim().split(/\s+/)
+                      const origWords = previewClip.subtitles
+                      const updated: SubtitleWord[] = newWords.map((text, i) => {
+                        const orig = origWords[Math.min(i, origWords.length - 1)]
+                        return {
+                          text,
+                          start: i < origWords.length ? origWords[i].start : orig.start,
+                          end: i < origWords.length ? origWords[i].end : orig.end,
+                        }
+                      })
+                      setPreviewClip({ ...previewClip, subtitles: updated })
+                      setShowTranscript(false)
+                    }}
+                    className="px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400 font-semibold hover:bg-red-500/30 transition-all"
+                  >
+                    ✓ Apply Changes
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
               <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={job.options?.subtitles} />

@@ -51,6 +51,9 @@ export type SubtitlePosition = 'bottom' | 'center' | 'top'
 export type SubtitleStyle = 'bold' | 'outline' | 'shadow' | 'karaoke'
 export type SubtitleBackground = 'none' | 'blur' | 'solid'
 export type SubtitleFont = 'impact' | 'bebas' | 'montserrat'
+export type SubtitleOutlineThickness = 'thin' | 'medium' | 'thick'
+export type SubtitleOutlineColor = '#000000' | '#ffffff' | '#FF4D4D' | 'custom'
+export type SubtitleCase = 'upper' | 'title' | 'original'
 
 export interface SubtitleOptions {
   enabled: boolean
@@ -61,6 +64,11 @@ export interface SubtitleOptions {
   style: SubtitleStyle
   background: SubtitleBackground
   font?: SubtitleFont
+  outlineThickness?: SubtitleOutlineThickness
+  outlineColor?: SubtitleOutlineColor
+  customOutlineColor?: string
+  shadow?: boolean
+  textCase?: SubtitleCase
 }
 
 export interface ProcessingOptions {

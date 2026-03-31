@@ -131,6 +131,10 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     style: 'bold',
     background: 'none',
     font: 'impact',
+    outlineThickness: 'medium',
+    outlineColor: '#000000',
+    shadow: true,
+    textCase: 'upper',
   },
 }
 

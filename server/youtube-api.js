@@ -240,7 +240,8 @@ async function handleClip(req, res) {
     let subtitleFilter = ''
     if (subtitles && subtitles.length > 0 && subtitleOptions?.enabled !== false) {
       // Subtitle timestamps are already relative to clip start (0-based)
-      const srtContent = generateSRT(subtitles, 0)
+      const textCase = subtitleOptions?.textCase || 'upper'
+      const srtContent = generateSRT(subtitles, 0, textCase)
       fs.writeFileSync(srtFile, srtContent, 'utf8')
       console.log(`[clip] generated SRT: ${subtitles.length} words`)
       console.log(`[clip] SRT preview:\n${srtContent.slice(0, 500)}`)
@@ -270,10 +271,20 @@ async function handleClip(req, res) {
       const fontFile = fontFileMap[opts.font] || null
       const fontName = fontNameMap[opts.font] || 'Impact'
 
-      // BorderStyle=1 = outline+shadow (NO black box), BorderStyle=3 = opaque box
+      // Outline thickness
+      const outlineThickness = opts.outlineThickness || 'medium'
+      const outlineSize = outlineThickness === 'thin' ? 1 : outlineThickness === 'thick' ? 3 : 2
+
+      // Outline color
+      const outlineHex = (opts.outlineColor || '#000000').replace('#', '')
+      const oR = outlineHex.slice(0, 2), oG = outlineHex.slice(2, 4), oB = outlineHex.slice(4, 6)
+      const outlineColour = `&H00${oB}${oG}${oR}`
+
+      // Shadow
+      const shadowSize = opts.shadow ? 2 : 0
+
+      // BorderStyle=1 = outline+shadow (NO black box)
       const borderStyle = 1
-      const outlineSize = 2
-      const shadowSize = 1
 
       // Position: bottom with margin, matching the web preview
       const alignment = opts.position === 'top' ? 8 : opts.position === 'center' ? 5 : 2
@@ -283,7 +294,7 @@ async function handleClip(req, res) {
       const escapedSrt = srtFile.replace(/\\/g, '/').replace(/:/g, '\\:')
       const fontsDirEscaped = fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:')
       const fontsDirOption = fontFile ? `:fontsdir='${fontsDirEscaped}'` : ''
-      subtitleFilter = `-vf "subtitles='${escapedSrt}'${fontsDirOption}:force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1'"` 
+      subtitleFilter = `-vf "subtitles='${escapedSrt}'${fontsDirOption}:force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=${outlineColour},BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1'"` 
     }
 
     // FFmpeg: seek to start, cut for duration, burn subtitles, re-encode to MP4
@@ -342,13 +353,15 @@ async function handleClip(req, res) {
  * Groups words into ~4-word chunks for readable subtitles.
  * Timestamps are relative (0-based for the clip).
  */
-function generateSRT(words, clipStartTime = 0) {
+function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
   const WORDS_PER_LINE = 4
   const chunks = []
 
   for (let i = 0; i < words.length; i += WORDS_PER_LINE) {
     const group = words.slice(i, i + WORDS_PER_LINE)
-    const text = group.map(w => w.text).join(' ').toUpperCase()
+    let text = group.map(w => w.text).join(' ')
+    if (textCase === 'upper') text = text.toUpperCase()
+    else if (textCase === 'title') text = text.replace(/\b\w/g, c => c.toUpperCase())
     const start = group[0].start - clipStartTime
     const end = (group[group.length - 1].end || group[group.length - 1].start + 0.5) - clipStartTime
     chunks.push({ text, start: Math.max(0, start), end: Math.max(0, end) })

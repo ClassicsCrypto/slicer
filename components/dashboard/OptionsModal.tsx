@@ -1,6 +1,6 @@
 'use client'
 
-import { ProcessingOptions, AIFocus, ClipLength, SubtitleOptions, SubtitleSize, SubtitleColor, SubtitlePosition, SubtitleStyle, SubtitleBackground, SubtitleFont } from '@/types'
+import { ProcessingOptions, AIFocus, ClipLength, SubtitleOptions, SubtitleSize, SubtitleColor, SubtitlePosition, SubtitleStyle, SubtitleBackground, SubtitleFont, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase } from '@/types'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 
@@ -223,7 +223,93 @@ export default function OptionsModal({
                 </div>
               </div>
 
-              {/* Background removed — FFmpeg SRT burn-in doesn't support blur/solid cleanly */}
+              {/* Outline Thickness */}
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5">Outline</label>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'thin' as SubtitleOutlineThickness, label: 'Thin' },
+                    { value: 'medium' as SubtitleOutlineThickness, label: 'Medium' },
+                    { value: 'thick' as SubtitleOutlineThickness, label: 'Thick' },
+                  ]).map(o => (
+                    <button
+                      key={o.value}
+                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, outlineThickness: o.value } })}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                        (options.subtitles.outlineThickness || 'medium') === o.value
+                          ? 'border-red-500 text-red-400 bg-red-500/10'
+                          : 'border-white/10 text-white/50 hover:border-white/30'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Outline Color */}
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5">Outline Color</label>
+                <div className="flex gap-2">
+                  {([
+                    { value: '#000000' as SubtitleOutlineColor, label: 'Black', swatch: '#000000' },
+                    { value: '#ffffff' as SubtitleOutlineColor, label: 'White', swatch: '#ffffff' },
+                    { value: '#FF4D4D' as SubtitleOutlineColor, label: 'Red', swatch: '#FF4D4D' },
+                  ]).map(c => (
+                    <button
+                      key={c.value}
+                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, outlineColor: c.value } })}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                        (options.subtitles.outlineColor || '#000000') === c.value
+                          ? 'border-red-500 bg-red-500/10 text-white'
+                          : 'border-white/10 text-white/50 hover:border-white/30'
+                      }`}
+                    >
+                      <span className="w-3 h-3 rounded-full border border-white/20" style={{ background: c.swatch }} />
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shadow */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-white/50">Drop Shadow</label>
+                <button
+                  onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, shadow: !options.subtitles.shadow } })}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                    options.subtitles.shadow ? 'bg-red-500' : 'bg-white/20'
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    options.subtitles.shadow ? 'translate-x-5' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Letter Case */}
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5">Letter Case</label>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'upper' as SubtitleCase, label: 'UPPER' },
+                    { value: 'title' as SubtitleCase, label: 'Title Case' },
+                    { value: 'original' as SubtitleCase, label: 'Original' },
+                  ]).map(c => (
+                    <button
+                      key={c.value}
+                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, textCase: c.value } })}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                        (options.subtitles.textCase || 'upper') === c.value
+                          ? 'border-red-500 text-red-400 bg-red-500/10'
+                          : 'border-white/10 text-white/50 hover:border-white/30'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

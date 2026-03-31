@@ -51,13 +51,22 @@ function SubtitleOverlay({
 
   if (!isPlaying || !currentLine) return null
 
-  // Match FFmpeg export exactly: thick black outline (BorderStyle=1, Outline=2, Shadow=1)
-  const textStroke = [
-    '-2px -2px 0 #000', '2px -2px 0 #000', '-2px 2px 0 #000', '2px 2px 0 #000',
-    '-3px 0 0 #000', '3px 0 0 #000', '0 -3px 0 #000', '0 3px 0 #000',
-    '-1px -1px 0 #000', '1px -1px 0 #000', '-1px 1px 0 #000', '1px 1px 0 #000',
-    '2px 2px 3px rgba(0,0,0,0.6)',
-  ].join(', ')
+  // Outline thickness mapping (matches FFmpeg Outline=1/2/3)
+  const outlineColor = options.outlineColor || '#000000'
+  const thickness = options.outlineThickness || 'medium'
+  const px = thickness === 'thin' ? 1 : thickness === 'thick' ? 3 : 2
+  const outlineStrokes = [
+    `${-px}px ${-px}px 0 ${outlineColor}`, `${px}px ${-px}px 0 ${outlineColor}`,
+    `${-px}px ${px}px 0 ${outlineColor}`, `${px}px ${px}px 0 ${outlineColor}`,
+    `${-px-1}px 0 0 ${outlineColor}`, `${px+1}px 0 0 ${outlineColor}`,
+    `0 ${-px-1}px 0 ${outlineColor}`, `0 ${px+1}px 0 ${outlineColor}`,
+  ]
+  if (options.shadow) outlineStrokes.push(`2px 2px 4px rgba(0,0,0,0.7)`)
+  const textStroke = outlineStrokes.join(', ')
+
+  // Text case
+  const textTransform = (options.textCase || 'upper') === 'upper' ? 'uppercase'
+    : (options.textCase || 'upper') === 'title' ? 'capitalize' : 'none'
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
@@ -69,7 +78,7 @@ function SubtitleOverlay({
               style={{
                 color: activeColor,
                 textShadow: textStroke,
-                textTransform: 'uppercase' as const,
+                textTransform: textTransform as any,
               }}
             >
               {word.text}{' '}
