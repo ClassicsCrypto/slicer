@@ -12,8 +12,8 @@
  * Returns: { "publicUrl": "https://...", "duration": 120, "title": "..." }
  *
  * Limits:
- *   - Max 15 minutes video duration
- *   - Max 100MB file size
+ *   - Max 3 hours video duration
+ *   - Max 2GB file size
  *   - Audio-only download (faster, smaller, sufficient for AI analysis)
  */
 
@@ -42,8 +42,8 @@ const PORT = parseInt(process.env.SLICER_YT_PORT || '3001')
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const TEMP_DIR = path.join(__dirname, 'temp')
-const MAX_DURATION_SEC = 15 * 60 // 15 minutes
-const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
+const MAX_DURATION_SEC = 3 * 60 * 60 // 3 hours
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
 
 // Ensure temp dir exists
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })

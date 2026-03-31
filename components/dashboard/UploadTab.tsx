@@ -433,7 +433,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           </div>
           <div className="flex justify-between">
             <span className="text-white/30">Max video length</span>
-            <span className="text-white/60 font-semibold">5 hours</span>
+            <span className="text-white/60 font-semibold">3 hours</span>
           </div>
           <div className="flex justify-between">
             <span className="text-white/30">Supported formats</span>
