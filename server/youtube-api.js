@@ -203,15 +203,101 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data))
 }
 
+/**
+ * Handle clip export — FFmpeg cuts a segment from a source URL
+ * POST /clip { sourceUrl, startTime, endTime, title? }
+ * Returns the MP4 file as a download
+ */
+async function handleClip(req, res) {
+  let body = ''
+  for await (const chunk of req) body += chunk
+
+  let parsed
+  try { parsed = JSON.parse(body) } catch {
+    return sendJson(res, 400, { error: 'Invalid JSON' })
+  }
+
+  const { sourceUrl, startTime, endTime, title } = parsed
+  if (!sourceUrl || startTime == null || endTime == null) {
+    return sendJson(res, 400, { error: 'sourceUrl, startTime, endTime required' })
+  }
+
+  const duration = endTime - startTime
+  if (duration < 1 || duration > 300) {
+    return sendJson(res, 400, { error: 'Clip must be 1-300 seconds' })
+  }
+
+  console.log(`\n[clip] request: ${startTime}s → ${endTime}s (${duration}s) from ${sourceUrl.slice(0, 80)}...`)
+
+  const fileId = crypto.randomBytes(8).toString('hex')
+  const outputFile = path.join(TEMP_DIR, `${fileId}-clip.mp4`)
+
+  try {
+    // FFmpeg: seek to start, cut for duration, re-encode to MP4
+    await new Promise((resolve, reject) => {
+      const cmd = `ffmpeg -ss ${startTime} -i "${sourceUrl.split('#')[0]}" -t ${duration} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
+      console.log(`[clip] ffmpeg: ${cmd}`)
+
+      exec(cmd, { timeout: 120000 }, (err, stdout, stderr) => {
+        if (err) {
+          console.error('[clip] ffmpeg error:', stderr?.slice(-500))
+          reject(new Error('FFmpeg clipping failed'))
+          return
+        }
+        resolve()
+      })
+    })
+
+    if (!fs.existsSync(outputFile)) {
+      return sendJson(res, 500, { error: 'Clip file not created' })
+    }
+
+    const stat = fs.statSync(outputFile)
+    console.log(`[clip] done: ${(stat.size / 1024 / 1024).toFixed(1)}MB`)
+
+    // Stream the file as download
+    const safeName = (title || `clip-${startTime}s-${endTime}s`).replace(/[^a-zA-Z0-9_-]/g, '_')
+    res.writeHead(200, {
+      'Content-Type': 'video/mp4',
+      'Content-Length': stat.size,
+      'Content-Disposition': `attachment; filename="${safeName}.mp4"`,
+      'Access-Control-Allow-Origin': '*',
+    })
+
+    const stream = fs.createReadStream(outputFile)
+    stream.pipe(res)
+    stream.on('end', () => {
+      // Cleanup temp file
+      try { fs.unlinkSync(outputFile) } catch {}
+    })
+    stream.on('error', () => {
+      try { fs.unlinkSync(outputFile) } catch {}
+      res.end()
+    })
+
+  } catch (err) {
+    console.error(`[clip] ERROR:`, err.message)
+    try { fs.unlinkSync(outputFile) } catch {}
+    sendJson(res, 500, { error: err.message })
+  }
+}
+
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    return sendJson(res, 200, {})
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    })
+    return res.end()
   }
 
   if (req.method === 'POST' && req.url === '/download') {
     handleDownload(req, res)
+  } else if (req.method === 'POST' && req.url === '/clip') {
+    handleClip(req, res)
   } else if (req.method === 'GET' && req.url === '/health') {
     sendJson(res, 200, { status: 'ok', service: 'slicer-youtube-api' })
   } else {
@@ -220,8 +306,9 @@ const server = http.createServer((req, res) => {
 })
 
 server.listen(PORT, () => {
-  console.log(`\n🎬 Slicer YouTube API running on http://localhost:${PORT}`)
+  console.log(`\n🎬 Slicer Local API running on http://localhost:${PORT}`)
   console.log(`   POST /download  — Download YouTube/Twitch video`)
+  console.log(`   POST /clip      — Export clip segment via FFmpeg`)
   console.log(`   GET  /health    — Health check`)
   console.log(`   Max duration: ${MAX_DURATION_SEC / 60} minutes`)
   console.log(`   Max file size: ${MAX_FILE_SIZE / 1024 / 1024}MB`)

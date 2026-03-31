@@ -12,6 +12,70 @@ interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
+function DownloadClipButton({ clip, sourceUrl, title }: { clip: Clip; sourceUrl: string; title: string }) {
+  const [downloading, setDownloading] = useState(false)
+  const [progress, setProgress] = useState('')
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    setProgress('Cutting clip...')
+
+    try {
+      const res = await fetch('http://localhost:3001/clip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceUrl: sourceUrl,
+          startTime: clip.start_time,
+          endTime: clip.end_time,
+          title: `${title}-clip-${clip.start_time.toFixed(0)}s`,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Export failed' }))
+        setProgress(err.error || 'Export failed')
+        setTimeout(() => { setDownloading(false); setProgress('') }, 3000)
+        return
+      }
+
+      // Download the blob
+      setProgress('Downloading...')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${title}-clip-${clip.start_time.toFixed(0)}s.mp4`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      setProgress('✅ Done!')
+      setTimeout(() => { setDownloading(false); setProgress('') }, 2000)
+    } catch {
+      setProgress('Server not available')
+      setTimeout(() => { setDownloading(false); setProgress('') }, 3000)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={downloading}
+      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white transition-all hover:opacity-90 disabled:opacity-50"
+      style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
+    >
+      {downloading ? (
+        <span className="flex items-center gap-2">
+          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          {progress}
+        </span>
+      ) : (
+        '⬇️ Export Clip'
+      )}
+    </button>
+  )
+}
+
 function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
@@ -170,18 +234,9 @@ function JobCard({
                 <span>🔥 Virality: {previewClip.virality_score}/10</span>
               )}
             </div>
-            {/* Download button */}
+            {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <a
-                href={previewClip.r2_key?.split('#')[0] || job.source_url}
-                download={`slicer-clip-${previewClip.start_time.toFixed(0)}s.mp4`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white transition-all hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
-              >
-                ⬇️ Download Clip
-              </a>
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}
