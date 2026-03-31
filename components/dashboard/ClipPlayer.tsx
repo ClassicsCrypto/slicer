@@ -20,7 +20,7 @@ function SubtitleOverlay({
 }) {
   const fontSize = options.size === 'small' ? 'text-xs' : options.size === 'large' ? 'text-lg md:text-xl' : 'text-sm md:text-base'
   const activeColor = options.color === 'custom' ? (options.customColor ?? '#FF4D4D') : options.color
-  const highlightColor = options.style === 'karaoke' ? '#FF4D4D' : activeColor
+  const highlightColor = activeColor
   const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
   const bgClass = options.background === 'blur' ? 'bg-black/60 backdrop-blur-sm'
     : options.background === 'solid' ? 'bg-black/90'
