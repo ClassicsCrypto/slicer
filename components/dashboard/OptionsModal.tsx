@@ -198,32 +198,6 @@ export default function OptionsModal({
                 </div>
               </div>
 
-              {/* Style */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Style</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { value: 'karaoke' as SubtitleStyle, label: '✨ Karaoke', desc: 'Word-by-word highlight' },
-                    { value: 'bold' as SubtitleStyle, label: '𝐁 Bold', desc: 'Simple bold text' },
-                    { value: 'outline' as SubtitleStyle, label: '◻ Outline', desc: 'Text with outline' },
-                    { value: 'shadow' as SubtitleStyle, label: '🌑 Shadow', desc: 'Drop shadow' },
-                  ]).map(s => (
-                    <button
-                      key={s.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, style: s.value } })}
-                      className={`px-3 py-2 rounded-lg border text-xs text-left transition-all ${
-                        options.subtitles.style === s.value
-                          ? 'border-red-500 bg-red-500/10 text-white'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      <div className="font-semibold">{s.label}</div>
-                      <div className="text-white/30 text-[10px]">{s.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Font */}
               <div>
                 <label className="block text-xs text-white/50 mb-1.5">Font</label>
@@ -249,29 +223,7 @@ export default function OptionsModal({
                 </div>
               </div>
 
-              {/* Background */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Background</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'none' as SubtitleBackground, label: 'None' },
-                    { value: 'blur' as SubtitleBackground, label: 'Dark Blur' },
-                    { value: 'solid' as SubtitleBackground, label: 'Solid Black' },
-                  ]).map(b => (
-                    <button
-                      key={b.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, background: b.value } })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                        options.subtitles.background === b.value
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Background removed — FFmpeg SRT burn-in doesn't support blur/solid cleanly */}
             </div>
           )}
         </div>

@@ -20,11 +20,11 @@ function SubtitleOverlay({
 }) {
   const fontSize = options.size === 'small' ? 'text-xs' : options.size === 'large' ? 'text-lg md:text-xl' : 'text-sm md:text-base'
   const activeColor = options.color === 'custom' ? (options.customColor ?? '#FF4D4D') : options.color
-  const highlightColor = activeColor
   const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
-  const bgClass = options.background === 'blur' ? 'bg-black/60 backdrop-blur-sm'
-    : options.background === 'solid' ? 'bg-black/90'
-    : 'bg-transparent'
+  // Font family matching FFmpeg export
+  const fontFamily = options.font === 'bebas' ? '"Bebas Neue", Impact, sans-serif'
+    : options.font === 'montserrat' ? '"Montserrat", Arial, sans-serif'
+    : 'Impact, Arial Black, sans-serif'
   // Group words into lines of ~5 words
   const lines = useMemo(() => {
     const result: SubtitleWord[][] = []
@@ -51,41 +51,24 @@ function SubtitleOverlay({
 
   if (!isPlaying || !currentLine) return null
 
-  const textShadow = options.style === 'shadow' ? '2px 2px 4px rgba(0,0,0,0.8)'
-    : options.style === 'outline' ? '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
-    : 'none'
+  // Match FFmpeg export: bold text with black outline (BorderStyle=1, Outline=2)
+  const textStroke = '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 1px 1px 2px rgba(0,0,0,0.5)'
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
-      <div className={`${bgClass} rounded-lg px-4 py-2 max-w-[90%]`}>
-        <p className={`text-center ${fontSize} font-bold leading-relaxed`}>
-          {currentLine.words.map((word, i) => {
-            const isActive = currentTime >= word.start - 0.05
-            const isHighlighted = currentTime >= word.start - 0.05 && currentTime <= word.end + 0.3
-
-            // Style-specific coloring
-            let color: string
-            if (options.style === 'karaoke') {
-              color = isHighlighted ? highlightColor : isActive ? activeColor : 'rgba(255,255,255,0.4)'
-            } else {
-              color = activeColor
-            }
-
-            return (
-              <span
-                key={`${currentLine.index}-${i}`}
-                className="transition-all duration-150"
-                style={{
-                  color,
-                  textShadow: options.style === 'karaoke' && isHighlighted
-                    ? `0 0 12px ${highlightColor}66`
-                    : textShadow,
-                }}
-              >
-                {word.text}{' '}
-              </span>
-            )
-          })}
+      <div className="max-w-[90%]">
+        <p className={`text-center ${fontSize} font-bold leading-relaxed`} style={{ fontFamily }}>
+          {currentLine.words.map((word, i) => (
+            <span
+              key={`${currentLine.index}-${i}`}
+              style={{
+                color: activeColor,
+                textShadow: textStroke,
+              }}
+            >
+              {word.text}{' '}
+            </span>
+          ))}
         </p>
       </div>
     </div>
@@ -100,7 +83,7 @@ interface ClipPlayerProps {
 
 const DEFAULT_SUB_OPTS: SubtitleOptions = {
   enabled: true, size: 'medium', color: '#ffffff',
-  position: 'bottom', style: 'karaoke', background: 'blur',
+  position: 'bottom', style: 'bold', background: 'none', font: 'impact',
 }
 
 export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPlayerProps) {

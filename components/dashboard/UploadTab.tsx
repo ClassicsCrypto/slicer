@@ -128,8 +128,9 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     size: 'medium',
     color: '#ffffff',
     position: 'bottom',
-    style: 'karaoke',
-    background: 'blur',
+    style: 'bold',
+    background: 'none',
+    font: 'impact',
   },
 }
 

@@ -17,6 +17,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'sourceUrl is required' }, { status: 400 })
     }
 
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('Missing env vars:', {
+        supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        serviceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        assemblyai: !!process.env.ASSEMBLYAI_API_KEY,
+      })
+      return NextResponse.json({ error: 'Server misconfigured — missing environment variables' }, { status: 500 })
+    }
+
     const supabase = createServerClient()
 
     // Determine user id (dev bypass or anonymous)
@@ -70,8 +79,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ jobId }, { status: 201 })
-  } catch (err) {
-    console.error('Process route error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (err: any) {
+    console.error('Process route error:', err?.message || err)
+    return NextResponse.json({ error: `Server error: ${err?.message || 'unknown'}` }, { status: 500 })
   }
 }
