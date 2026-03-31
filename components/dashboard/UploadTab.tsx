@@ -149,9 +149,9 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const onDrop = useCallback((files: File[]) => {
     if (files[0]) {
       const f = files[0]
-      // Max 500MB
-      if (f.size > 500 * 1024 * 1024) {
-        setError('File too large — max 500MB')
+      // Max 2GB
+      if (f.size > 2 * 1024 * 1024 * 1024) {
+        setError('File too large — max 2GB')
         return
       }
       setFile(f)
@@ -364,8 +364,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
                   onChange={(e) => {
                     const f = e.target.files?.[0]
                     if (f) {
-                      if (f.size > 500 * 1024 * 1024) {
-                        setError('File too large — max 500MB')
+                      if (f.size > 2 * 1024 * 1024 * 1024) {
+                        setError('File too large — max 2GB')
                         return
                       }
                       setFile(f)
@@ -401,7 +401,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       <div className="mt-6 grid grid-cols-3 gap-3">
         {[
           { icon: '📺', label: 'YouTube & Twitch', desc: 'Paste any YouTube or Twitch URL' },
-          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 500MB' },
+          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
           { icon: '🧠', label: 'AI Powered', desc: 'Groq + AssemblyAI find best moments' },
         ].map((tip) => (
           <div

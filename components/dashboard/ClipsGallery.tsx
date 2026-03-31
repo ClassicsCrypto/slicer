@@ -170,6 +170,28 @@ function JobCard({
                 <span>🔥 Virality: {previewClip.virality_score}/10</span>
               )}
             </div>
+            {/* Download button */}
+            <div className="pt-3 flex gap-2">
+              <a
+                href={previewClip.r2_key?.split('#')[0] || job.source_url}
+                download={`slicer-clip-${previewClip.start_time.toFixed(0)}s.mp4`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white transition-all hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
+              >
+                ⬇️ Download Clip
+              </a>
+              <a
+                href={job.source_url}
+                download={`slicer-full-${job.title}.mp4`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white/60 border border-white/10 hover:border-white/30 transition-all"
+              >
+                📥 Full Video
+              </a>
+            </div>
           </div>
         </Modal>
       )}
