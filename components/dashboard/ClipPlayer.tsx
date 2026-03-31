@@ -106,26 +106,36 @@ const DEFAULT_SUB_OPTS: SubtitleOptions = {
 export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPlayerProps) {
   const subOpts = subtitleOptions ?? DEFAULT_SUB_OPTS
   const videoRef = useRef<HTMLVideoElement>(null)
+  const scrubRef = useRef<HTMLDivElement>(null)
   const [currentRelative, setCurrentRelative] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  const duration = clip.end_time - clip.start_time
+  
+  // Trim state — relative to original clip boundaries (0 to duration)
+  const originalDuration = clip.end_time - clip.start_time
+  const [trimStart, setTrimStart] = useState(0)
+  const [trimEnd, setTrimEnd] = useState(originalDuration)
+  const [dragging, setDragging] = useState<'start' | 'end' | null>(null)
+  
+  const trimmedDuration = trimEnd - trimStart
+  const effectiveStart = clip.start_time + trimStart
+  const effectiveEnd = clip.start_time + trimEnd
 
-  // Enforce start/end boundaries
+  // Enforce start/end boundaries using trim handles
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
-    video.currentTime = clip.start_time
+    video.currentTime = effectiveStart
 
     const handleTimeUpdate = () => {
-      if (video.currentTime >= clip.end_time) {
+      if (video.currentTime >= effectiveEnd) {
         video.pause()
-        video.currentTime = clip.start_time
+        video.currentTime = effectiveStart
         setIsPlaying(false)
         setCurrentRelative(0)
         return
       }
-      setCurrentRelative(video.currentTime - clip.start_time)
+      setCurrentRelative(video.currentTime - effectiveStart)
     }
 
     const handlePlay = () => setIsPlaying(true)
@@ -140,7 +150,7 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPla
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
     }
-  }, [clip.start_time, clip.end_time])
+  }, [effectiveStart, effectiveEnd])
 
   const togglePlay = () => {
     const video = videoRef.current
@@ -148,8 +158,8 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPla
     if (isPlaying) {
       video.pause()
     } else {
-      if (video.currentTime >= clip.end_time) {
-        video.currentTime = clip.start_time
+      if (video.currentTime >= effectiveEnd || video.currentTime < effectiveStart) {
+        video.currentTime = effectiveStart
       }
       video.play()
     }
@@ -157,14 +167,51 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPla
 
   const handleScrub = (e: React.MouseEvent<HTMLDivElement>) => {
     const video = videoRef.current
-    if (!video) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = (e.clientX - rect.left) / rect.width
-    const newTime = clip.start_time + ratio * duration
-    video.currentTime = Math.max(clip.start_time, Math.min(clip.end_time, newTime))
+    if (!video || !scrubRef.current) return
+    const rect = scrubRef.current.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    // Scrub within trimmed range
+    const newTime = effectiveStart + ratio * trimmedDuration
+    video.currentTime = newTime
   }
 
-  const progress = duration > 0 ? (currentRelative / duration) * 100 : 0
+  const handleTrimDrag = (e: React.MouseEvent<HTMLDivElement>, handle: 'start' | 'end') => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragging(handle)
+    
+    const onMove = (ev: MouseEvent) => {
+      if (!scrubRef.current) return
+      const rect = scrubRef.current.getBoundingClientRect()
+      const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+      const timePos = ratio * originalDuration
+      
+      if (handle === 'start') {
+        setTrimStart(Math.min(timePos, trimEnd - 2)) // min 2s clip
+      } else {
+        setTrimEnd(Math.max(timePos, trimStart + 2)) // min 2s clip
+      }
+    }
+    
+    const onUp = () => {
+      setDragging(null)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      // Seek to new start if needed
+      const video = videoRef.current
+      if (video && handle === 'start') {
+        video.currentTime = clip.start_time + trimStart
+      }
+    }
+    
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const progress = trimmedDuration > 0 ? (currentRelative / trimmedDuration) * 100 : 0
+  const trimStartPct = (trimStart / originalDuration) * 100
+  const trimEndPct = (trimEnd / originalDuration) * 100
+  const isTrimmed = trimStart > 0.1 || trimEnd < originalDuration - 0.1
 
   function fmt(s: number): string {
     const m = Math.floor(s / 60)
@@ -218,27 +265,76 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPla
         )}
       </div>
 
-      {/* Controls */}
+      {/* Controls with trim handles */}
       <div className="px-4 py-3 space-y-2">
-        {/* Scrubber */}
-        <div
-          className="h-1.5 rounded-full bg-white/10 cursor-pointer overflow-hidden"
-          onClick={handleScrub}
-        >
+        {/* Trim scrubber */}
+        <div ref={scrubRef} className="relative h-8 select-none">
+          {/* Background track */}
+          <div className="absolute top-3 left-0 right-0 h-2 rounded-full bg-white/10" />
+          
+          {/* Dimmed regions outside trim */}
           <div
-            className="h-full rounded-full transition-none"
+            className="absolute top-3 left-0 h-2 rounded-l-full bg-black/50"
+            style={{ width: `${trimStartPct}%` }}
+          />
+          <div
+            className="absolute top-3 right-0 h-2 rounded-r-full bg-black/50"
+            style={{ width: `${100 - trimEndPct}%` }}
+          />
+          
+          {/* Active trim region */}
+          <div
+            className="absolute top-3 h-2 cursor-pointer"
             style={{
-              width: `${progress}%`,
+              left: `${trimStartPct}%`,
+              width: `${trimEndPct - trimStartPct}%`,
+              background: 'rgba(255,255,255,0.15)',
+            }}
+            onClick={handleScrub}
+          />
+          
+          {/* Playback progress */}
+          <div
+            className="absolute top-3 h-2 rounded-l-full pointer-events-none"
+            style={{
+              left: `${trimStartPct}%`,
+              width: `${(progress / 100) * (trimEndPct - trimStartPct)}%`,
               background: 'linear-gradient(90deg, #FF4D4D, #FF6B6B)',
             }}
           />
+          
+          {/* Start trim handle */}
+          <div
+            className={`absolute top-0 w-3 h-8 rounded-sm cursor-ew-resize transition-colors ${
+              dragging === 'start' ? 'bg-red-400' : 'bg-white/70 hover:bg-white'
+            }`}
+            style={{ left: `calc(${trimStartPct}% - 6px)` }}
+            onMouseDown={(e) => handleTrimDrag(e, 'start')}
+            title="Drag to trim start"
+          >
+            <div className="absolute inset-x-0.5 top-2 bottom-2 border-x border-black/30" />
+          </div>
+          
+          {/* End trim handle */}
+          <div
+            className={`absolute top-0 w-3 h-8 rounded-sm cursor-ew-resize transition-colors ${
+              dragging === 'end' ? 'bg-red-400' : 'bg-white/70 hover:bg-white'
+            }`}
+            style={{ left: `calc(${trimEndPct}% - 6px)` }}
+            onMouseDown={(e) => handleTrimDrag(e, 'end')}
+            title="Drag to trim end"
+          >
+            <div className="absolute inset-x-0.5 top-2 bottom-2 border-x border-black/30" />
+          </div>
         </div>
 
         {/* Time display */}
         <div className="flex items-center justify-between text-xs text-white/40">
           <span>{fmt(currentRelative)}</span>
-          <span className="text-white/20">clip: {fmt(duration)}</span>
-          <span>{fmt(duration)}</span>
+          <span className="text-white/20">
+            {isTrimmed ? `trimmed: ${fmt(trimmedDuration)}` : `clip: ${fmt(originalDuration)}`}
+          </span>
+          <span>{fmt(trimmedDuration)}</span>
         </div>
       </div>
     </div>
