@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase } from '@/types'
+import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase, SubtitleSize, SubtitleFont, SubtitleColor } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -244,6 +244,39 @@ function JobCard({
           <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10 space-y-2">
             <p className="text-xs text-white/40 font-semibold uppercase tracking-wider">Subtitle Style</p>
             <div className="grid grid-cols-2 gap-2">
+              {/* Font */}
+              <div>
+                <label className="text-[10px] text-white/30">Font</label>
+                <div className="flex gap-1 mt-0.5">
+                  {([{ v: 'impact' as SubtitleFont, l: 'Impact' }, { v: 'bebas' as SubtitleFont, l: 'Bebas' }, { v: 'montserrat' as SubtitleFont, l: 'Mont' }]).map(f => (
+                    <button key={f.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, font: f.v })}
+                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.font || 'impact') === f.v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    >{f.l}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Size */}
+              <div>
+                <label className="text-[10px] text-white/30">Size</label>
+                <div className="flex gap-1 mt-0.5">
+                  {(['small', 'medium', 'large'] as SubtitleSize[]).map(v => (
+                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, size: v })}
+                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.size || 'medium') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    >{v[0].toUpperCase()}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Text Color */}
+              <div>
+                <label className="text-[10px] text-white/30">Text Color</label>
+                <div className="flex gap-1 mt-0.5">
+                  {([{ v: '#ffffff' as SubtitleColor, l: '⬜' }, { v: '#ffff00' as SubtitleColor, l: '🟨' }, { v: '#FF4D4D' as SubtitleColor, l: '🟥' }]).map(c => (
+                    <button key={c.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, color: c.v })}
+                      className={`flex-1 py-1 rounded text-xs transition-all ${(liveSubOpts.color || '#ffffff') === c.v ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}
+                    >{c.l}</button>
+                  ))}
+                </div>
+              </div>
               {/* Outline Thickness */}
               <div>
                 <label className="text-[10px] text-white/30">Outline</label>

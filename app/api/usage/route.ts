@@ -50,9 +50,9 @@ export async function GET() {
 
     const usageData = {
       assemblyai: {
-        used: parseFloat(estimatedTranscriptionHours.toFixed(2)),
-        limit: 5,
-        unit: 'hrs/month',
+        used: parseFloat((estimatedTranscriptionHours * 60).toFixed(0)),
+        limit: 300,
+        unit: 'min/month',
       },
       groq: {
         used: groqRequestsEstimate,

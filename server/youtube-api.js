@@ -385,7 +385,9 @@ const server = http.createServer((req, res) => {
 // ─── Info endpoint: get video duration without downloading ───
 async function handleInfo(req, res) {
   try {
-    const body = await readBody(req)
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    const body = JSON.parse(raw)
     const { url } = body
     if (!url) return sendJson(res, 400, { error: 'url is required' })
 

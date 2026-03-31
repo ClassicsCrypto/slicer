@@ -142,7 +142,7 @@ export default function UsageTab() {
         <h2 className="text-lg font-bold text-white mb-4">Stats</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard icon="📹" label="Videos Processed" value={String(data.stats.totalJobs)} />
-          <StatCard icon="⏱️" label="Hours Transcribed" value={data.stats.totalHoursProcessed.toFixed(1)} />
+          <StatCard icon="⏱️" label="Minutes Transcribed" value={(data.stats.totalHoursProcessed * 60).toFixed(0)} />
           <StatCard icon="✂️" label="Clips Generated" value={String(data.stats.totalClips)} />
           <StatCard icon="📊" label="Avg Clips / Video" value={data.stats.avgClipsPerJob.toFixed(1)} />
         </div>
