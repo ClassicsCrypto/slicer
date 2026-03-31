@@ -65,14 +65,15 @@ function getVideoInfo(url) {
 }
 
 /**
- * Download audio from video URL
+ * Download best audio stream (no ffmpeg needed — downloads native format)
  */
 function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
-    const cmd = `yt-dlp -x --audio-format mp3 --audio-quality 128K -o "${outputPath}" "${url}"`
+    // Use -f ba (best audio) without post-processing — avoids ffmpeg requirement
+    const cmd = `yt-dlp -f "ba" --no-post-overwrites -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
     
-    exec(cmd, { timeout: 120000 }, (err, stdout, stderr) => {
+    exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
       if (err) {
         console.error('[yt-dlp] error:', stderr)
         reject(new Error(`Download failed: ${stderr || err.message}`))
@@ -91,11 +92,18 @@ async function uploadToSupabase(filePath, fileName) {
   const fileBuffer = fs.readFileSync(filePath)
   const storagePath = `youtube/${fileName}`
 
+  const ext = path.extname(fileName).toLowerCase()
+  const contentType = ext === '.mp3' ? 'audio/mpeg'
+    : ext === '.m4a' ? 'audio/mp4'
+    : ext === '.webm' ? 'audio/webm'
+    : ext === '.opus' ? 'audio/opus'
+    : 'application/octet-stream'
+
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/slicer-videos/${storagePath}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': contentType,
       'x-upsert': 'true',
     },
     body: fileBuffer,
@@ -162,7 +170,8 @@ async function handleDownload(req, res) {
     }
 
     // 3. Upload to Supabase
-    const fileName = `${fileId}-${info.id}.mp3`
+    const fileExt = path.extname(files[0]) || '.webm'
+    const fileName = `${fileId}-${info.id}${fileExt}`
     const publicUrl = await uploadToSupabase(outputFile, fileName)
     console.log(`[download] uploaded: ${publicUrl}`)
 
