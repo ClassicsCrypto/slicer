@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Job, Clip } from '@/types'
+import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
@@ -24,7 +25,8 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip:
     console.log('[Slicer] First 3 words:', JSON.stringify(clip.subtitles?.slice(0, 3)))
 
     try {
-      const res = await fetch('http://localhost:3001/clip', {
+      const apiBase = await getApiUrl()
+      const res = await fetch(`${apiBase}/clip`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

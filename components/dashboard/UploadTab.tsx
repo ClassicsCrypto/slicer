@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingOptions, Job } from '@/types'
+import { getApiUrl } from '@/lib/api-url'
 import Button from '@/components/ui/Button'
 import OptionsModal from '@/components/dashboard/OptionsModal'
 
@@ -230,7 +231,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       if (!file && isYouTubeUrl(sourceUrl)) {
         setError(null)
         try {
-          const ytRes = await fetch('http://localhost:3001/download', {
+          const apiBase = await getApiUrl()
+          const ytRes = await fetch(`${apiBase}/download`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: sourceUrl }),
