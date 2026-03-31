@@ -5,10 +5,10 @@ export async function GET() {
   try {
     const supabase = createServerClient()
 
-    // Get all jobs
+    // Get all jobs — clips are stored inside progress.completedClips
     const { data: jobs, error } = await supabase
       .from('jobs')
-      .select('id, title, status, source_url, options, progress, clips, created_at')
+      .select('id, title, status, source_url, options, progress, created_at')
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -16,11 +16,12 @@ export async function GET() {
     const allJobs = jobs || []
     const completedJobs = allJobs.filter(j => j.status === 'complete')
 
-    // Calculate total hours processed (estimate from clip durations)
+    // Calculate total hours processed (clips stored in progress.completedClips)
     let totalClips = 0
     let totalDurationSec = 0
     for (const job of completedJobs) {
-      const clips = job.clips || []
+      const progress = job.progress as Record<string, any> | null
+      const clips = (progress?.completedClips || []) as Array<{ start_time?: number; end_time?: number }>
       totalClips += clips.length
       for (const clip of clips) {
         totalDurationSec += (clip.end_time || 0) - (clip.start_time || 0)
@@ -70,14 +71,18 @@ export async function GET() {
           : 0,
         exportsCount: 0, // TODO: track exports
       },
-      recentJobs: allJobs.slice(0, 10).map(j => ({
-        id: j.id,
-        title: j.title || 'Untitled',
-        status: j.status,
-        duration: 0,
-        clipCount: (j.clips || []).length,
-        created_at: j.created_at,
-      })),
+      recentJobs: allJobs.slice(0, 10).map(j => {
+        const prog = j.progress as Record<string, any> | null
+        const clips = (prog?.completedClips || []) as Array<any>
+        return {
+          id: j.id,
+          title: j.title || 'Untitled',
+          status: j.status,
+          duration: 0,
+          clipCount: clips.length,
+          created_at: j.created_at,
+        }
+      }),
     }
 
     return NextResponse.json(usageData)
