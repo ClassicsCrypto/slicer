@@ -14,11 +14,11 @@ export default function LandingPage() {
         {/* Logo */}
         <div className="animate-float">
           <Image
-            src="/slicer-cat.png"
-            alt="Slicer Cat"
+            src="/mcv-logo.jpg"
+            alt="Mars Cats Voyage"
             width={120}
             height={120}
-            className="drop-shadow-[0_0_24px_rgba(255,77,77,0.5)]"
+            className="rounded-full drop-shadow-[0_0_24px_rgba(255,77,77,0.5)]"
           />
         </div>
 

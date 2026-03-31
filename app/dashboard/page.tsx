@@ -37,7 +37,7 @@ export default function DashboardPage() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Image
-              src="/slicer-logo.png"
+              src="/mcv-logo.jpg"
               alt="Slicer"
               width={32}
               height={32}
