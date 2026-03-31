@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Job, Clip, SubtitleWord } from '@/types'
+import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -23,6 +23,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip:
     
     console.log('[Slicer] Export clip subtitles:', clip.subtitles?.length || 0, 'words')
     console.log('[Slicer] First 3 words:', JSON.stringify(clip.subtitles?.slice(0, 3)))
+    console.log('[Slicer] Subtitle options sent:', JSON.stringify(subtitleOptions))
 
     try {
       const apiBase = await getApiUrl()
@@ -35,7 +36,11 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip:
           endTime: clip.end_time,
           title: `${title}-clip-${clip.start_time.toFixed(0)}s`,
           subtitles: clip.subtitles || [],
-          subtitleOptions: subtitleOptions || { enabled: true, size: 'medium', color: '#ffffff', position: 'bottom', style: 'bold', background: 'none' },
+          subtitleOptions: subtitleOptions || {
+            enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
+            style: 'bold', background: 'none', font: 'impact',
+            outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'upper',
+          },
         }),
       })
 
@@ -164,6 +169,11 @@ function JobCard({
   const [previewClip, setPreviewClip] = useState<Clip | null>(null)
   const [editedTranscript, setEditedTranscript] = useState<string>('')
   const [showTranscript, setShowTranscript] = useState(false)
+  const [liveSubOpts, setLiveSubOpts] = useState(job.options?.subtitles || {
+    enabled: true, size: 'medium' as const, color: '#ffffff' as const, position: 'bottom' as const,
+    style: 'bold' as const, background: 'none' as const, font: 'impact' as const,
+    outlineThickness: 'medium' as const, outlineColor: '#000000' as const, shadow: true, textCase: 'upper' as const,
+  })
 
   const isProcessing = job.status === 'processing'
   const clips = job.clips ?? []
@@ -228,7 +238,57 @@ function JobCard({
           title={`Clip • ${Math.round(previewClip.duration)}s`}
           maxWidth="max-w-2xl"
         >
-          <ClipPlayer clip={previewClip} sourceUrl={job.source_url} subtitleOptions={job.options?.subtitles} />
+          <ClipPlayer clip={previewClip} sourceUrl={job.source_url} subtitleOptions={liveSubOpts} />
+
+          {/* Inline subtitle settings */}
+          <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10 space-y-2">
+            <p className="text-xs text-white/40 font-semibold uppercase tracking-wider">Subtitle Style</p>
+            <div className="grid grid-cols-2 gap-2">
+              {/* Outline Thickness */}
+              <div>
+                <label className="text-[10px] text-white/30">Outline</label>
+                <div className="flex gap-1 mt-0.5">
+                  {(['thin', 'medium', 'thick'] as SubtitleOutlineThickness[]).map(v => (
+                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineThickness: v })}
+                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.outlineThickness || 'medium') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    >{v}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Outline Color */}
+              <div>
+                <label className="text-[10px] text-white/30">Outline Color</label>
+                <div className="flex gap-1 mt-0.5">
+                  {([{ v: '#000000', l: '⬛' }, { v: '#ffffff', l: '⬜' }, { v: '#FF4D4D', l: '🟥' }] as { v: SubtitleOutlineColor; l: string }[]).map(c => (
+                    <button key={c.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineColor: c.v })}
+                      className={`flex-1 py-1 rounded text-xs transition-all ${(liveSubOpts.outlineColor || '#000000') === c.v ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}
+                    >{c.l}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Letter Case */}
+              <div>
+                <label className="text-[10px] text-white/30">Case</label>
+                <div className="flex gap-1 mt-0.5">
+                  {(['upper', 'title', 'original'] as SubtitleCase[]).map(v => (
+                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, textCase: v })}
+                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.textCase || 'upper') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    >{v === 'upper' ? 'ABC' : v === 'title' ? 'Abc' : 'abc'}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Shadow Toggle */}
+              <div className="flex items-end gap-2">
+                <div>
+                  <label className="text-[10px] text-white/30">Shadow</label>
+                  <button onClick={() => setLiveSubOpts({ ...liveSubOpts, shadow: !liveSubOpts.shadow })}
+                    className={`block mt-0.5 px-3 py-1 rounded text-[10px] font-semibold transition-all ${liveSubOpts.shadow ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                  >{liveSubOpts.shadow ? 'ON' : 'OFF'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-4 space-y-2">
             <p className="text-sm text-white/60">{previewClip.ai_reason}</p>
             <div className="flex flex-wrap gap-1">
@@ -291,7 +351,7 @@ function JobCard({
 
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={job.options?.subtitles} />
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}
