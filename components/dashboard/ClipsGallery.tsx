@@ -294,10 +294,13 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     fetch(`/api/jobs/${jobId}`, { method: 'DELETE' }).catch(console.error)
   }
 
-  const handleJobComplete = (updatedJob: Job) => {
+  const handleJobComplete = async (updatedJob: Job) => {
+    // Force status to complete and merge clips
     setJobs((prev) =>
-      prev.map((j) => (j.id === updatedJob.id ? updatedJob : j))
+      prev.map((j) => (j.id === updatedJob.id ? { ...updatedJob, status: 'complete' as const } : j))
     )
+    // Re-fetch to ensure we have latest data with clips
+    setTimeout(() => fetchJobs(), 500)
   }
 
   if (jobs.length === 0) {
