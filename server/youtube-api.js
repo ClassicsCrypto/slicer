@@ -382,6 +382,39 @@ function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
+// ─── Info endpoint: get video duration without downloading ───
+async function handleInfo(req, res) {
+  try {
+    const body = await readBody(req)
+    const { url } = body
+    if (!url) return sendJson(res, 400, { error: 'url is required' })
+
+    console.log(`[info] Getting info for: ${url}`)
+
+    const { execSync } = require('child_process')
+    const result = execSync(
+      `yt-dlp --dump-json --no-download "${url}"`,
+      { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+    )
+
+    const info = JSON.parse(result)
+    const durationSec = info.duration || 0
+    const title = info.title || info.fulltitle || 'Untitled'
+
+    sendJson(res, 200, {
+      duration: durationSec,
+      durationMin: parseFloat((durationSec / 60).toFixed(1)),
+      title,
+      estimatedCredits: parseFloat((durationSec / 3600).toFixed(2)),
+      creditLimit: 5,
+      creditUnit: 'hrs/month',
+    })
+  } catch (err) {
+    console.error('[info] Error:', err.message)
+    sendJson(res, 500, { error: 'Failed to get video info' })
+  }
+}
+
   if (req.method === 'OPTIONS') {
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*',
@@ -395,6 +428,8 @@ const server = http.createServer((req, res) => {
     handleDownload(req, res)
   } else if (req.method === 'POST' && req.url === '/clip') {
     handleClip(req, res)
+  } else if (req.method === 'POST' && req.url === '/info') {
+    handleInfo(req, res)
   } else if (req.method === 'GET' && req.url === '/health') {
     sendJson(res, 200, { status: 'ok', service: 'slicer-youtube-api' })
   } else {

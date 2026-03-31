@@ -151,6 +151,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [processingJobId, setProcessingJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [videoInfo, setVideoInfo] = useState<{ duration: number; durationMin: number; title: string; estimatedCredits: number; creditLimit: number } | null>(null)
+  const [fetchingInfo, setFetchingInfo] = useState(false)
 
   const onDrop = useCallback((files: File[]) => {
     if (files[0]) {
@@ -173,12 +175,46 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     noClick: true,
   })
 
-  const handleOpenOptions = () => {
+  const handleOpenOptions = async () => {
     if (!url.trim() && !file) {
       setError('Please paste a video URL or drop a file')
       return
     }
     setError(null)
+    setVideoInfo(null)
+
+    // For YouTube/Twitch URLs, fetch video info to estimate credit usage
+    const rawUrl = url.trim()
+    if (!file && isYouTubeUrl(rawUrl)) {
+      setFetchingInfo(true)
+      try {
+        const apiBase = await getApiUrl()
+        const res = await fetch(`${apiBase}/info`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: rawUrl }),
+        })
+        if (res.ok) {
+          const info = await res.json()
+          setVideoInfo(info)
+        }
+      } catch {
+        // info fetch failed, still allow proceeding
+      } finally {
+        setFetchingInfo(false)
+      }
+    } else if (file) {
+      // For local files, estimate from file size (rough: 1MB ≈ 8sec at 720p)
+      const estSec = (file.size / (1024 * 1024)) * 8
+      setVideoInfo({
+        duration: estSec,
+        durationMin: parseFloat((estSec / 60).toFixed(1)),
+        title: file.name,
+        estimatedCredits: parseFloat((estSec / 3600).toFixed(2)),
+        creditLimit: 5,
+      })
+    }
+
     setShowOptions(true)
   }
 
@@ -453,6 +489,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         onChange={setOptions}
         onConfirm={handleSubmit}
         isSubmitting={isSubmitting}
+        videoInfo={videoInfo}
+        fetchingInfo={fetchingInfo}
       />
     </div>
   )
