@@ -228,6 +228,8 @@ async function handleClip(req, res) {
   }
 
   console.log(`\n[clip] request: ${startTime}s → ${endTime}s (${duration}s) from ${sourceUrl.slice(0, 80)}...`)
+  console.log(`[clip] subtitles: ${subtitles ? subtitles.length + ' words' : 'NONE'}`)
+  console.log(`[clip] subtitleOptions:`, JSON.stringify(subtitleOptions || {}))
 
   const fileId = crypto.randomBytes(8).toString('hex')
   const outputFile = path.join(TEMP_DIR, `${fileId}-clip.mp4`)
@@ -237,9 +239,11 @@ async function handleClip(req, res) {
     // Generate SRT subtitle file if subtitles provided
     let subtitleFilter = ''
     if (subtitles && subtitles.length > 0 && subtitleOptions?.enabled !== false) {
-      const srtContent = generateSRT(subtitles, startTime)
+      // Subtitle timestamps are already relative to clip start (0-based)
+      const srtContent = generateSRT(subtitles, 0)
       fs.writeFileSync(srtFile, srtContent, 'utf8')
-      console.log(`[clip] generated SRT: ${subtitles.length} words, offset by ${startTime}s`)
+      console.log(`[clip] generated SRT: ${subtitles.length} words`)
+      console.log(`[clip] SRT preview:\n${srtContent.slice(0, 500)}`)
 
       // Build FFmpeg subtitle style
       const opts = subtitleOptions || {}
