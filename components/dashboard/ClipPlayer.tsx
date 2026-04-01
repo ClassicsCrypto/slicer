@@ -261,10 +261,12 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           />
         )}
 
-        {/* Animated subtitles */}
+        {/* Animated subtitles — offset by trim amount */}
         {subOpts.enabled && clip.subtitles && clip.subtitles.length > 0 && (
           <SubtitleOverlay
-            words={clip.subtitles}
+            words={clip.subtitles
+              .map(w => ({ ...w, start: w.start - trimStart, end: w.end - trimStart }))
+              .filter(w => w.end > 0 && w.start < trimmedDuration)}
             currentTime={currentRelative}
             isPlaying={isPlaying}
             options={subOpts}
