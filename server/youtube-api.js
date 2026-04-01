@@ -48,6 +48,36 @@ const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
 // Ensure temp dir exists
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 
+// Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
+const videoCache = new Map()
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+function getCacheKey(url) {
+  // Extract video ID from YouTube/Twitch URLs
+  const ytMatch = url.match(/(?:v=|\/shorts\/|youtu\.be\/)([a-zA-Z0-9_-]+)/)
+  if (ytMatch) return `yt:${ytMatch[1]}`
+  const twitchMatch = url.match(/twitch\.tv\/videos\/(\d+)/)
+  if (twitchMatch) return `tw:${twitchMatch[1]}`
+  return `url:${Buffer.from(url).toString('base64').slice(0, 32)}`
+}
+
+function getFromCache(url) {
+  const key = getCacheKey(url)
+  const entry = videoCache.get(key)
+  if (!entry) return null
+  // Check TTL and file exists
+  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) { videoCache.delete(key); return null }
+  if (!fs.existsSync(entry.filePath)) { videoCache.delete(key); return null }
+  console.log(`[cache] HIT: ${key} → ${entry.publicUrl}`)
+  return entry
+}
+
+function setCache(url, data) {
+  const key = getCacheKey(url)
+  videoCache.set(key, { ...data, cachedAt: Date.now() })
+  console.log(`[cache] SET: ${key} (${videoCache.size} entries)`)
+}
+
 /**
  * Get video info without downloading
  */
@@ -139,6 +169,18 @@ async function handleDownload(req, res) {
 
   console.log(`\n[download] request: ${url}`)
 
+  // Check cache first
+  const cached = getFromCache(url)
+  if (cached) {
+    return sendJson(res, 200, {
+      publicUrl: cached.publicUrl,
+      duration: cached.duration,
+      title: cached.title,
+      videoId: cached.videoId,
+      cached: true,
+    })
+  }
+
   try {
     // 1. Get video info
     const info = getVideoInfo(url)
@@ -170,21 +212,36 @@ async function handleDownload(req, res) {
       })
     }
 
-    // 3. Upload to Supabase
-    const fileExt = path.extname(files[0]) || '.webm'
-    const fileName = `${fileId}-${info.id}${fileExt}`
-    const publicUrl = await uploadToSupabase(outputFile, fileName)
-    console.log(`[download] uploaded: ${publicUrl}`)
+    // 3. Serve directly from local server (skip Supabase — 50MB limit)
+    const fileExt = path.extname(files[0]) || '.mp4'
+    const serveFileName = `${fileId}-${info.id}${fileExt}`
+    // Rename to a predictable name
+    const servePath = path.join(TEMP_DIR, serveFileName)
+    if (outputFile !== servePath) fs.renameSync(outputFile, servePath)
 
-    // 4. Cleanup temp file
-    fs.unlinkSync(outputFile)
+    // Build a public URL via the tunnel
+    let tunnelUrl = ''
+    try {
+      const tunnelFile = path.join(__dirname, 'tunnel-url.txt')
+      if (fs.existsSync(tunnelFile)) tunnelUrl = fs.readFileSync(tunnelFile, 'utf8').trim()
+    } catch {}
 
-    // 5. Return public URL
+    const publicUrl = tunnelUrl
+      ? `${tunnelUrl}/serve/${serveFileName}`
+      : `http://localhost:${PORT}/serve/${serveFileName}`
+
+    console.log(`[download] serving locally: ${publicUrl}`)
+
+    // 4. Cache it
+    setCache(url, { publicUrl, duration: info.duration, title: info.title, videoId: info.id, filePath: servePath })
+
+    // 5. Return URL (file stays in temp for serving)
     sendJson(res, 200, {
       publicUrl,
       duration: info.duration,
       title: info.title,
       videoId: info.id,
+      cached: false,
     })
 
   } catch (err) {
@@ -382,6 +439,97 @@ function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
+// ─── Thumbnail endpoint: extract frame from video ───
+async function handleThumbnail(req, res) {
+  try {
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    const body = JSON.parse(raw)
+    const { sourceUrl, timestamp } = body
+
+    if (!sourceUrl) return sendJson(res, 400, { error: 'sourceUrl required' })
+
+    const ts = timestamp || 0
+    const thumbId = crypto.randomBytes(6).toString('hex')
+    const thumbFile = path.join(TEMP_DIR, `thumb-${thumbId}.jpg`)
+
+    // If source is a local /serve/ URL, resolve to local file
+    let inputPath = sourceUrl
+    if (sourceUrl.includes('/serve/')) {
+      const fileName = sourceUrl.split('/serve/').pop()
+      const localPath = path.join(TEMP_DIR, decodeURIComponent(fileName))
+      if (fs.existsSync(localPath)) inputPath = localPath
+    }
+
+    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -q:v 2 -y "${thumbFile}"`
+    console.log(`[thumb] extracting frame at ${ts}s`)
+
+    execSync(cmd, { timeout: 15000 })
+
+    if (!fs.existsSync(thumbFile)) {
+      return sendJson(res, 500, { error: 'Failed to extract frame' })
+    }
+
+    const stat = fs.statSync(thumbFile)
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': stat.size,
+      'Access-Control-Allow-Origin': '*',
+    })
+    const stream = fs.createReadStream(thumbFile)
+    stream.pipe(res)
+    stream.on('end', () => {
+      try { fs.unlinkSync(thumbFile) } catch {}
+    })
+  } catch (err) {
+    console.error('[thumb] Error:', err.message)
+    sendJson(res, 500, { error: 'Thumbnail extraction failed' })
+  }
+}
+
+// ─── Serve endpoint: stream video files from temp directory ───
+function handleServe(req, res) {
+  const fileName = decodeURIComponent(req.url.replace('/serve/', ''))
+  const filePath = path.join(TEMP_DIR, fileName)
+
+  if (!fs.existsSync(filePath)) {
+    return sendJson(res, 404, { error: 'File not found' })
+  }
+
+  const stat = fs.statSync(filePath)
+  const ext = path.extname(fileName).toLowerCase()
+  const contentType = ext === '.mp4' ? 'video/mp4'
+    : ext === '.webm' ? 'video/webm'
+    : ext === '.mkv' ? 'video/x-matroska'
+    : 'application/octet-stream'
+
+  // Support range requests for video seeking
+  const range = req.headers.range
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-')
+    const start = parseInt(parts[0], 10)
+    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1
+    const chunkSize = end - start + 1
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+    })
+    fs.createReadStream(filePath, { start, end }).pipe(res)
+  } else {
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+      'Accept-Ranges': 'bytes',
+    })
+    fs.createReadStream(filePath).pipe(res)
+  }
+}
+
 // ─── Info endpoint: get video duration without downloading ───
 async function handleInfo(req, res) {
   try {
@@ -407,9 +555,9 @@ async function handleInfo(req, res) {
       duration: durationSec,
       durationMin: parseFloat((durationSec / 60).toFixed(1)),
       title,
-      estimatedCredits: parseFloat((durationSec / 3600).toFixed(2)),
-      creditLimit: 5,
-      creditUnit: 'hrs/month',
+      estimatedCredits: parseFloat((durationSec / 60).toFixed(1)),
+      creditLimit: 300,
+      creditUnit: 'min/month',
     })
   } catch (err) {
     console.error('[info] Error:', err.message)
@@ -430,8 +578,12 @@ async function handleInfo(req, res) {
     handleDownload(req, res)
   } else if (req.method === 'POST' && req.url === '/clip') {
     handleClip(req, res)
+  } else if (req.method === 'POST' && req.url === '/thumbnail') {
+    handleThumbnail(req, res)
   } else if (req.method === 'POST' && req.url === '/info') {
     handleInfo(req, res)
+  } else if (req.method === 'GET' && req.url?.startsWith('/serve/')) {
+    handleServe(req, res)
   } else if (req.method === 'GET' && req.url === '/health') {
     sendJson(res, 200, { status: 'ok', service: 'slicer-youtube-api' })
   } else {

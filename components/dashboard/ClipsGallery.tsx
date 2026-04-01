@@ -111,6 +111,23 @@ function ClipCard({
   sourceUrl: string
   onPreview: (clip: Clip) => void
 }) {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Generate thumbnail from the middle of the clip
+    const midTime = clip.start_time + (clip.duration / 2)
+    getApiUrl().then(apiBase => {
+      fetch(`${apiBase}/thumbnail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceUrl, timestamp: midTime }),
+      })
+        .then(r => r.ok ? r.blob() : null)
+        .then(blob => blob ? setThumbUrl(URL.createObjectURL(blob)) : null)
+        .catch(() => {})
+    })
+  }, [sourceUrl, clip.start_time, clip.duration])
+
   return (
     <div
       className="rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all cursor-pointer group"
@@ -119,11 +136,11 @@ function ClipCard({
     >
       {/* Thumbnail */}
       <div className="relative aspect-video bg-black/50 flex items-center justify-center">
-        <video
-          src={sourceUrl}
-          className="w-full h-full object-cover opacity-60"
-          preload="none"
-        />
+        {thumbUrl ? (
+          <img src={thumbUrl} alt="Clip thumbnail" className="w-full h-full object-cover" />
+        ) : (
+          <video src={sourceUrl} className="w-full h-full object-cover opacity-60" preload="none" />
+        )}
         <div className="absolute inset-0 flex items-center justify-center">
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm shadow-lg group-hover:scale-110 transition-transform"
@@ -169,6 +186,9 @@ function JobCard({
   const [previewClip, setPreviewClip] = useState<Clip | null>(null)
   const [editedTranscript, setEditedTranscript] = useState<string>('')
   const [showTranscript, setShowTranscript] = useState(false)
+  const [aiCaption, setAiCaption] = useState<string>('')
+  const [captionLoading, setCaptionLoading] = useState(false)
+  const [copiedCaption, setCopiedCaption] = useState<string | null>(null)
   const [liveSubOpts, setLiveSubOpts] = useState(job.options?.subtitles || {
     enabled: true, size: 'medium' as const, color: '#ffffff' as const, position: 'bottom' as const,
     style: 'bold' as const, background: 'none' as const, font: 'impact' as const,
@@ -394,6 +414,71 @@ function JobCard({
               >
                 📥 Full Video
               </a>
+            </div>
+
+            {/* Social Export */}
+            <div className="pt-3 border-t border-white/5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-white/40 font-semibold uppercase tracking-wider">📱 Social Caption</span>
+                <button
+                  onClick={async () => {
+                    setCaptionLoading(true)
+                    try {
+                      const transcript = previewClip.subtitles?.map(w => w.text).join(' ') || previewClip.ai_reason
+                      const res = await fetch('/api/caption', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          transcript,
+                          categories: previewClip.matched_categories,
+                          title: job.title,
+                          duration: previewClip.duration,
+                        }),
+                      })
+                      if (res.ok) {
+                        const data = await res.json()
+                        setAiCaption(data.caption)
+                      }
+                    } catch {} finally { setCaptionLoading(false) }
+                  }}
+                  disabled={captionLoading}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
+                >
+                  {captionLoading ? '⏳ Generating...' : '✨ Generate Caption'}
+                </button>
+              </div>
+              {aiCaption && (
+                <div className="space-y-2">
+                  <textarea
+                    value={aiCaption}
+                    onChange={(e) => setAiCaption(e.target.value)}
+                    className="w-full h-20 bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white/80 resize-none focus:border-red-500 focus:outline-none"
+                  />
+                  <div className="flex gap-2">
+                    {[
+                      { label: '🐦 Twitter', key: 'twitter' },
+                      { label: '📱 TikTok', key: 'tiktok' },
+                      { label: '📸 Instagram', key: 'instagram' },
+                    ].map(p => (
+                      <button
+                        key={p.key}
+                        onClick={() => {
+                          navigator.clipboard.writeText(aiCaption)
+                          setCopiedCaption(p.key)
+                          setTimeout(() => setCopiedCaption(null), 2000)
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          copiedCaption === p.key
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        {copiedCaption === p.key ? '✓ Copied!' : p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </Modal>

@@ -210,8 +210,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         duration: estSec,
         durationMin: parseFloat((estSec / 60).toFixed(1)),
         title: file.name,
-        estimatedCredits: parseFloat((estSec / 3600).toFixed(2)),
-        creditLimit: 5,
+        estimatedCredits: parseFloat((estSec / 60).toFixed(1)),
+        creditLimit: 300,
       })
     }
 

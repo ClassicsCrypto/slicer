@@ -372,7 +372,7 @@ export default function OptionsModal({
                   ? 'text-yellow-400'
                   : 'text-green-400'
               }`}>
-                ⏱️ ~{videoInfo.estimatedCredits} hrs of {videoInfo.creditLimit} hrs/month
+                ⏱️ ~{videoInfo.estimatedCredits} min of {videoInfo.creditLimit} min/month
               </span>
             </div>
             {videoInfo.estimatedCredits > videoInfo.creditLimit * 0.8 && (
