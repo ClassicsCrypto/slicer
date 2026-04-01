@@ -8,10 +8,8 @@ export async function POST(req: NextRequest) {
 
     const groqKey = process.env.GROQ_API_KEY
     if (!groqKey) {
-      // Fallback: generate a simple caption without AI
-      const hashtags = (categories || []).map((c: string) => `#${c.replace(/_/g, '')}`).join(' ')
       return NextResponse.json({
-        caption: `${transcript?.slice(0, 200) || title}\n\n${hashtags} #gaming #clips`,
+        caption: transcript?.slice(0, 200) || title,
       })
     }
 
@@ -24,13 +22,14 @@ Context:
 
 Rules:
 - Keep it under 280 characters (Twitter-friendly)
-- Include 3-5 relevant hashtags
+- NO hashtags
+- NO quotation marks
 - Make it attention-grabbing but not cringe
 - No emojis overload (1-2 max)
 - Gaming/content creator tone
 - Don't use "check out" or "watch this"
 
-Return ONLY the caption text, nothing else.`
+Return ONLY the caption text, nothing else. No quotes around it.`
 
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -49,15 +48,15 @@ Return ONLY the caption text, nothing else.`
     if (!groqRes.ok) {
       const err = await groqRes.text()
       console.error('[caption] Groq error:', err)
-      // Fallback
-      const hashtags = (categories || []).map((c: string) => `#${c.replace(/_/g, '')}`).join(' ')
       return NextResponse.json({
-        caption: `${transcript?.slice(0, 200) || title}\n\n${hashtags} #gaming #clips`,
+        caption: transcript?.slice(0, 200) || title,
       })
     }
 
     const data = await groqRes.json()
-    const caption = data.choices?.[0]?.message?.content?.trim() || `${title} #gaming`
+    let caption = data.choices?.[0]?.message?.content?.trim() || title
+    // Strip quotes and hashtags
+    caption = caption.replace(/^["']|["']$/g, '').replace(/#\w+/g, '').replace(/\s{2,}/g, ' ').trim()
 
     return NextResponse.json({ caption })
   } catch (err) {

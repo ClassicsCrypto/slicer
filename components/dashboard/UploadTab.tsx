@@ -218,7 +218,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setShowOptions(true)
   }
 
-  const isYouTubeUrl = (u: string) => /youtube\.com|youtu\.be|twitch\.tv/i.test(u)
+  const isYouTubeUrl = (u: string) => /youtube\.com|youtu\.be|twitch\.tv|x\.com|twitter\.com/i.test(u)
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
@@ -366,14 +366,14 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
           <div>
             <h3 className="text-xl font-bold text-white mb-1">Drop a video, browse, or paste a URL</h3>
-            <p className="text-white/40 text-sm">YouTube, Twitch, direct URLs, or local video files</p>
+            <p className="text-white/40 text-sm">YouTube, Twitch, X/Twitter, direct URLs, or local video files</p>
           </div>
 
           <div className="w-full max-w-lg">
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="https://youtube.com/watch?v=... or drop a file"
+                placeholder="YouTube, Twitch, X/Twitter URL or drop a file"
                 value={url}
                 onChange={(e) => { setUrl(e.target.value); setFile(null); setError(null) }}
                 onKeyDown={(e) => e.key === 'Enter' && handleOpenOptions()}
@@ -436,7 +436,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       {/* Tips */}
       <div className="mt-6 grid grid-cols-3 gap-3">
         {[
-          { icon: '📺', label: 'YouTube & Twitch', desc: 'Paste any YouTube or Twitch URL' },
+          { icon: '📺', label: 'YouTube, Twitch & X', desc: 'Paste any YouTube, Twitch, or X/Twitter URL' },
           { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
           { icon: '🧠', label: 'AI Powered', desc: 'Groq + AssemblyAI find best moments' },
         ].map((tip) => (
