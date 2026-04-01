@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase, SubtitleSize, SubtitleFont, SubtitleColor } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
@@ -111,21 +111,36 @@ function ClipCard({
   sourceUrl: string
   onPreview: (clip: Clip) => void
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    // Generate thumbnail from the middle of the clip
+    // Client-side thumbnail: seek video to mid-clip and capture frame
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.preload = 'metadata'
+    video.muted = true
     const midTime = clip.start_time + (clip.duration / 2)
-    getApiUrl().then(apiBase => {
-      fetch(`${apiBase}/thumbnail`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceUrl, timestamp: midTime }),
-      })
-        .then(r => r.ok ? r.blob() : null)
-        .then(blob => blob ? setThumbUrl(URL.createObjectURL(blob)) : null)
-        .catch(() => {})
+
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = midTime
     })
+    video.addEventListener('seeked', () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth || 320
+        canvas.height = video.videoHeight || 180
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          setThumbUrl(canvas.toDataURL('image/jpeg', 0.7))
+        }
+      } catch { /* CORS or other error — fall back to video element */ }
+      video.src = '' // cleanup
+    })
+    video.src = sourceUrl
+    return () => { video.src = '' }
   }, [sourceUrl, clip.start_time, clip.duration])
 
   return (
@@ -139,7 +154,9 @@ function ClipCard({
         {thumbUrl ? (
           <img src={thumbUrl} alt="Clip thumbnail" className="w-full h-full object-cover" />
         ) : (
-          <video src={sourceUrl} className="w-full h-full object-cover opacity-60" preload="none" />
+          <div className="w-full h-full flex items-center justify-center bg-black/30">
+            <span className="w-6 h-6 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
+          </div>
         )}
         <div className="absolute inset-0 flex items-center justify-center">
           <div
