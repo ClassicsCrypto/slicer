@@ -52,30 +52,73 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
     }
 
-    // Submit AssemblyAI transcription BEFORE returning (Vercel kills async after response)
-    try {
-      const transcriptId = await submitTranscription(sourceUrl)
-      console.log(`[process] AssemblyAI submitted: ${transcriptId}`)
+    // Choose transcription mode: local Whisper or AssemblyAI
+    const useLocalWhisper = process.env.TRANSCRIPTION_MODE === 'local'
 
-      await supabase
-        .from('jobs')
-        .update({
-          progress: {
-            phase: 'transcribing',
-            transcriptId,
-            completedClips: [],
-          },
+    if (useLocalWhisper) {
+      // Local Whisper transcription via the local server
+      try {
+        const { getApiUrl } = await import('@/lib/api-url')
+        const apiBase = await getApiUrl()
+        const whisperRes = await fetch(`${apiBase}/transcribe-local`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrl: sourceUrl }),
         })
-        .eq('id', jobId)
-    } catch (err) {
-      console.error('AssemblyAI submission error:', err)
-      // Don't fail the job — poll will handle fallback
-      await supabase
-        .from('jobs')
-        .update({
-          progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
-        })
-        .eq('id', jobId)
+        const whisperData = await whisperRes.json()
+        console.log(`[process] Local Whisper started: ${whisperData.transcribeId}`)
+
+        await supabase
+          .from('jobs')
+          .update({
+            progress: {
+              phase: 'transcribing',
+              localTranscribeId: whisperData.transcribeId,
+              transcriptionMode: 'local',
+              completedClips: [],
+            },
+          })
+          .eq('id', jobId)
+      } catch (err) {
+        console.error('Local Whisper submission error:', err)
+        // Fallback to AssemblyAI
+        try {
+          const transcriptId = await submitTranscription(sourceUrl)
+          await supabase.from('jobs').update({
+            progress: { phase: 'transcribing', transcriptId, transcriptionMode: 'assemblyai', completedClips: [] },
+          }).eq('id', jobId)
+        } catch {
+          await supabase.from('jobs').update({
+            progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
+          }).eq('id', jobId)
+        }
+      }
+    } else {
+      // AssemblyAI transcription (cloud)
+      try {
+        const transcriptId = await submitTranscription(sourceUrl)
+        console.log(`[process] AssemblyAI submitted: ${transcriptId}`)
+
+        await supabase
+          .from('jobs')
+          .update({
+            progress: {
+              phase: 'transcribing',
+              transcriptId,
+              transcriptionMode: 'assemblyai',
+              completedClips: [],
+            },
+          })
+          .eq('id', jobId)
+      } catch (err) {
+        console.error('AssemblyAI submission error:', err)
+        await supabase
+          .from('jobs')
+          .update({
+            progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
+          })
+          .eq('id', jobId)
+      }
     }
 
     return NextResponse.json({ jobId }, { status: 201 })

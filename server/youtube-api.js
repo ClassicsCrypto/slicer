@@ -293,7 +293,7 @@ async function handleClip(req, res) {
   console.log(`\n[clip] request: ${startTime}s → ${endTime}s (${duration}s) from ${sourceUrl.slice(0, 80)}...`)
   console.log(`[clip] originalStartTime: ${originalStartTime}, trimOffset: ${startTime - (originalStartTime ?? startTime)}`)
   console.log(`[clip] subtitles: ${subtitles ? subtitles.length + ' words' : 'NONE'}`)
-  if (subtitles?.length > 0) console.log(`[clip] first 3 sub timestamps:`, subtitles.slice(0, 3).map((w: any) => `${w.text}@${w.start}s`))
+  if (subtitles?.length > 0) console.log(`[clip] first 3 sub timestamps:`, subtitles.slice(0, 3).map(w => `${w.text}@${w.start}s`))
   console.log(`[clip] subtitleOptions:`, JSON.stringify(subtitleOptions || {}))
 
   const fileId = crypto.randomBytes(8).toString('hex')
@@ -484,6 +484,112 @@ function generateSRT(words, clipStartTime = 0, textCase = 'original') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
+// Active transcriptions: transcribeId → { status, result, error }
+const activeTranscriptions = new Map()
+
+// ─── Local Whisper transcription endpoint ───
+async function handleTranscribeLocal(req, res) {
+  let raw = ''
+  for await (const chunk of req) raw += chunk
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { return sendJson(res, 400, { error: 'Invalid JSON' }) }
+
+  const { audioUrl, audioPath } = parsed
+  if (!audioUrl && !audioPath) return sendJson(res, 400, { error: 'audioUrl or audioPath required' })
+
+  const transcribeId = crypto.randomBytes(8).toString('hex')
+  activeTranscriptions.set(transcribeId, { status: 'transcribing', progress: 'Starting Whisper...' })
+
+  console.log(`[transcribe-local] ${transcribeId} starting`)
+
+  // Run in background
+  ;(async () => {
+    try {
+      // Resolve audio file path
+      let filePath = audioPath
+      if (!filePath && audioUrl) {
+        // If it's a local /serve/ URL, resolve to file
+        if (audioUrl.includes('/serve/')) {
+          const fileName = audioUrl.split('/serve/').pop()
+          filePath = path.join(TEMP_DIR, decodeURIComponent(fileName))
+        } else {
+          // Download the file first
+          const fileId = crypto.randomBytes(8).toString('hex')
+          filePath = path.join(TEMP_DIR, `${fileId}-audio.mp4`)
+          const dlCmd = `yt-dlp -f "ba/b" -o "${filePath}" "${audioUrl}"`
+          execSync(dlCmd, { timeout: 30 * 60 * 1000 })
+        }
+      }
+
+      if (!filePath || !fs.existsSync(filePath)) {
+        activeTranscriptions.set(transcribeId, { status: 'error', error: 'Audio file not found' })
+        return
+      }
+
+      activeTranscriptions.set(transcribeId, { status: 'transcribing', progress: 'Running Whisper medium model...' })
+
+      const whisperScript = path.join(__dirname, 'whisper-transcribe.py')
+      const cmd = `python "${whisperScript}" "${filePath}" --model medium --device cuda`
+      
+      console.log(`[transcribe-local] ${transcribeId} running: ${cmd}`)
+      
+      exec(cmd, { timeout: 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          console.error(`[transcribe-local] ${transcribeId} error:`, stderr?.slice(-500))
+          // Try CPU fallback
+          console.log(`[transcribe-local] ${transcribeId} retrying on CPU...`)
+          activeTranscriptions.set(transcribeId, { status: 'transcribing', progress: 'Retrying on CPU...' })
+          
+          const cpuCmd = `python "${whisperScript}" "${filePath}" --model medium --device cpu --compute-type int8`
+          exec(cpuCmd, { timeout: 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err2, stdout2, stderr2) => {
+            if (err2) {
+              console.error(`[transcribe-local] ${transcribeId} CPU error:`, stderr2?.slice(-500))
+              activeTranscriptions.set(transcribeId, { status: 'error', error: 'Whisper transcription failed on both GPU and CPU' })
+              return
+            }
+            try {
+              const result = JSON.parse(stdout2.trim().split('\n').pop())
+              if (result.error) throw new Error(result.error)
+              activeTranscriptions.set(transcribeId, { status: 'complete', result })
+              console.log(`[transcribe-local] ${transcribeId} complete (CPU): ${result.words?.length} words, ${result.duration}s`)
+            } catch (parseErr) {
+              activeTranscriptions.set(transcribeId, { status: 'error', error: `Parse error: ${parseErr.message}` })
+            }
+          })
+          return
+        }
+
+        try {
+          // stdout may have multiple lines, JSON is the last one
+          const result = JSON.parse(stdout.trim().split('\n').pop())
+          if (result.error) throw new Error(result.error)
+          activeTranscriptions.set(transcribeId, { status: 'complete', result })
+          console.log(`[transcribe-local] ${transcribeId} complete: ${result.words?.length} words, ${result.duration}s, ${result.realtime_factor}x realtime`)
+        } catch (parseErr) {
+          activeTranscriptions.set(transcribeId, { status: 'error', error: `Parse error: ${parseErr.message}` })
+        }
+      })
+    } catch (err) {
+      console.error(`[transcribe-local] ${transcribeId} error:`, err.message)
+      activeTranscriptions.set(transcribeId, { status: 'error', error: err.message })
+    }
+  })()
+
+  sendJson(res, 200, { transcribeId })
+}
+
+function handleTranscribePoll(req, res) {
+  const transcribeId = req.url.split('/transcribe-poll/')[1]
+  const entry = activeTranscriptions.get(transcribeId)
+  if (!entry) return sendJson(res, 404, { error: 'Transcription not found' })
+
+  sendJson(res, 200, entry)
+
+  if (entry.status === 'complete' || entry.status === 'error') {
+    setTimeout(() => activeTranscriptions.delete(transcribeId), 5 * 60 * 1000)
+  }
+}
+
 // ─── Async download: start + poll endpoints ───
 async function handleDownloadStart(req, res) {
   let raw = ''
@@ -780,6 +886,10 @@ async function handleInfo(req, res) {
     handleClip(req, res)
   } else if (req.method === 'POST' && req.url === '/thumbnail') {
     handleThumbnail(req, res)
+  } else if (req.method === 'POST' && req.url === '/transcribe-local') {
+    handleTranscribeLocal(req, res)
+  } else if (req.method === 'GET' && req.url?.startsWith('/transcribe-poll/')) {
+    handleTranscribePoll(req, res)
   } else if (req.method === 'POST' && req.url === '/info') {
     handleInfo(req, res)
   } else if (req.method === 'GET' && req.url?.startsWith('/serve/')) {
