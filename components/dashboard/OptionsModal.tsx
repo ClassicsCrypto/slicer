@@ -363,16 +363,20 @@ export default function OptionsModal({
           }`}>
             <div className="flex items-center justify-between">
               <span className="text-xs text-white/60">
-                📏 <strong>{videoInfo.durationMin} min</strong> video
+                📏 <strong>{videoInfo.durationMin > 0 ? `${videoInfo.durationMin} min` : 'Unknown length'}</strong> video
               </span>
               <span className={`text-xs font-semibold ${
-                videoInfo.estimatedCredits > videoInfo.creditLimit * 0.8
+                videoInfo.durationMin === 0
+                  ? 'text-yellow-400'
+                  : videoInfo.estimatedCredits > videoInfo.creditLimit * 0.8
                   ? 'text-red-400'
                   : videoInfo.estimatedCredits > videoInfo.creditLimit * 0.4
                   ? 'text-yellow-400'
                   : 'text-green-400'
               }`}>
-                ⏱️ ~{videoInfo.estimatedCredits} min of {videoInfo.creditLimit} min/month
+                {videoInfo.durationMin > 0
+                  ? `⏱️ ~${videoInfo.estimatedCredits} min of ${videoInfo.creditLimit} min/month`
+                  : '⏱️ Usage depends on broadcast length'}
               </span>
             </div>
             {videoInfo.estimatedCredits > videoInfo.creditLimit * 0.8 && (
