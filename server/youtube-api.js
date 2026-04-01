@@ -280,7 +280,7 @@ async function handleClip(req, res) {
     return sendJson(res, 400, { error: 'Invalid JSON' })
   }
 
-  const { sourceUrl, startTime, endTime, title, subtitles, subtitleOptions, aspectRatio } = parsed
+  const { sourceUrl, startTime, endTime, title, subtitles, subtitleOptions, aspectRatio, originalStartTime } = parsed
   if (!sourceUrl || startTime == null || endTime == null) {
     return sendJson(res, 400, { error: 'sourceUrl, startTime, endTime required' })
   }
@@ -302,9 +302,23 @@ async function handleClip(req, res) {
     // Generate SRT subtitle file if subtitles provided
     let subtitleFilter = ''
     if (subtitles && subtitles.length > 0 && subtitleOptions?.enabled !== false) {
-      // Subtitle timestamps are already relative to clip start (0-based)
+      // Subtitle word timestamps are 0-based relative to the ORIGINAL clip start.
+      // When user trims the beginning, we pass a later startTime but subtitles still start at 0.
+      // We need to offset: if original clip started at 100 and had a word at 3s,
+      // but user trimmed to start at 104, that word should now be at -1s (before the trim = skip it).
+      // The trimOffset tells generateSRT how much to subtract from each word timestamp.
+      // parsed.originalStartTime = the original clip.start_time (before trimming)
+      const originalStart = parsed.originalStartTime ?? startTime
+      const trimOffset = startTime - originalStart  // How many seconds trimmed from front
+      const clipDuration = endTime - startTime
       const textCase = subtitleOptions?.textCase || 'original'
-      const srtContent = generateSRT(subtitles, 0, textCase)
+
+      // Filter words that fall within the trimmed window and shift their timestamps
+      const trimmedSubs = subtitles
+        .map(w => ({ ...w, start: w.start - trimOffset, end: w.end - trimOffset }))
+        .filter(w => w.end > 0 && w.start < clipDuration)
+      
+      const srtContent = generateSRT(trimmedSubs, 0, textCase)
       fs.writeFileSync(srtFile, srtContent, 'utf8')
       console.log(`[clip] generated SRT: ${subtitles.length} words`)
       console.log(`[clip] SRT preview:\n${srtContent.slice(0, 500)}`)

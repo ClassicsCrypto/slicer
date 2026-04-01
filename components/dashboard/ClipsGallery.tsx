@@ -13,7 +13,7 @@ interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
-function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null }) {
+function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd, originalStartTime }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null; originalStartTime?: number }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState('')
 
@@ -42,6 +42,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
             outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'original',
           },
           aspectRatio: aspectRatio || 'custom',
+          originalStartTime: originalStartTime ?? clip.start_time,
         }),
       })
 
@@ -429,7 +430,7 @@ function JobCard({
 
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} trimStart={trimmedStart} trimEnd={trimmedEnd} />
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} trimStart={trimmedStart} trimEnd={trimmedEnd} originalStartTime={previewClip.start_time} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}
