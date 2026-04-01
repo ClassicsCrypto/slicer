@@ -439,6 +439,76 @@ function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
+// ─── Upload endpoint: receive local file uploads ───
+async function handleUpload(req, res) {
+  try {
+    const fileId = crypto.randomBytes(8).toString('hex')
+    const chunks = []
+    let totalSize = 0
+    let fileName = `${fileId}.mp4`
+
+    // Parse multipart form data (simple approach)
+    const contentType = req.headers['content-type'] || ''
+
+    if (contentType.includes('multipart/form-data')) {
+      const boundary = contentType.split('boundary=')[1]
+      if (!boundary) return sendJson(res, 400, { error: 'Missing boundary' })
+
+      const rawChunks = []
+      for await (const chunk of req) rawChunks.push(chunk)
+      const raw = Buffer.concat(rawChunks)
+
+      // Extract filename from Content-Disposition
+      const headerEnd = raw.indexOf('\r\n\r\n')
+      if (headerEnd === -1) return sendJson(res, 400, { error: 'Invalid multipart' })
+
+      const headerStr = raw.slice(0, headerEnd).toString()
+      const fnMatch = headerStr.match(/filename="([^"]+)"/)
+      if (fnMatch) {
+        const ext = path.extname(fnMatch[1]) || '.mp4'
+        fileName = `${fileId}${ext}`
+      }
+
+      // Find start and end of file data
+      const dataStart = headerEnd + 4
+      const endBoundary = Buffer.from(`\r\n--${boundary}`)
+      let dataEnd = raw.length
+      const boundaryIdx = raw.indexOf(endBoundary, dataStart)
+      if (boundaryIdx !== -1) dataEnd = boundaryIdx
+
+      const fileData = raw.slice(dataStart, dataEnd)
+      const filePath = path.join(TEMP_DIR, fileName)
+      fs.writeFileSync(filePath, fileData)
+      totalSize = fileData.length
+    } else {
+      // Raw binary upload
+      for await (const chunk of req) { chunks.push(chunk); totalSize += chunk.length }
+      const fileData = Buffer.concat(chunks)
+      const filePath = path.join(TEMP_DIR, fileName)
+      fs.writeFileSync(filePath, fileData)
+    }
+
+    const filePath = path.join(TEMP_DIR, fileName)
+    console.log(`[upload] saved: ${fileName} (${(totalSize / 1024 / 1024).toFixed(1)}MB)`)
+
+    // Build public URL via tunnel
+    let tunnelUrl = ''
+    try {
+      const tunnelFile = path.join(__dirname, 'tunnel-url.txt')
+      if (fs.existsSync(tunnelFile)) tunnelUrl = fs.readFileSync(tunnelFile, 'utf8').trim()
+    } catch {}
+
+    const publicUrl = tunnelUrl
+      ? `${tunnelUrl}/serve/${fileName}`
+      : `http://localhost:${PORT}/serve/${fileName}`
+
+    sendJson(res, 200, { publicUrl, fileName, size: totalSize })
+  } catch (err) {
+    console.error('[upload] Error:', err.message)
+    sendJson(res, 500, { error: `Upload failed: ${err.message}` })
+  }
+}
+
 // ─── Thumbnail endpoint: extract frame from video ───
 async function handleThumbnail(req, res) {
   try {
@@ -574,7 +644,9 @@ async function handleInfo(req, res) {
     return res.end()
   }
 
-  if (req.method === 'POST' && req.url === '/download') {
+  if (req.method === 'POST' && req.url === '/upload') {
+    handleUpload(req, res)
+  } else if (req.method === 'POST' && req.url === '/download') {
     handleDownload(req, res)
   } else if (req.method === 'POST' && req.url === '/clip') {
     handleClip(req, res)

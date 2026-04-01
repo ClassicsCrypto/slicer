@@ -228,25 +228,17 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       let sourceUrl = url.trim()
       let title = file ? file.name : extractTitle(sourceUrl)
 
-      // Local file upload: upload to Supabase Storage first
+      // Local file upload: upload to local server (bypasses Supabase RLS/size limits)
       if (file) {
         setUploadProgress('Uploading video...')
         try {
-          const fileId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-          const ext = file.name.split('.').pop() || 'mp4'
-          const storagePath = `uploads/${fileId}.${ext}`
+          const apiBase = await getApiUrl()
+          const formData = new FormData()
+          formData.append('file', file)
 
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-          const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-          const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/slicer-videos/${storagePath}`, {
+          const uploadRes = await fetch(`${apiBase}/upload`, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': file.type || 'video/mp4',
-              'x-upsert': 'true',
-            },
-            body: file,
+            body: formData,
           })
 
           if (!uploadRes.ok) {
@@ -257,7 +249,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
             return
           }
 
-          sourceUrl = `${supabaseUrl}/storage/v1/object/public/slicer-videos/${storagePath}`
+          const uploadData = await uploadRes.json()
+          sourceUrl = uploadData.publicUrl
           title = file.name.replace(/\.[^.]+$/, '')
           setUploadProgress(null)
         } catch (uploadErr) {
