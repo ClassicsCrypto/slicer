@@ -54,19 +54,22 @@ function SubtitleOverlay({
   // Outline thickness mapping (matches FFmpeg Outline=1/2/3)
   const outlineColor = options.outlineColor || '#000000'
   const thickness = options.outlineThickness || 'medium'
-  const px = thickness === 'thin' ? 1 : thickness === 'thick' ? 3 : 2
-  const outlineStrokes = [
-    `${-px}px ${-px}px 0 ${outlineColor}`, `${px}px ${-px}px 0 ${outlineColor}`,
-    `${-px}px ${px}px 0 ${outlineColor}`, `${px}px ${px}px 0 ${outlineColor}`,
-    `${-px-1}px 0 0 ${outlineColor}`, `${px+1}px 0 0 ${outlineColor}`,
-    `0 ${-px-1}px 0 ${outlineColor}`, `0 ${px+1}px 0 ${outlineColor}`,
-  ]
+  const px = thickness === 'none' ? 0 : thickness === 'thin' ? 1 : thickness === 'thick' ? 3 : 2
+  const outlineStrokes: string[] = []
+  if (px > 0) {
+    outlineStrokes.push(
+      `${-px}px ${-px}px 0 ${outlineColor}`, `${px}px ${-px}px 0 ${outlineColor}`,
+      `${-px}px ${px}px 0 ${outlineColor}`, `${px}px ${px}px 0 ${outlineColor}`,
+      `${-px-1}px 0 0 ${outlineColor}`, `${px+1}px 0 0 ${outlineColor}`,
+      `0 ${-px-1}px 0 ${outlineColor}`, `0 ${px+1}px 0 ${outlineColor}`,
+    )
+  }
   if (options.shadow) outlineStrokes.push(`2px 2px 4px rgba(0,0,0,0.7)`)
   const textStroke = outlineStrokes.join(', ')
 
   // Text case
-  const textTransform = (options.textCase || 'upper') === 'upper' ? 'uppercase'
-    : (options.textCase || 'upper') === 'title' ? 'capitalize' : 'none'
+  const textTransform = (options.textCase || 'original') === 'upper' ? 'uppercase'
+    : (options.textCase || 'original') === 'title' ? 'capitalize' : 'none'
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
@@ -98,7 +101,7 @@ interface ClipPlayerProps {
 
 const DEFAULT_SUB_OPTS: SubtitleOptions = {
   enabled: true, size: 'medium', color: '#ffffff',
-  position: 'bottom', style: 'bold', background: 'none', font: 'impact',
+  position: 'bottom', style: 'bold', background: 'none', font: 'impact', textCase: 'original' as const,
 }
 
 export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPlayerProps) {

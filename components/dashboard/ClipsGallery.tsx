@@ -192,7 +192,7 @@ function JobCard({
   const [liveSubOpts, setLiveSubOpts] = useState(job.options?.subtitles || {
     enabled: true, size: 'medium' as const, color: '#ffffff' as const, position: 'bottom' as const,
     style: 'bold' as const, background: 'none' as const, font: 'impact' as const,
-    outlineThickness: 'medium' as const, outlineColor: '#000000' as const, shadow: true, textCase: 'upper' as const,
+    outlineThickness: 'medium' as const, outlineColor: '#000000' as const, shadow: true, textCase: 'original' as const,
   })
 
   const isProcessing = job.status === 'processing'
@@ -301,10 +301,10 @@ function JobCard({
               <div>
                 <label className="text-[10px] text-white/30">Outline</label>
                 <div className="flex gap-1 mt-0.5">
-                  {(['thin', 'medium', 'thick'] as SubtitleOutlineThickness[]).map(v => (
-                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineThickness: v })}
+                  {(['none', 'thin', 'medium', 'thick'] as Array<SubtitleOutlineThickness | 'none'>).map(v => (
+                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineThickness: v as SubtitleOutlineThickness })}
                       className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.outlineThickness || 'medium') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{v}</button>
+                    >{v === 'none' ? 'Off' : v}</button>
                   ))}
                 </div>
               </div>

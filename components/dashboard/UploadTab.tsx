@@ -134,7 +134,7 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     outlineThickness: 'medium',
     outlineColor: '#000000',
     shadow: true,
-    textCase: 'upper',
+    textCase: 'original',
   },
 }
 

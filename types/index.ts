@@ -51,7 +51,7 @@ export type SubtitlePosition = 'bottom' | 'center' | 'top'
 export type SubtitleStyle = 'bold' | 'outline' | 'shadow' | 'karaoke'
 export type SubtitleBackground = 'none' | 'blur' | 'solid'
 export type SubtitleFont = 'impact' | 'bebas' | 'montserrat'
-export type SubtitleOutlineThickness = 'thin' | 'medium' | 'thick'
+export type SubtitleOutlineThickness = 'none' | 'thin' | 'medium' | 'thick'
 export type SubtitleOutlineColor = '#000000' | '#ffffff' | '#FF4D4D' | 'custom'
 export type SubtitleCase = 'upper' | 'title' | 'original'
 

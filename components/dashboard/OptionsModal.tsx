@@ -136,6 +136,12 @@ export default function OptionsModal({
           </div>
 
           {options.subtitles.enabled && (
+            <div className="pl-1">
+              <p className="text-xs text-white/30">Style options available per-clip after processing</p>
+            </div>
+          )}
+          {/* REMOVED: all subtitle style options moved to clips tab */}
+          {false && options.subtitles.enabled && (
             <div className="space-y-4 pl-1">
               {/* Size */}
               <div>
