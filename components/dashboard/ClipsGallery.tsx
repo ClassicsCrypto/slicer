@@ -13,7 +13,7 @@ interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
-function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string }) {
+function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState('')
 
@@ -32,9 +32,9 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sourceUrl: sourceUrl,
-          startTime: clip.start_time,
-          endTime: clip.end_time,
-          title: `${title}-clip-${clip.start_time.toFixed(0)}s`,
+          startTime: trimStart ?? clip.start_time,
+          endTime: trimEnd ?? clip.end_time,
+          title: `${title}-clip-${(trimStart ?? clip.start_time).toFixed(0)}s`,
           subtitles: clip.subtitles || [],
           subtitleOptions: subtitleOptions || {
             enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
@@ -207,6 +207,8 @@ function JobCard({
   const [aiCaption, setAiCaption] = useState<string>('')
   const [captionLoading, setCaptionLoading] = useState(false)
   const [copiedCaption, setCopiedCaption] = useState<string | null>(null)
+  const [trimmedStart, setTrimmedStart] = useState<number | null>(null)
+  const [trimmedEnd, setTrimmedEnd] = useState<number | null>(null)
   const [liveSubOpts, setLiveSubOpts] = useState(job.options?.subtitles || {
     enabled: true, size: 'medium' as const, color: '#ffffff' as const, position: 'bottom' as const,
     style: 'bold' as const, background: 'none' as const, font: 'impact' as const,
@@ -276,7 +278,12 @@ function JobCard({
           title={`Clip • ${Math.round(previewClip.duration)}s`}
           maxWidth="max-w-2xl"
         >
-          <ClipPlayer clip={previewClip} sourceUrl={job.source_url} subtitleOptions={liveSubOpts} />
+          <ClipPlayer
+            clip={previewClip}
+            sourceUrl={job.source_url}
+            subtitleOptions={liveSubOpts}
+            onTrimChange={(s, e) => { setTrimmedStart(s); setTrimmedEnd(e) }}
+          />
 
           {/* Inline subtitle settings */}
           <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10 space-y-2">
@@ -422,7 +429,7 @@ function JobCard({
 
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} />
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} trimStart={trimmedStart} trimEnd={trimmedEnd} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}

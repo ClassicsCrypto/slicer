@@ -97,6 +97,7 @@ interface ClipPlayerProps {
   clip: Clip
   sourceUrl: string
   subtitleOptions?: SubtitleOptions
+  onTrimChange?: (start: number, end: number) => void
 }
 
 const DEFAULT_SUB_OPTS: SubtitleOptions = {
@@ -104,7 +105,7 @@ const DEFAULT_SUB_OPTS: SubtitleOptions = {
   position: 'bottom', style: 'bold', background: 'none', font: 'impact', textCase: 'original' as const,
 }
 
-export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPlayerProps) {
+export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimChange }: ClipPlayerProps) {
   const subOpts = subtitleOptions ?? DEFAULT_SUB_OPTS
   const videoRef = useRef<HTMLVideoElement>(null)
   const scrubRef = useRef<HTMLDivElement>(null)
@@ -120,6 +121,11 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions }: ClipPla
   const trimmedDuration = trimEnd - trimStart
   const effectiveStart = clip.start_time + trimStart
   const effectiveEnd = clip.start_time + trimEnd
+
+  // Notify parent of trim changes
+  useEffect(() => {
+    if (onTrimChange) onTrimChange(effectiveStart, effectiveEnd)
+  }, [effectiveStart, effectiveEnd, onTrimChange])
 
   // Enforce start/end boundaries using trim handles
   useEffect(() => {
