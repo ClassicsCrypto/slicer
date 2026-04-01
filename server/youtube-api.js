@@ -291,7 +291,9 @@ async function handleClip(req, res) {
   }
 
   console.log(`\n[clip] request: ${startTime}s → ${endTime}s (${duration}s) from ${sourceUrl.slice(0, 80)}...`)
+  console.log(`[clip] originalStartTime: ${originalStartTime}, trimOffset: ${startTime - (originalStartTime ?? startTime)}`)
   console.log(`[clip] subtitles: ${subtitles ? subtitles.length + ' words' : 'NONE'}`)
+  if (subtitles?.length > 0) console.log(`[clip] first 3 sub timestamps:`, subtitles.slice(0, 3).map((w: any) => `${w.text}@${w.start}s`))
   console.log(`[clip] subtitleOptions:`, JSON.stringify(subtitleOptions || {}))
 
   const fileId = crypto.randomBytes(8).toString('hex')

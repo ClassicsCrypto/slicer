@@ -24,6 +24,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
     console.log('[Slicer] Export clip subtitles:', clip.subtitles?.length || 0, 'words')
     console.log('[Slicer] First 3 words:', JSON.stringify(clip.subtitles?.slice(0, 3)))
     console.log('[Slicer] Subtitle options sent:', JSON.stringify(subtitleOptions))
+    console.log('[Slicer] Times — clip.start_time:', clip.start_time, 'trimStart:', trimStart, 'trimEnd:', trimEnd, 'originalStartTime:', originalStartTime)
 
     try {
       const apiBase = await getApiUrl()
