@@ -55,12 +55,16 @@ const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 function getCacheKey(url) {
-  // Extract video ID from YouTube/Twitch URLs
+  // Extract video ID from YouTube/Twitch/X URLs
   const ytMatch = url.match(/(?:v=|\/shorts\/|youtu\.be\/)([a-zA-Z0-9_-]+)/)
   if (ytMatch) return `yt:${ytMatch[1]}`
   const twitchMatch = url.match(/twitch\.tv\/videos\/(\d+)/)
   if (twitchMatch) return `tw:${twitchMatch[1]}`
-  return `url:${Buffer.from(url).toString('base64').slice(0, 32)}`
+  const xMatch = url.match(/(?:x\.com|twitter\.com)\/i\/broadcasts\/([a-zA-Z0-9_-]+)/)
+  if (xMatch) return `xb:${xMatch[1]}`
+  const xVideoMatch = url.match(/(?:x\.com|twitter\.com)\/\w+\/status\/(\d+)/)
+  if (xVideoMatch) return `xt:${xVideoMatch[1]}`
+  return `url:${require('crypto').createHash('md5').update(url).digest('hex')}`
 }
 
 function getFromCache(url) {
