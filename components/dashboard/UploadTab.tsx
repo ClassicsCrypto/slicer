@@ -264,6 +264,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       // YouTube/Twitch: route through local yt-dlp API
       if (!file && isYouTubeUrl(sourceUrl)) {
         setError(null)
+        setShowOptions(false) // Close modal immediately
         setUploadProgress('Downloading video...')
         try {
           const apiBase = await getApiUrl()
@@ -386,6 +387,16 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
   return (
     <div className="max-w-2xl mx-auto py-12">
+      {/* Download/Upload progress banner */}
+      {(uploadProgress || isSubmitting) && (
+        <div className="mb-6 rounded-xl p-5 border border-yellow-500/20 bg-yellow-500/5 flex items-center gap-4">
+          <div className="w-8 h-8 border-3 border-yellow-500/30 border-t-yellow-400 rounded-full animate-spin flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-yellow-400">{uploadProgress || 'Processing...'}</p>
+            <p className="text-xs text-white/30 mt-0.5">This may take a few minutes for long videos</p>
+          </div>
+        </div>
+      )}
       {/* Drop zone + URL input */}
       <div
         {...getRootProps()}
