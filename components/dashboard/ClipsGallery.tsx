@@ -380,7 +380,24 @@ function JobCard({
               <span>Start: {previewClip.start_time.toFixed(1)}s</span>
               <span>End: {previewClip.end_time.toFixed(1)}s</span>
               {previewClip.virality_score !== undefined && (
-                <span>🔥 Virality: {previewClip.virality_score}/10</span>
+                <span title={
+                  previewClip.virality_score >= 10 ? 'Guaranteed viral — once-in-a-lifetime moment'
+                  : previewClip.virality_score >= 8 ? 'Incredible — would get shared widely'
+                  : previewClip.virality_score >= 6 ? 'Solid highlight — worth posting'
+                  : previewClip.virality_score >= 4 ? 'Decent but nothing special'
+                  : 'Low energy — filler content'
+                } className={`font-semibold ${
+                  previewClip.virality_score >= 8 ? 'text-red-400'
+                  : previewClip.virality_score >= 6 ? 'text-yellow-400'
+                  : 'text-white/40'
+                }`}>
+                  🔥 {previewClip.virality_score}/10 — {
+                    previewClip.virality_score >= 10 ? 'VIRAL'
+                    : previewClip.virality_score >= 8 ? 'Incredible'
+                    : previewClip.virality_score >= 6 ? 'Solid'
+                    : previewClip.virality_score >= 4 ? 'Decent'
+                    : 'Low'
+                  }</span>
               )}
             </div>
             {/* Transcript editor */}

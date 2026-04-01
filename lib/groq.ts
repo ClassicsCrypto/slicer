@@ -30,9 +30,20 @@ function buildPrompt(
 
   const focusStr = aiFocus.join(', ')
 
-  return `You are an expert video clip selector for a gaming/streaming content team.
+  const totalDuration = transcript.chapters?.length 
+    ? Math.max(...transcript.chapters.map(ch => ch.end / 1000))
+    : 0
 
-Given the following video transcript analysis, identify the top ${clipCount} moments that would make great ~${clipLength}-second social media clips. Focus especially on: ${focusStr}.
+  // Calculate max possible non-overlapping clips
+  const maxPossible = totalDuration > 0 
+    ? Math.floor(totalDuration / clipLength)
+    : clipCount
+  const safeClipCount = Math.min(clipCount, Math.max(1, maxPossible))
+
+  return `You are an expert gaming/streaming clip selector for social media. You understand what makes gaming content go viral: clutch plays, emotional reactions, unexpected moments, and high-energy commentary.
+
+CONTEXT: Analyze this video transcript to find the top ${safeClipCount} moments for ~${clipLength}-second clips.
+FOCUS: ${focusStr}
 
 CHAPTERS:
 ${segments || 'No chapters available'}
@@ -40,28 +51,38 @@ ${segments || 'No chapters available'}
 KEY HIGHLIGHTS:
 ${highlights || 'No highlights available'}
 
-FULL TRANSCRIPT EXCERPT:
-${(transcript.text ?? '').slice(0, 2000)}
+TRANSCRIPT:
+${(transcript.text ?? '').slice(0, 3000)}
 
-Return ONLY valid JSON in this exact format (no markdown, no explanation):
+Return ONLY valid JSON (no markdown, no explanation):
 {
   "moments": [
     {
-      "start_time": <number in seconds>,
-      "end_time": <number in seconds>,
+      "start_time": <seconds>,
+      "end_time": <seconds>,
       "virality_score": <1-10>,
-      "matched_categories": [<array of category strings from: funny_moments, kill_streaks, intense_action, big_plays, reactions, key_dialogue, hype_moments, fails>],
+      "matched_categories": [<from: funny_moments, kill_streaks, intense_action, big_plays, reactions, key_dialogue, hype_moments, fails>],
       "ai_reason": "<1-2 sentence explanation>"
     }
   ]
 }
 
-Rules:
-- Each clip should be approximately ${clipLength} seconds (end_time - start_time ≈ ${clipLength})
-- Clips must not overlap
-- Virality score: 10 = viral gold, 1 = boring
-- Only include categories from the focus list that genuinely apply: ${focusStr}
-- Return exactly ${clipCount} moments`
+VIRALITY SCORING:
+- 10: Once-in-a-lifetime moment. Clutch 1vX, insane RNG, streamer loses it. Guaranteed viral.
+- 8-9: Incredible play or hilarious reaction. Would get shared widely.
+- 6-7: Solid highlight. Good energy, clear action, worth posting.
+- 4-5: Decent moment but nothing special. Filler content.
+- 1-3: Boring, dead air, loading screen, or irrelevant chatter.
+
+GAMING CLIP RULES:
+- Each clip ≈ ${clipLength} seconds (end_time - start_time)
+- Clips MUST NOT overlap — leave at least 2 seconds gap between clips
+- Skip dead air, loading screens, menu navigation, and AFK moments
+- Prioritize moments with voice reactions, laughter, shouting, or crowd energy
+- If multiple people are talking excitedly, that's usually a good clip
+- Commentary that tells a story or builds tension is valuable
+- Only include categories that genuinely apply from: ${focusStr}
+- Return exactly ${safeClipCount} moments${safeClipCount < clipCount ? ` (video is too short for ${clipCount} non-overlapping ${clipLength}s clips)` : ''}`
 }
 
 export async function scoreTranscriptWithGroq(
@@ -85,7 +106,7 @@ export async function scoreTranscriptWithGroq(
     body: JSON.stringify({
       model: MODEL,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
+      temperature: 0.4,
       max_tokens: 2000,
     }),
   })
