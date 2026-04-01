@@ -264,24 +264,59 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       // YouTube/Twitch: route through local yt-dlp API
       if (!file && isYouTubeUrl(sourceUrl)) {
         setError(null)
+        setUploadProgress('Downloading video...')
         try {
           const apiBase = await getApiUrl()
-          const ytRes = await fetch(`${apiBase}/download`, {
+          // Start download (async — polls for completion)
+          const startRes = await fetch(`${apiBase}/download-start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: sourceUrl }),
           })
-          const ytData = await ytRes.json()
-          if (!ytRes.ok) {
-            setError(ytData.error || 'YouTube download failed')
+          const startData = await startRes.json()
+          if (!startRes.ok) {
+            setError(startData.error || 'Download failed to start')
             setIsSubmitting(false)
+            setUploadProgress(null)
             return
           }
-          sourceUrl = ytData.publicUrl
-          title = ytData.title || title
+
+          // If download was cached, skip polling
+          if (startData.cached) {
+            sourceUrl = startData.publicUrl
+            title = startData.title || title
+            setUploadProgress(null)
+          } else {
+            // Poll for completion
+            const downloadId = startData.downloadId
+            let done = false
+            while (!done) {
+              await new Promise(r => setTimeout(r, 3000))
+              try {
+                const pollRes = await fetch(`${apiBase}/download-poll/${downloadId}`)
+                const pollData = await pollRes.json()
+                if (pollData.status === 'complete') {
+                  sourceUrl = pollData.publicUrl
+                  title = pollData.title || title
+                  done = true
+                } else if (pollData.status === 'error') {
+                  setError(pollData.error || 'Download failed')
+                  setIsSubmitting(false)
+                  setUploadProgress(null)
+                  return
+                } else {
+                  setUploadProgress(`Downloading... ${pollData.progress || ''}`)
+                }
+              } catch {
+                // Poll failed, retry
+              }
+            }
+            setUploadProgress(null)
+          }
         } catch {
-          setError('YouTube download server not available. Is the local API running? (node server/youtube-api.js)')
+          setError('Download server not available. Is the local API running?')
           setIsSubmitting(false)
+          setUploadProgress(null)
           return
         }
       }

@@ -50,6 +50,8 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 
 // Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
 const videoCache = new Map()
+// Active downloads: downloadId → { status, publicUrl, title, error, progress }
+const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 function getCacheKey(url) {
@@ -103,13 +105,13 @@ function downloadAudio(url, outputPath) {
     const cmd = `yt-dlp -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
 
-    exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
+    exec(cmd, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
-        console.error('[yt-dlp] error:', stderr)
-        reject(new Error(`Download failed: ${stderr || err.message}`))
+        console.error('[yt-dlp] error:', stderr?.slice(-500))
+        reject(new Error(`Download failed: ${stderr?.slice(-200) || err.message}`))
         return
       }
-      console.log('[yt-dlp] done:', stdout.trim())
+      console.log('[yt-dlp] done:', stdout.trim().slice(-200))
       resolve()
     })
   })
@@ -439,6 +441,85 @@ function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
+// ─── Async download: start + poll endpoints ───
+async function handleDownloadStart(req, res) {
+  let raw = ''
+  for await (const chunk of req) raw += chunk
+  let parsed
+  try { parsed = JSON.parse(raw) } catch { return sendJson(res, 400, { error: 'Invalid JSON' }) }
+
+  const { url } = parsed
+  if (!url) return sendJson(res, 400, { error: 'url is required' })
+
+  // Check cache first
+  const cached = getFromCache(url)
+  if (cached) {
+    return sendJson(res, 200, { cached: true, publicUrl: cached.publicUrl, title: cached.title, duration: cached.duration })
+  }
+
+  // Start async download
+  const downloadId = crypto.randomBytes(8).toString('hex')
+  activeDownloads.set(downloadId, { status: 'downloading', progress: 'Starting...' })
+
+  console.log(`[download-start] ${downloadId} for ${url}`)
+
+  // Run download in background
+  ;(async () => {
+    try {
+      const info = getVideoInfo(url)
+      activeDownloads.set(downloadId, { status: 'downloading', progress: `${info.title} (${Math.round(info.duration / 60)}min)` })
+
+      if (info.duration > MAX_DURATION_SEC) {
+        activeDownloads.set(downloadId, { status: 'error', error: `Video too long: ${Math.round(info.duration / 60)}min (max ${MAX_DURATION_SEC / 60}min)` })
+        return
+      }
+
+      const fileId = crypto.randomBytes(8).toString('hex')
+      const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`)
+      await downloadAudio(url, outputTemplate)
+
+      const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(fileId))
+      if (files.length === 0) { activeDownloads.set(downloadId, { status: 'error', error: 'No output file' }); return }
+
+      const outputFile = path.join(TEMP_DIR, files[0])
+      const fileExt = path.extname(files[0]) || '.mp4'
+      const serveFileName = `${fileId}-${info.id}${fileExt}`
+      const servePath = path.join(TEMP_DIR, serveFileName)
+      if (outputFile !== servePath) fs.renameSync(outputFile, servePath)
+
+      let tunnelUrl = ''
+      try {
+        const tunnelFile = path.join(__dirname, 'tunnel-url.txt')
+        if (fs.existsSync(tunnelFile)) tunnelUrl = fs.readFileSync(tunnelFile, 'utf8').trim()
+      } catch {}
+
+      const publicUrl = tunnelUrl ? `${tunnelUrl}/serve/${serveFileName}` : `http://localhost:${PORT}/serve/${serveFileName}`
+      setCache(url, { publicUrl, duration: info.duration, title: info.title, videoId: info.id, filePath: servePath })
+
+      activeDownloads.set(downloadId, { status: 'complete', publicUrl, title: info.title, duration: info.duration })
+      console.log(`[download-start] ${downloadId} complete: ${publicUrl}`)
+    } catch (err) {
+      console.error(`[download-start] ${downloadId} error:`, err.message)
+      activeDownloads.set(downloadId, { status: 'error', error: err.message })
+    }
+  })()
+
+  sendJson(res, 200, { downloadId, cached: false })
+}
+
+function handleDownloadPoll(req, res) {
+  const downloadId = req.url.split('/download-poll/')[1]
+  const entry = activeDownloads.get(downloadId)
+  if (!entry) return sendJson(res, 404, { error: 'Download not found' })
+
+  sendJson(res, 200, entry)
+
+  // Clean up completed/errored downloads after poll
+  if (entry.status === 'complete' || entry.status === 'error') {
+    setTimeout(() => activeDownloads.delete(downloadId), 60000)
+  }
+}
+
 // ─── Upload endpoint: receive local file uploads ───
 async function handleUpload(req, res) {
   try {
@@ -644,7 +725,11 @@ async function handleInfo(req, res) {
     return res.end()
   }
 
-  if (req.method === 'POST' && req.url === '/upload') {
+  if (req.method === 'POST' && req.url === '/download-start') {
+    handleDownloadStart(req, res)
+  } else if (req.method === 'GET' && req.url?.startsWith('/download-poll/')) {
+    handleDownloadPoll(req, res)
+  } else if (req.method === 'POST' && req.url === '/upload') {
     handleUpload(req, res)
   } else if (req.method === 'POST' && req.url === '/download') {
     handleDownload(req, res)
