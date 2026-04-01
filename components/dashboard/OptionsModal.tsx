@@ -338,16 +338,16 @@ export default function OptionsModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">Format</label>
+            <label className="block text-sm font-medium text-white/70 mb-2">Aspect Ratio</label>
             <select
               value={options.platformFormat}
               onChange={(e) => onChange({ ...options, platformFormat: e.target.value as ProcessingOptions['platformFormat'] })}
               className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
             >
-              <option value="tiktok">TikTok (9:16)</option>
-              <option value="twitter">Twitter (16:9)</option>
-              <option value="youtube_shorts">YouTube Shorts</option>
-              <option value="custom">Custom</option>
+              <option value="twitter">16:9 Landscape (YouTube/Twitter)</option>
+              <option value="tiktok">9:16 Vertical (TikTok/Reels/Shorts)</option>
+              <option value="youtube_shorts">1:1 Square (Instagram)</option>
+              <option value="custom">Original (no crop)</option>
             </select>
           </div>
         </div>

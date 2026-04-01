@@ -280,7 +280,7 @@ async function handleClip(req, res) {
     return sendJson(res, 400, { error: 'Invalid JSON' })
   }
 
-  const { sourceUrl, startTime, endTime, title, subtitles, subtitleOptions } = parsed
+  const { sourceUrl, startTime, endTime, title, subtitles, subtitleOptions, aspectRatio } = parsed
   if (!sourceUrl || startTime == null || endTime == null) {
     return sendJson(res, 400, { error: 'sourceUrl, startTime, endTime required' })
   }
@@ -303,7 +303,7 @@ async function handleClip(req, res) {
     let subtitleFilter = ''
     if (subtitles && subtitles.length > 0 && subtitleOptions?.enabled !== false) {
       // Subtitle timestamps are already relative to clip start (0-based)
-      const textCase = subtitleOptions?.textCase || 'upper'
+      const textCase = subtitleOptions?.textCase || 'original'
       const srtContent = generateSRT(subtitles, 0, textCase)
       fs.writeFileSync(srtFile, srtContent, 'utf8')
       console.log(`[clip] generated SRT: ${subtitles.length} words`)
@@ -336,7 +336,7 @@ async function handleClip(req, res) {
 
       // Outline thickness
       const outlineThickness = opts.outlineThickness || 'medium'
-      const outlineSize = outlineThickness === 'thin' ? 1 : outlineThickness === 'thick' ? 3 : 2
+      const outlineSize = outlineThickness === 'none' ? 0 : outlineThickness === 'thin' ? 1 : outlineThickness === 'thick' ? 3 : 2
 
       // Outline color
       const outlineHex = (opts.outlineColor || '#000000').replace('#', '')
@@ -360,9 +360,32 @@ async function handleClip(req, res) {
       subtitleFilter = `-vf "subtitles='${escapedSrt}'${fontsDirOption}:force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColour},OutlineColour=${outlineColour},BackColour=&H80000000,BorderStyle=${borderStyle},Outline=${outlineSize},Shadow=${shadowSize},Alignment=${alignment},MarginV=${marginV},Bold=1'"` 
     }
 
-    // FFmpeg: seek to start, cut for duration, burn subtitles, re-encode to MP4
+    // Aspect ratio crop filter
+    let cropFilter = ''
+    if (aspectRatio === 'tiktok') {
+      // 9:16 vertical - center crop
+      cropFilter = 'crop=ih*9/16:ih'
+    } else if (aspectRatio === 'youtube_shorts') {
+      // 1:1 square - center crop
+      cropFilter = 'crop=min(iw\\,ih):min(iw\\,ih)'
+    }
+    // 'twitter' = 16:9 (usually already native), 'custom' = no crop
+
+    // Combine filters: crop first, then subtitles
+    let filterChain = ''
+    if (cropFilter && subtitleFilter) {
+      // Extract just the -vf content from subtitleFilter and chain with crop
+      const vfContent = subtitleFilter.replace('-vf "', '').replace(/"$/, '')
+      filterChain = `-vf "${cropFilter},${vfContent}"`
+    } else if (cropFilter) {
+      filterChain = `-vf "${cropFilter}"`
+    } else {
+      filterChain = subtitleFilter
+    }
+
+    // FFmpeg: seek to start, cut for duration, apply filters, re-encode to MP4
     await new Promise((resolve, reject) => {
-      const cmd = `ffmpeg -ss ${startTime} -i "${sourceUrl.split('#')[0]}" -t ${duration} ${subtitleFilter} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
+      const cmd = `ffmpeg -ss ${startTime} -i "${sourceUrl.split('#')[0]}" -t ${duration} ${filterChain} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
       console.log(`[clip] ffmpeg: ${cmd}`)
 
       exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
@@ -416,7 +439,7 @@ async function handleClip(req, res) {
  * Groups words into ~4-word chunks for readable subtitles.
  * Timestamps are relative (0-based for the clip).
  */
-function generateSRT(words, clipStartTime = 0, textCase = 'upper') {
+function generateSRT(words, clipStartTime = 0, textCase = 'original') {
   const WORDS_PER_LINE = 4
   const chunks = []
 

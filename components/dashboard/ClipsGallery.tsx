@@ -13,7 +13,7 @@ interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
-function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions }) {
+function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState('')
 
@@ -39,8 +39,9 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions }: { clip:
           subtitleOptions: subtitleOptions || {
             enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
             style: 'bold', background: 'none', font: 'impact',
-            outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'upper',
+            outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'original',
           },
+          aspectRatio: aspectRatio || 'custom',
         }),
       })
 
@@ -421,7 +422,7 @@ function JobCard({
 
             {/* Download buttons */}
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} />
+              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} />
               <a
                 href={job.source_url}
                 download={`slicer-full-${job.title}.mp4`}
@@ -471,29 +472,20 @@ function JobCard({
                     onChange={(e) => setAiCaption(e.target.value)}
                     className="w-full h-20 bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white/80 resize-none focus:border-red-500 focus:outline-none"
                   />
-                  <div className="flex gap-2">
-                    {[
-                      { label: '🐦 Twitter', key: 'twitter' },
-                      { label: '📱 TikTok', key: 'tiktok' },
-                      { label: '📸 Instagram', key: 'instagram' },
-                    ].map(p => (
-                      <button
-                        key={p.key}
-                        onClick={() => {
-                          navigator.clipboard.writeText(aiCaption)
-                          setCopiedCaption(p.key)
-                          setTimeout(() => setCopiedCaption(null), 2000)
-                        }}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                          copiedCaption === p.key
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                            : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/30'
-                        }`}
-                      >
-                        {copiedCaption === p.key ? '✓ Copied!' : p.label}
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiCaption)
+                      setCopiedCaption('copied')
+                      setTimeout(() => setCopiedCaption(null), 2000)
+                    }}
+                    className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${
+                      copiedCaption
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                        : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/30'
+                    }`}
+                  >
+                    {copiedCaption ? '✓ Copied to clipboard!' : '📋 Copy Caption'}
+                  </button>
                 </div>
               )}
             </div>
