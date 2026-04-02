@@ -9,22 +9,42 @@ interface ProcessingViewProps {
 }
 
 const STEPS = [
-  { key: 'transcribing', label: 'AI Analyzing', desc: 'Transcribing audio with AssemblyAI…', icon: '🎙️' },
-  { key: 'scoring', label: 'Scoring Moments', desc: 'Groq LLM ranking best clips…', icon: '🤖' },
-  { key: 'complete', label: 'Clips Ready!', desc: 'Your clips are ready to preview.', icon: '✅' },
+  { key: 'submitting', label: 'Launching mission...', icon: '🚀' },
+  { key: 'downloading', label: 'Downloading video...', icon: '📥' },
+  { key: 'transcribing', label: 'Mars Cats are listening...', icon: '🐱' },
+  { key: 'scoring', label: 'Finding the best moments...', icon: '✂️' },
+  { key: 'complete', label: 'Clips Ready!', icon: '✅' },
+]
+
+const MCV_MESSAGES = [
+  "The Mars Cats are analyzing your content, Commander! 🐱🚀",
+  "Slicer is chopping it up — sit tight! ✂️",
+  "Our cats are listening for the best moments... 🎧",
+  "Processing at light speed (almost)... 🌟",
+  "The crew is on it — clips incoming! 🐱✨",
+  "Mars Cats never miss a highlight! 🔥",
+  "Scanning for viral moments... 🎯",
+  "The cats have excellent taste in content 😼",
 ]
 
 function getStepIndex(phase: string): number {
-  if (phase === 'complete') return 2
-  if (phase === 'scoring') return 1
-  return 0
+  const idx = STEPS.findIndex(s => s.key === phase)
+  return idx >= 0 ? idx : 0
 }
 
 export default function ProcessingView({ job, onComplete }: ProcessingViewProps) {
   const [phase, setPhase] = useState<string>((job.progress?.phase as string) ?? 'submitting')
   const [error, setError] = useState<string | null>(null)
+  const [elapsed, setElapsed] = useState(0)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const isMountedRef = useRef(true)
+  const startTime = useRef(Date.now())
+
+  // Timer
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTime.current) / 1000)), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -43,97 +63,94 @@ export default function ProcessingView({ job, onComplete }: ProcessingViewProps)
         const data = await res.json()
         if (!isMountedRef.current) return
 
-        setPhase(data.status === 'complete' ? 'complete' : (data.phase ?? data.status ?? 'transcribing'))
-
         if (data.status === 'complete') {
+          setPhase('complete')
           if (intervalRef.current) clearInterval(intervalRef.current)
-          // Fetch full job to get clips
           const jobRes = await fetch('/api/jobs')
           if (!jobRes.ok) return
           const { jobs } = await jobRes.json()
           const updatedJob = jobs?.find((j: Job) => j.id === job.id)
           if (updatedJob && isMountedRef.current) {
-            onComplete(updatedJob)
+            setTimeout(() => onComplete(updatedJob), 1500)
           }
-        }
-
-        if (data.status === 'failed') {
+        } else if (data.status === 'failed') {
           if (intervalRef.current) clearInterval(intervalRef.current)
           setError(data.error ?? 'Processing failed')
+        } else {
+          setPhase(data.phase ?? 'transcribing')
         }
       } catch (err) {
         console.error('Poll error:', err)
       }
     }
 
-    poll() // immediate
-    intervalRef.current = setInterval(poll, 6000)
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
+    poll()
+    intervalRef.current = setInterval(poll, 5000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [job.id, onComplete])
 
   const stepIndex = getStepIndex(phase)
+  const progress = phase === 'complete' ? 100 : Math.min(95, (stepIndex / (STEPS.length - 1)) * 100 + elapsed * 0.3)
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="text-5xl">❌</div>
-        <h3 className="text-xl font-bold text-red-400">Processing Failed</h3>
+      <div className="flex flex-col items-center justify-center py-12 gap-4">
+        <div className="text-4xl">❌</div>
+        <h3 className="text-lg font-bold text-red-400">Processing Failed</h3>
         <p className="text-white/50 text-sm max-w-sm text-center">{error}</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-8 max-w-md mx-auto">
-      {/* Animated icon */}
-      <div className="text-6xl animate-float">{STEPS[Math.min(stepIndex, 2)].icon}</div>
-
-      <div className="text-center">
-        <h3 className="text-2xl font-bold text-white mb-2">
-          {STEPS[Math.min(stepIndex, 2)].label}
-        </h3>
-        <p className="text-white/50">{STEPS[Math.min(stepIndex, 2)].desc}</p>
-        {job.title && (
-          <p className="text-white/30 text-sm mt-1 truncate max-w-xs">{job.title}</p>
-        )}
-      </div>
-
-      {/* Step indicators */}
-      <div className="flex items-center gap-3">
-        {STEPS.map((step, i) => (
-          <div key={step.key} className="flex items-center gap-3">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                i < stepIndex
-                  ? 'bg-green-500 text-white'
-                  : i === stepIndex
-                  ? 'text-white animate-pulse-glow'
-                  : 'bg-white/10 text-white/30'
-              }`}
-              style={i === stepIndex ? { background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' } : {}}
-            >
-              {i < stepIndex ? '✓' : i + 1}
-            </div>
-            {i < STEPS.length - 1 && (
-              <div className={`w-12 h-0.5 ${i < stepIndex ? 'bg-green-500' : 'bg-white/10'}`} />
-            )}
-          </div>
-        ))}
+    <div className="py-8 space-y-6">
+      {/* Current status */}
+      <div className="flex items-center gap-4">
+        <div className={`text-3xl ${phase === 'complete' ? '' : 'animate-pulse'}`}>
+          {STEPS[Math.min(stepIndex, STEPS.length - 1)].icon}
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-white">
+            {STEPS[Math.min(stepIndex, STEPS.length - 1)].label}
+          </h3>
+          <p className="text-white/40 text-sm">
+            {phase === 'complete' ? 'Your clips are ready!' : MCV_MESSAGES[Math.floor(elapsed / 8) % MCV_MESSAGES.length]}
+          </p>
+        </div>
       </div>
 
       {/* Progress bar */}
-      {phase !== 'complete' && (
-        <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
-          <div className="h-full rounded-full relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}>
-            <div className="absolute inset-0 bg-white/30 animate-shimmer" />
-          </div>
-        </div>
-      )}
+      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{
+            width: `${progress}%`,
+            background: phase === 'complete' ? '#22c55e' : 'linear-gradient(90deg, #FF4D4D, #FF6B6B)',
+          }}
+        />
+      </div>
 
-      <p className="text-white/30 text-xs">Polling every 6s — this can take a minute</p>
+      {/* Steps checklist */}
+      <div className="space-y-2">
+        {STEPS.map((step, i) => {
+          const isDone = i < stepIndex || phase === 'complete'
+          const isActive = i === stepIndex && phase !== 'complete'
+          return (
+            <div key={step.key} className={`flex items-center gap-3 py-1.5 transition-all ${isDone || isActive ? 'opacity-100' : 'opacity-30'}`}>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
+                isDone ? 'bg-green-500 text-white' : isActive ? 'border-2 border-red-500' : 'border border-white/20'
+              }`}>
+                {isDone ? '✓' : isActive ? <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" /> : ''}
+              </div>
+              <span className={`text-sm ${isDone ? 'text-white/60' : isActive ? 'text-white font-semibold' : 'text-white/30'}`}>
+                {step.label}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <p className="text-white/20 text-xs">{elapsed}s elapsed</p>
     </div>
   )
 }

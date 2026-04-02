@@ -9,6 +9,7 @@ import OptionsModal from '@/components/dashboard/OptionsModal'
 
 const STEPS = [
   { key: 'submitting', label: 'Launching the mission...', icon: '🚀' },
+  { key: 'downloading', label: 'Downloading video...', icon: '📥' },
   { key: 'transcribing', label: 'Mars Cats are listening...', icon: '🐱' },
   { key: 'scoring', label: 'Finding the best moments...', icon: '✂️' },
   { key: 'complete', label: 'Clips Ready!', icon: '✅' },
@@ -35,7 +36,7 @@ function getEstimatedTime(durationMin: number): string {
 }
 
 function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: () => void }) {
-  const [phase, setPhase] = useState('submitting')
+  const [phase, setPhase] = useState(jobId === 'downloading' ? 'downloading' : 'submitting')
   const [elapsed, setElapsed] = useState(0)
   const [showInterstitial, setShowInterstitial] = useState(false)
   const completedRef = useRef(false)
@@ -47,9 +48,17 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
     return () => clearInterval(t)
   }, [])
 
+  // When jobId changes from 'downloading' to real id, advance phase
+  useEffect(() => {
+    if (jobId !== 'downloading' && phase === 'downloading') {
+      setPhase('transcribing')
+    }
+  }, [jobId, phase])
+
   // Poll
   useEffect(() => {
     if (completedRef.current) return
+    if (jobId === 'downloading') return
 
     const poll = async () => {
       try {
@@ -302,6 +311,8 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       if (!file && isYouTubeUrl(sourceUrl)) {
         setError(null)
         setShowOptions(false) // Close modal immediately
+        // Show processing screen immediately with downloading phase
+        setProcessingJobId('downloading')
         setUploadProgress('Downloading video...')
         try {
           const apiBase = await getApiUrl()
@@ -424,12 +435,12 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
   return (
     <div className="max-w-2xl mx-auto py-12">
-      {/* Download/Upload progress banner */}
-      {(uploadProgress || isSubmitting) && (
+      {/* Upload progress banner (only for local file uploads, not URL downloads) */}
+      {uploadProgress && !processingJobId && (
         <div className="mb-6 rounded-xl p-5 border border-yellow-500/20 bg-yellow-500/5 flex items-center gap-4">
           <div className="w-8 h-8 border-3 border-yellow-500/30 border-t-yellow-400 rounded-full animate-spin flex-shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-yellow-400">{uploadProgress || 'Processing...'}</p>
+            <p className="text-sm font-semibold text-yellow-400">{uploadProgress}</p>
             <p className="text-xs text-white/30 mt-0.5">This may take a few minutes for long videos</p>
           </div>
         </div>

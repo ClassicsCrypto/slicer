@@ -249,14 +249,16 @@ function JobCard({
           {job.status === 'failed' && (
             <Badge variant="red">❌ Failed</Badge>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => { e.stopPropagation(); onDelete(job.id) }}
-            className="text-white/30 hover:text-red-400"
-          >
-            🗑
-          </Button>
+          {job.status !== 'processing' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onDelete(job.id) }}
+              className="text-white/30 hover:text-red-400"
+            >
+              🗑
+            </Button>
+          )}
         </div>
       </div>
 
