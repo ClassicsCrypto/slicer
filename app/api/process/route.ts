@@ -60,10 +60,12 @@ export async function POST(req: NextRequest) {
       try {
         const { getApiUrl } = await import('@/lib/api-url')
         const apiBase = await getApiUrl()
+        console.log(`[process] Local Whisper: calling ${apiBase}/transcribe-local with ${sourceUrl.slice(0, 80)}...`)
         const whisperRes = await fetch(`${apiBase}/transcribe-local`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ audioUrl: sourceUrl }),
+          signal: AbortSignal.timeout(8000), // 8s timeout for Vercel function limit
         })
         const whisperData = await whisperRes.json()
         console.log(`[process] Local Whisper started: ${whisperData.transcribeId}`)
@@ -79,8 +81,8 @@ export async function POST(req: NextRequest) {
             },
           })
           .eq('id', jobId)
-      } catch (err) {
-        console.error('Local Whisper submission error:', err)
+      } catch (err: any) {
+        console.error('[process] Local Whisper FAILED, falling back to AssemblyAI:', err?.message || err)
         // Fallback to AssemblyAI
         try {
           const transcriptId = await submitTranscription(sourceUrl)
