@@ -397,6 +397,25 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           </div>
         </div>
       )}
+      {/* Features */}
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        {[
+          { icon: '📺', label: 'YouTube, Twitch & X', desc: 'Paste any video URL' },
+          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
+          { icon: '🧠', label: 'AI Powered', desc: 'Groq Whisper + LLM find best moments' },
+        ].map((tip) => (
+          <div
+            key={tip.label}
+            className="rounded-xl p-4 border border-white/5 text-center"
+            style={{ background: '#15151F' }}
+          >
+            <div className="text-2xl mb-2">{tip.icon}</div>
+            <div className="text-xs font-semibold text-white mb-1">{tip.label}</div>
+            <div className="text-xs text-white/30">{tip.desc}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Drop zone + URL input */}
       <div
         {...getRootProps()}
@@ -479,45 +498,12 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         </div>
       </div>
 
-      {/* Tips */}
-      <div className="mt-6 grid grid-cols-3 gap-3">
-        {[
-          { icon: '📺', label: 'YouTube, Twitch & X', desc: 'Paste any YouTube, Twitch, or X/Twitter URL' },
-          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
-          { icon: '🧠', label: 'AI Powered', desc: 'Groq + AssemblyAI find best moments' },
-        ].map((tip) => (
-          <div
-            key={tip.label}
-            className="rounded-xl p-4 border border-white/5 text-center"
-            style={{ background: '#15151F' }}
-          >
-            <div className="text-2xl mb-2">{tip.icon}</div>
-            <div className="text-xs font-semibold text-white mb-1">{tip.label}</div>
-            <div className="text-xs text-white/30">{tip.desc}</div>
-          </div>
-        ))}
-      </div>
-
       {/* Limits info */}
-      <div className="mt-4 rounded-xl p-4 border border-white/5" style={{ background: '#15151F' }}>
-        <p className="text-xs text-white/40 font-semibold uppercase tracking-wider mb-2">Upload Limits</p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="flex justify-between">
-            <span className="text-white/30">Max file size</span>
-            <span className="text-white/60 font-semibold">2 GB</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-white/30">Max video length</span>
-            <span className="text-white/60 font-semibold">3 hours</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-white/30">Supported formats</span>
-            <span className="text-white/60 font-semibold">MP4, MOV, WebM, MKV</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-white/30">Transcription</span>
-            <span className="text-white/60 font-semibold">5 hrs/month (free tier)</span>
-          </div>
+      <div className="mt-4 rounded-xl p-3 border border-white/5 flex items-center justify-between" style={{ background: '#15151F' }}>
+        <div className="flex items-center gap-4 text-xs text-white/40">
+          <span>📏 Max <strong className="text-white/60">2GB</strong> / <strong className="text-white/60">3 hours</strong></span>
+          <span>📄 MP4, MOV, WebM, MKV</span>
+          <span>🎙️ Groq Whisper <strong className="text-green-400">Free · Unlimited</strong></span>
         </div>
       </div>
 
