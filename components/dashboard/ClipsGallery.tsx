@@ -556,7 +556,13 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
   }, [])
 
   useEffect(() => {
+    // Fetch immediately + after short delays to catch newly completed jobs
     fetchJobs()
+    const t1 = setTimeout(fetchJobs, 1500)
+    const t2 = setTimeout(fetchJobs, 4000)
+    // Then auto-refresh every 15s
+    const interval = setInterval(fetchJobs, 15000)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(interval) }
   }, [fetchJobs])
 
   // Also merge initialJobs (from onJobCreated) into state

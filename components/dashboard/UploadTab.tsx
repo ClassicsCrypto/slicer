@@ -536,11 +536,10 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
       </div>
 
       {/* Limits info */}
-      <div className="mt-4 rounded-xl p-3 border border-white/5 flex items-center justify-between" style={{ background: '#15151F' }}>
+      <div className="mt-4 rounded-xl p-3 border border-white/5 flex items-center justify-center" style={{ background: '#15151F' }}>
         <div className="flex items-center gap-4 text-xs text-white/40">
           <span>📏 Max <strong className="text-white/60">2GB</strong> / <strong className="text-white/60">3 hours</strong></span>
           <span>📄 MP4, MOV, WebM, MKV</span>
-          <span>🎙️ Transcription <strong className="text-green-400">Free · Unlimited</strong></span>
         </div>
       </div>
 
