@@ -68,7 +68,31 @@ export async function GET(
     const transcriptionMode = job.progress?.transcriptionMode as string | undefined
 
     // ─── Local Whisper path ───
-    if (transcriptionMode === 'local' && localTranscribeId) {
+    if (transcriptionMode === 'local') {
+      // Start transcription on first poll if not started yet
+      if (!localTranscribeId) {
+        try {
+          const { getApiUrl } = await import('@/lib/api-url')
+          const apiBase = await getApiUrl()
+          console.log(`[poll] Starting local transcription for ${job.source_url?.slice(0, 80)}...`)
+          const startRes = await fetch(`${apiBase}/transcribe-local`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioUrl: job.source_url }),
+          })
+          if (startRes.ok) {
+            const startData = await startRes.json()
+            console.log(`[poll] Local transcription started: ${startData.transcribeId}`)
+            await supabase.from('jobs').update({
+              progress: { ...job.progress, localTranscribeId: startData.transcribeId },
+            }).eq('id', jobId)
+          }
+        } catch (err: any) {
+          console.error('[poll] Failed to start local transcription:', err?.message)
+        }
+        return NextResponse.json({ status: 'processing', phase: 'transcribing', progress: 'Starting transcription...' })
+      }
+
       try {
         const { getApiUrl } = await import('@/lib/api-url')
         const apiBase = await getApiUrl()

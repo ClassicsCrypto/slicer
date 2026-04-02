@@ -56,45 +56,20 @@ export async function POST(req: NextRequest) {
     const useLocalWhisper = process.env.TRANSCRIPTION_MODE === 'local'
 
     if (useLocalWhisper) {
-      // Local Whisper transcription via the local server
-      try {
-        const { getApiUrl } = await import('@/lib/api-url')
-        const apiBase = await getApiUrl()
-        console.log(`[process] Local Whisper: calling ${apiBase}/transcribe-local with ${sourceUrl.slice(0, 80)}...`)
-        const whisperRes = await fetch(`${apiBase}/transcribe-local`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audioUrl: sourceUrl }),
-          signal: AbortSignal.timeout(8000), // 8s timeout for Vercel function limit
+      // Mark job for local transcription — poll route will start it
+      // (Vercel serverless can't reliably reach the Cloudflare tunnel)
+      console.log(`[process] Local Whisper mode — poll route will initiate transcription`)
+      await supabase
+        .from('jobs')
+        .update({
+          progress: {
+            phase: 'transcribing',
+            transcriptionMode: 'local',
+            localTranscribeId: null, // poll route will set this
+            completedClips: [],
+          },
         })
-        const whisperData = await whisperRes.json()
-        console.log(`[process] Local Whisper started: ${whisperData.transcribeId}`)
-
-        await supabase
-          .from('jobs')
-          .update({
-            progress: {
-              phase: 'transcribing',
-              localTranscribeId: whisperData.transcribeId,
-              transcriptionMode: 'local',
-              completedClips: [],
-            },
-          })
-          .eq('id', jobId)
-      } catch (err: any) {
-        console.error('[process] Local Whisper FAILED, falling back to AssemblyAI:', err?.message || err)
-        // Fallback to AssemblyAI
-        try {
-          const transcriptId = await submitTranscription(sourceUrl)
-          await supabase.from('jobs').update({
-            progress: { phase: 'transcribing', transcriptId, transcriptionMode: 'assemblyai', completedClips: [] },
-          }).eq('id', jobId)
-        } catch {
-          await supabase.from('jobs').update({
-            progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
-          }).eq('id', jobId)
-        }
-      }
+        .eq('id', jobId)
     } else {
       // AssemblyAI transcription (cloud)
       try {

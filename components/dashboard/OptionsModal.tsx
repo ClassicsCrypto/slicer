@@ -362,8 +362,9 @@ export default function OptionsModal({
         {videoInfo && !fetchingInfo && (
           <div className="px-3 py-2.5 rounded-lg border bg-green-500/10 border-green-500/20">
             <span className="text-xs text-white/60">
-              📏 <strong>{videoInfo.durationMin > 0 ? `${videoInfo.durationMin} min` : 'Unknown length'}</strong> video — Estimated processing: <strong className="text-green-400">{
-                videoInfo.durationMin <= 2 ? 'Less than 2 minutes'
+              📏 <strong>{videoInfo.durationMin > 0 ? `${videoInfo.durationMin} min` : 'Broadcast'}</strong> — Estimated processing: <strong className="text-green-400">{
+                videoInfo.durationMin === 0 ? 'May take 10-20 minutes for broadcasts'
+                : videoInfo.durationMin <= 2 ? 'Less than 2 minutes'
                 : videoInfo.durationMin <= 10 ? '~2-3 minutes'
                 : videoInfo.durationMin <= 30 ? '~3-5 minutes'
                 : videoInfo.durationMin <= 60 ? '~5-8 minutes'

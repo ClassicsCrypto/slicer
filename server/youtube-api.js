@@ -599,7 +599,8 @@ async function handleDownloadStart(req, res) {
   ;(async () => {
     try {
       const info = getVideoInfo(url)
-      activeDownloads.set(downloadId, { status: 'downloading', progress: `${info.title} (${Math.round(info.duration / 60)}min)` })
+      const durStr = info.duration > 0 ? ` (${Math.round(info.duration / 60)}min)` : ''
+      activeDownloads.set(downloadId, { status: 'downloading', progress: `${info.title}${durStr}` })
 
       if (info.duration > MAX_DURATION_SEC) {
         activeDownloads.set(downloadId, { status: 'error', error: `Video too long: ${Math.round(info.duration / 60)}min (max ${MAX_DURATION_SEC / 60}min)` })
