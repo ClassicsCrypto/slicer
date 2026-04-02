@@ -22,11 +22,11 @@ function extractSubtitles(
     const wordStartSec = w.start / 1000
     const wordEndSec = w.end / 1000
 
-    // Only include words that fall within the clip's time range
-    if (wordStartSec >= clipStartSec && wordEndSec <= clipEndSec + 0.5) {
+    // Include words that overlap with the clip's time range (0.5s buffer on both sides)
+    if (wordStartSec >= clipStartSec - 0.5 && wordEndSec <= clipEndSec + 0.5) {
       subs.push({
         text: w.text,
-        start: parseFloat((wordStartSec - clipStartSec).toFixed(2)),
+        start: parseFloat(Math.max(0, wordStartSec - clipStartSec).toFixed(2)),
         end: parseFloat((wordEndSec - clipStartSec).toFixed(2)),
       })
     }

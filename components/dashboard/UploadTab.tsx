@@ -8,15 +8,36 @@ import Button from '@/components/ui/Button'
 import OptionsModal from '@/components/dashboard/OptionsModal'
 
 const STEPS = [
-  { key: 'submitting', label: 'Submitting Video', icon: '📤' },
-  { key: 'transcribing', label: 'AI Transcribing Audio', icon: '🎙️' },
-  { key: 'scoring', label: 'AI Selecting Best Moments', icon: '🧠' },
+  { key: 'submitting', label: 'Launching the mission...', icon: '🚀' },
+  { key: 'transcribing', label: 'Mars Cats are listening...', icon: '🐱' },
+  { key: 'scoring', label: 'Finding the best moments...', icon: '✂️' },
   { key: 'complete', label: 'Clips Ready!', icon: '✅' },
 ]
+
+const MCV_MESSAGES = [
+  "The Mars Cats are analyzing your content, Commander! 🐱🚀",
+  "Slicer is chopping it up — sit tight! ✂️",
+  "Our cats are listening for the best moments... 🎧",
+  "Processing at light speed (almost)... 🌟",
+  "The crew is on it — clips incoming! 🐱✨",
+  "Mars Cats never miss a highlight! 🔥",
+  "Scanning for viral moments... 🎯",
+  "The cats have excellent taste in content 😼",
+]
+
+function getEstimatedTime(durationMin: number): string {
+  // Rough estimate: download ~1min + transcription ~30s per 10min + scoring ~10s
+  if (durationMin <= 2) return 'Less than 2 minutes'
+  if (durationMin <= 10) return 'About 2-3 minutes'
+  if (durationMin <= 30) return 'About 3-5 minutes'
+  if (durationMin <= 60) return 'About 5-8 minutes'
+  return 'About 10-15 minutes'
+}
 
 function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: () => void }) {
   const [phase, setPhase] = useState('submitting')
   const [elapsed, setElapsed] = useState(0)
+  const [showInterstitial, setShowInterstitial] = useState(false)
   const completedRef = useRef(false)
   const startTime = useRef(Date.now())
 
@@ -40,7 +61,8 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
         if (data.status === 'complete' && !completedRef.current) {
           completedRef.current = true
           setPhase('complete')
-          setTimeout(onComplete, 2000)
+          setShowInterstitial(true)
+          setTimeout(onComplete, 3500)
         }
         if (data.status === 'failed') {
           setPhase('failed')
@@ -56,6 +78,18 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
 
   const stepIndex = STEPS.findIndex(s => s.key === phase)
   const progress = phase === 'complete' ? 100 : phase === 'failed' ? 0 : Math.min(90, (stepIndex / STEPS.length) * 100 + elapsed * 0.5)
+
+  if (showInterstitial) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 animate-fadeIn">
+        <img src="/mcv-logo.jpg" alt="MCV" className="w-24 h-24 rounded-full mb-6 drop-shadow-[0_0_20px_rgba(255,77,77,0.4)]" />
+        <h2 className="text-2xl font-black text-white mb-2">Thanks for using Slicer! 🐱✂️</h2>
+        <p className="text-white/40 text-sm mb-1">by Mars Cats Voyage</p>
+        <p className="text-white/20 text-xs mt-4">Loading your clips...</p>
+        <div className="mt-3 w-6 h-6 border-2 border-white/20 border-t-red-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">
@@ -75,11 +109,14 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
       <h2 className="text-xl font-bold text-white mb-2">
         {phase === 'failed' ? '❌ Processing Failed' : STEPS[Math.max(0, stepIndex)]?.label ?? 'Processing...'}
       </h2>
-      <p className="text-white/40 text-sm mb-6">
+      <p className="text-white/40 text-sm mb-2">
         {phase === 'complete' ? 'Redirecting to your clips...' :
          phase === 'failed' ? 'Something went wrong. Try again.' :
-         `${elapsed}s elapsed`}
+         MCV_MESSAGES[Math.floor(elapsed / 8) % MCV_MESSAGES.length]}
       </p>
+      {phase !== 'complete' && phase !== 'failed' && (
+        <p className="text-white/20 text-xs mb-4">{elapsed}s elapsed</p>
+      )}
 
       {/* Progress bar */}
       <div className="w-full max-w-sm mb-8">
@@ -402,7 +439,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         {[
           { icon: '📺', label: 'YouTube, Twitch & X', desc: 'Paste any video URL' },
           { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
-          { icon: '🧠', label: 'AI Powered', desc: 'Groq Whisper + LLM find best moments' },
+          { icon: '🧠', label: 'AI Powered', desc: 'AI finds your best moments' },
         ].map((tip) => (
           <div
             key={tip.label}
@@ -503,7 +540,7 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         <div className="flex items-center gap-4 text-xs text-white/40">
           <span>📏 Max <strong className="text-white/60">2GB</strong> / <strong className="text-white/60">3 hours</strong></span>
           <span>📄 MP4, MOV, WebM, MKV</span>
-          <span>🎙️ Groq Whisper <strong className="text-green-400">Free · Unlimited</strong></span>
+          <span>🎙️ Transcription <strong className="text-green-400">Free · Unlimited</strong></span>
         </div>
       </div>
 

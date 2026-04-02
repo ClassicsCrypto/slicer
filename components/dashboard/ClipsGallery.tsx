@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase, SubtitleSize, SubtitleFont, SubtitleColor } from '@/types'
+import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase, SubtitleSize, SubtitleFont, SubtitleColor, SubtitlePosition } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -362,6 +362,17 @@ function JobCard({
                     <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, textCase: v })}
                       className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.textCase || 'upper') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
                     >{v === 'upper' ? 'ABC' : v === 'title' ? 'Abc' : 'abc'}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Position */}
+              <div>
+                <label className="text-[10px] text-white/30">Position</label>
+                <div className="flex gap-1 mt-0.5">
+                  {(['bottom', 'center', 'top'] as SubtitlePosition[]).map(v => (
+                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, position: v })}
+                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.position || 'bottom') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    >{v === 'bottom' ? '⬇' : v === 'center' ? '⬜' : '⬆'}</button>
                   ))}
                 </div>
               </div>

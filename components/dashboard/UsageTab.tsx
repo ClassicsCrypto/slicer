@@ -115,78 +115,52 @@ export default function UsageTab() {
     <div className="max-w-3xl mx-auto py-8 space-y-8">
       {/* API Usage */}
       <div className="rounded-2xl p-6 border border-white/5" style={{ background: '#15151F' }}>
-        <h2 className="text-lg font-bold text-white mb-1">Service Status</h2>
-        <p className="text-xs text-white/30 mb-6">All services running on free tiers — $0/month</p>
+        <h2 className="text-lg font-bold text-white mb-1">Monthly Usage</h2>
+        <p className="text-xs text-white/30 mb-6">Cumulative usage this month — all services free</p>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🎙️</span>
-              <div>
-                <div className="text-sm font-semibold text-white">Groq Whisper</div>
-                <div className="text-[10px] text-white/30">Transcription — whisper-large-v3</div>
+          <div className="p-3 rounded-lg bg-white/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span>🎙️</span>
+                <span className="text-sm font-semibold text-white">Transcription</span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400" />
               <span className="text-xs text-green-400 font-semibold">Free · Unlimited</span>
             </div>
+            <div className="text-2xl font-black text-white">{(data.stats.totalHoursProcessed * 60).toFixed(0)} <span className="text-sm font-normal text-white/30">minutes transcribed</span></div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🧠</span>
-              <div>
-                <div className="text-sm font-semibold text-white">Groq LLM</div>
-                <div className="text-[10px] text-white/30">Clip scoring — Llama 3.3 70B</div>
+          <div className="p-3 rounded-lg bg-white/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span>🧠</span>
+                <span className="text-sm font-semibold text-white">AI Scoring</span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400" />
               <span className="text-xs text-green-400 font-semibold">Free · 14.4K req/day</span>
             </div>
+            <div className="text-2xl font-black text-white">{data.stats.totalJobs} <span className="text-sm font-normal text-white/30">videos scored</span></div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">✂️</span>
-              <div>
-                <div className="text-sm font-semibold text-white">FFmpeg Server</div>
-                <div className="text-[10px] text-white/30">Video download, clip export, subtitles</div>
+          <div className="p-3 rounded-lg bg-white/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span>✂️</span>
+                <span className="text-sm font-semibold text-white">Clip Export</span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400" />
               <span className="text-xs text-green-400 font-semibold">Local · Unlimited</span>
             </div>
+            <div className="text-2xl font-black text-white">{data.stats.totalClips} <span className="text-sm font-normal text-white/30">clips generated</span></div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">💾</span>
-              <div>
-                <div className="text-sm font-semibold text-white">Supabase</div>
-                <div className="text-[10px] text-white/30">Job tracking database</div>
+          <div className="p-3 rounded-lg bg-white/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span>💾</span>
+                <span className="text-sm font-semibold text-white">Storage</span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400" />
               <span className="text-xs text-green-400 font-semibold">Free · {data.supabase.used}MB / 1GB</span>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🌐</span>
-              <div>
-                <div className="text-sm font-semibold text-white">Cloudflare Tunnel</div>
-                <div className="text-[10px] text-white/30">Public access to local server</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-400" />
-              <span className="text-xs text-green-400 font-semibold">Free · Unlimited</span>
-            </div>
+            <div className="text-2xl font-black text-white">{data.stats.totalJobs} <span className="text-sm font-normal text-white/30">jobs tracked</span></div>
           </div>
         </div>
       </div>
