@@ -529,38 +529,21 @@ async function handleTranscribeLocal(req, res) {
       activeTranscriptions.set(transcribeId, { status: 'transcribing', progress: 'Running Whisper medium model...' })
 
       const whisperScript = path.join(__dirname, 'whisper-transcribe.py')
-      const cmd = `python "${whisperScript}" "${filePath}" --model medium --device cuda`
+      const groqKey = process.env.GROQ_API_KEY || ''
+      const cmd = `python "${whisperScript}" "${filePath}" --groq-key "${groqKey}"`
       
       console.log(`[transcribe-local] ${transcribeId} running: ${cmd}`)
       
       exec(cmd, { timeout: 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (stderr) console.log(`[transcribe-local] ${transcribeId} stderr:`, stderr.slice(-500))
+        
         if (err) {
-          console.error(`[transcribe-local] ${transcribeId} error:`, stderr?.slice(-500))
-          // Try CPU fallback
-          console.log(`[transcribe-local] ${transcribeId} retrying on CPU...`)
-          activeTranscriptions.set(transcribeId, { status: 'transcribing', progress: 'Retrying on CPU...' })
-          
-          const cpuCmd = `python "${whisperScript}" "${filePath}" --model medium --device cpu --compute-type int8`
-          exec(cpuCmd, { timeout: 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err2, stdout2, stderr2) => {
-            if (err2) {
-              console.error(`[transcribe-local] ${transcribeId} CPU error:`, stderr2?.slice(-500))
-              activeTranscriptions.set(transcribeId, { status: 'error', error: 'Whisper transcription failed on both GPU and CPU' })
-              return
-            }
-            try {
-              const result = JSON.parse(stdout2.trim().split('\n').pop())
-              if (result.error) throw new Error(result.error)
-              activeTranscriptions.set(transcribeId, { status: 'complete', result })
-              console.log(`[transcribe-local] ${transcribeId} complete (CPU): ${result.words?.length} words, ${result.duration}s`)
-            } catch (parseErr) {
-              activeTranscriptions.set(transcribeId, { status: 'error', error: `Parse error: ${parseErr.message}` })
-            }
-          })
+          console.error(`[transcribe-local] ${transcribeId} error:`, err.message)
+          activeTranscriptions.set(transcribeId, { status: 'error', error: `Whisper failed: ${err.message}` })
           return
         }
 
         try {
-          // stdout may have multiple lines, JSON is the last one
           const result = JSON.parse(stdout.trim().split('\n').pop())
           if (result.error) throw new Error(result.error)
           activeTranscriptions.set(transcribeId, { status: 'complete', result })
