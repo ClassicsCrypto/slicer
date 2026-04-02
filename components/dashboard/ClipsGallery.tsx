@@ -173,16 +173,24 @@ function ClipCard({
         <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded font-mono">
           {Math.round(clip.duration)}s
         </div>
-        {/* Virality score */}
-        {clip.virality_score !== undefined && (
-          <div className="absolute top-2 right-2">
-            <Badge variant="red">🔥 {clip.virality_score}/10</Badge>
-          </div>
-        )}
+        {/* Virality score moved to description area below */}
       </div>
 
       {/* Info */}
       <div className="p-3">
+        {clip.virality_score !== undefined && (
+          <div className={`text-xs font-semibold mb-1 ${
+            clip.virality_score >= 8 ? 'text-red-400' : clip.virality_score >= 6 ? 'text-yellow-400' : 'text-white/40'
+          }`}>
+            🔥 {clip.virality_score}/10 — {
+              clip.virality_score >= 10 ? 'VIRAL'
+              : clip.virality_score >= 8 ? 'Incredible'
+              : clip.virality_score >= 6 ? 'Solid'
+              : clip.virality_score >= 4 ? 'Decent'
+              : 'Low'
+            }
+          </div>
+        )}
         <p className="text-xs text-white/40 mb-2 line-clamp-2">{clip.ai_reason}</p>
         <div className="flex flex-wrap gap-1">
           {clip.matched_categories.slice(0, 3).map((cat) => (

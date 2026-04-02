@@ -115,25 +115,79 @@ export default function UsageTab() {
     <div className="max-w-3xl mx-auto py-8 space-y-8">
       {/* API Usage */}
       <div className="rounded-2xl p-6 border border-white/5" style={{ background: '#15151F' }}>
-        <h2 className="text-lg font-bold text-white mb-1">API Usage</h2>
-        <p className="text-xs text-white/30 mb-6">Monthly usage across services (free tier limits)</p>
+        <h2 className="text-lg font-bold text-white mb-1">Service Status</h2>
+        <p className="text-xs text-white/30 mb-6">All services running on free tiers — $0/month</p>
 
-        <div className="space-y-5">
-          <UsageBar
-            label="AssemblyAI" icon="🎙️"
-            used={data.assemblyai.used} limit={data.assemblyai.limit} unit={data.assemblyai.unit}
-            color="#6C5CE7"
-          />
-          <UsageBar
-            label="Groq LLM" icon="🧠"
-            used={data.groq.used} limit={data.groq.limit} unit={data.groq.unit}
-            color="#00B894"
-          />
-          <UsageBar
-            label="Supabase Storage" icon="💾"
-            used={data.supabase.used} limit={data.supabase.limit} unit={data.supabase.unit}
-            color="#FF6B6B"
-          />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">🎙️</span>
+              <div>
+                <div className="text-sm font-semibold text-white">Groq Whisper</div>
+                <div className="text-[10px] text-white/30">Transcription — whisper-large-v3</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs text-green-400 font-semibold">Free · Unlimited</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">🧠</span>
+              <div>
+                <div className="text-sm font-semibold text-white">Groq LLM</div>
+                <div className="text-[10px] text-white/30">Clip scoring — Llama 3.3 70B</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs text-green-400 font-semibold">Free · 14.4K req/day</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">✂️</span>
+              <div>
+                <div className="text-sm font-semibold text-white">FFmpeg Server</div>
+                <div className="text-[10px] text-white/30">Video download, clip export, subtitles</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs text-green-400 font-semibold">Local · Unlimited</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">💾</span>
+              <div>
+                <div className="text-sm font-semibold text-white">Supabase</div>
+                <div className="text-[10px] text-white/30">Job tracking database</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs text-green-400 font-semibold">Free · {data.supabase.used}MB / 1GB</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">🌐</span>
+              <div>
+                <div className="text-sm font-semibold text-white">Cloudflare Tunnel</div>
+                <div className="text-[10px] text-white/30">Public access to local server</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs text-green-400 font-semibold">Free · Unlimited</span>
+            </div>
+          </div>
         </div>
       </div>
 
