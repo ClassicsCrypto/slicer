@@ -1,12 +1,70 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clip, SubtitleWord, SubtitleOptions } from '@/types'
 
-/**
- * Groups words into display lines (~4-6 words each) and shows the
- * current line with word-level highlight animation.
- */
+interface SubtitleCue {
+  start: number
+  end: number
+  words: SubtitleWord[]
+}
+
+const SUBTITLE_FONT_FAMILIES: Record<string, string> = {
+  impact: 'Impact, Arial Black, sans-serif',
+  bebas: '"Bebas Neue", Impact, sans-serif',
+  montserrat: '"Montserrat", Arial, sans-serif',
+  sora: '"Sora", "Montserrat", sans-serif',
+  arial_black: '"Arial Black", Arial, sans-serif',
+  trebuchet: '"Trebuchet MS", sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  georgia: 'Georgia, serif',
+  times_new_roman: '"Times New Roman", serif',
+}
+
+function applyTextCase(text: string, textCase: SubtitleOptions['textCase'] = 'original') {
+  if (textCase === 'upper') return text.toUpperCase()
+  if (textCase === 'title') return text.replace(/\b\w/g, (char) => char.toUpperCase())
+  return text
+}
+
+function normalizeSubtitleWords(words: SubtitleWord[] = []) {
+  return [...words]
+    .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
+    .sort((a, b) => (a.start - b.start) || (a.end - b.end))
+}
+
+function buildSubtitleCues(words: SubtitleWord[]): SubtitleCue[] {
+  const orderedWords = normalizeSubtitleWords(words)
+  if (orderedWords.length === 0) return []
+
+  const cues: SubtitleCue[] = []
+  let cursor = 0
+
+  while (cursor < orderedWords.length) {
+    const cueWords: SubtitleWord[] = [orderedWords[cursor]]
+    const cueStart = orderedWords[cursor].start
+    cursor += 1
+
+    while (cursor < orderedWords.length) {
+      const previous = cueWords[cueWords.length - 1]
+      const next = orderedWords[cursor]
+      const gap = next.start - previous.end
+      const duration = next.end - cueStart
+      if (previous.breakAfter || cueWords.length >= 6 || gap > 0.75 || duration > 3.2) break
+      cueWords.push(next)
+      cursor += 1
+    }
+
+    cues.push({
+      start: cueWords[0].start,
+      end: cueWords[cueWords.length - 1].end,
+      words: cueWords,
+    })
+  }
+
+  return cues
+}
+
 function SubtitleOverlay({
   words,
   currentTime,
@@ -19,75 +77,169 @@ function SubtitleOverlay({
   options: SubtitleOptions
 }) {
   const fontSize = options.size === 'small' ? 'text-sm md:text-base' : options.size === 'large' ? 'text-xl md:text-2xl' : 'text-base md:text-lg'
-  const activeColor = options.color === 'custom' ? (options.customColor ?? '#FF4D4D') : options.color
+  const activeColor = options.color && options.color !== 'custom' ? options.color : (options.customColor ?? '#ffffff')
+  const outlineColor = options.outlineColor && options.outlineColor !== 'custom' ? options.outlineColor : (options.customOutlineColor ?? '#000000')
   const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
-  // Font family matching FFmpeg export
-  const fontFamily = options.font === 'bebas' ? '"Bebas Neue", Impact, sans-serif'
-    : options.font === 'montserrat' ? '"Montserrat", Arial, sans-serif'
-    : 'Impact, Arial Black, sans-serif'
-  // Group words into lines of ~5 words
-  const lines = useMemo(() => {
-    const result: SubtitleWord[][] = []
-    for (let i = 0; i < words.length; i += 5) {
-      result.push(words.slice(i, i + 5))
-    }
-    return result
-  }, [words])
+  const fontFamily = SUBTITLE_FONT_FAMILIES[options.font || 'impact'] || SUBTITLE_FONT_FAMILIES.impact
+  const subtitleMode = options.mode || (options.style === 'karaoke' ? 'karaoke' : 'phrase')
+  const animationPreset = options.animationPreset || 'pop'
+  const normalizedWords = useMemo(() => normalizeSubtitleWords(words), [words])
+  const cues = useMemo(() => buildSubtitleCues(normalizedWords), [normalizedWords])
 
-  // Find current line based on playback time
-  const currentLine = useMemo(() => {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i]
-      if (line.length > 0 && currentTime >= line[0].start - 0.1) {
-        // Check if we haven't passed this line entirely
-        const lastWord = line[line.length - 1]
-        if (currentTime <= lastWord.end + 1.0) {
-          return { index: i, words: line }
-        }
+  const currentCue = useMemo(() => {
+    for (let i = cues.length - 1; i >= 0; i -= 1) {
+      const cue = cues[i]
+      if (currentTime >= cue.start - 0.08 && currentTime <= cue.end + 0.55) {
+        return cue
       }
     }
     return null
-  }, [lines, currentTime])
+  }, [cues, currentTime])
 
-  if (!isPlaying || !currentLine) return null
+  const currentWordIndex = useMemo(() => {
+    if (!currentCue) return -1
+    return currentCue.words.findIndex((word, index) => {
+      const nextWord = currentCue.words[index + 1]
+      const wordEnd = nextWord ? Math.max(word.end, nextWord.start - 0.02) : word.end + 0.18
+      return currentTime >= word.start && currentTime <= wordEnd
+    })
+  }, [currentCue, currentTime])
 
-  // Outline thickness mapping (matches FFmpeg Outline=1/2/3)
-  const outlineColor = options.outlineColor || '#000000'
+  if (!isPlaying || !currentCue) return null
+
   const thickness = options.outlineThickness || 'medium'
   const px = thickness === 'none' ? 0 : thickness === 'thin' ? 1 : thickness === 'thick' ? 3 : 2
-  const outlineStrokes: string[] = []
+  const shadowParts: string[] = []
   if (px > 0) {
-    outlineStrokes.push(
-      `${-px}px ${-px}px 0 ${outlineColor}`, `${px}px ${-px}px 0 ${outlineColor}`,
-      `${-px}px ${px}px 0 ${outlineColor}`, `${px}px ${px}px 0 ${outlineColor}`,
-      `${-px-1}px 0 0 ${outlineColor}`, `${px+1}px 0 0 ${outlineColor}`,
-      `0 ${-px-1}px 0 ${outlineColor}`, `0 ${px+1}px 0 ${outlineColor}`,
+    shadowParts.push(
+      `${-px}px ${-px}px 0 ${outlineColor}`,
+      `${px}px ${-px}px 0 ${outlineColor}`,
+      `${-px}px ${px}px 0 ${outlineColor}`,
+      `${px}px ${px}px 0 ${outlineColor}`,
+      `${-px - 1}px 0 0 ${outlineColor}`,
+      `${px + 1}px 0 0 ${outlineColor}`,
+      `0 ${-px - 1}px 0 ${outlineColor}`,
+      `0 ${px + 1}px 0 ${outlineColor}`,
     )
   }
-  if (options.shadow) outlineStrokes.push(`2px 2px 4px rgba(0,0,0,0.7)`)
-  const textStroke = outlineStrokes.join(', ')
+  if (options.shadow) shadowParts.push('2px 2px 4px rgba(0,0,0,0.7)')
+  const textShadow = shadowParts.join(', ')
+  const dimColor = 'rgba(255,255,255,0.32)'
+  const spokenColor = 'rgba(255,255,255,0.9)'
+  const textTransform = options.textCase === 'upper' ? 'uppercase' : options.textCase === 'title' ? 'capitalize' : 'none'
+  const cueAnimationName = animationPreset === 'fade' ? 'subtitle-fade-in' : animationPreset === 'pop' ? 'subtitle-pop-in' : 'none'
+  const cueAnimationStyle = cueAnimationName === 'none' ? undefined : `${cueAnimationName} ${animationPreset === 'fade' ? '260ms ease-out' : '180ms cubic-bezier(0.2, 0.9, 0.2, 1)'} both`
+  const cueKey = subtitleMode === 'phrase'
+    ? `${subtitleMode}-${currentCue.start}`
+    : `${subtitleMode}-${currentCue.start}-${Math.max(currentWordIndex, 0)}`
 
-  // Text case
-  const textTransform = (options.textCase || 'original') === 'upper' ? 'uppercase'
-    : (options.textCase || 'original') === 'title' ? 'capitalize' : 'none'
+  const getAnimatedStyle = (active: boolean) => {
+    if (!active || animationPreset === 'none') {
+      return { opacity: 1, transform: 'scale(1) translateY(0px)', filter: 'none' }
+    }
+    if (animationPreset === 'fade') {
+      return { opacity: 1, transform: 'scale(1) translateY(0px)', filter: 'brightness(1.18)' }
+    }
+    return { opacity: 1, transform: 'scale(1.22) translateY(-3px)', filter: 'brightness(1.28)' }
+  }
+
+  const renderPhraseMode = () => (
+    <div
+      key={cueKey}
+      className={`text-center ${fontSize} leading-relaxed`}
+      style={{
+        fontFamily,
+        fontWeight: 700,
+        letterSpacing: '0.03em',
+        animation: cueAnimationStyle,
+      }}
+    >
+      {currentCue.words.map((word, index) => (
+        <span
+          key={`${currentCue.start}-${index}`}
+          style={{
+            color: activeColor,
+            textShadow,
+            textTransform: textTransform as any,
+          }}
+        >
+          {applyTextCase(word.text, options.textCase)}{' '}
+        </span>
+      ))}
+    </div>
+  )
+
+  const renderKaraokeMode = () => (
+    <div
+      key={cueKey}
+      className={`flex flex-wrap justify-center gap-x-2.5 gap-y-1.5 text-center ${fontSize}`}
+      style={{
+        fontFamily,
+        fontWeight: 700,
+        letterSpacing: '0.025em',
+        animation: cueAnimationStyle,
+      }}
+    >
+      {currentCue.words.map((word, index) => {
+        const isActive = index === currentWordIndex
+        const isSpoken = index < currentWordIndex
+        const animatedStyle = getAnimatedStyle(isActive)
+        return (
+          <span
+            key={`${currentCue.start}-${index}`}
+            style={{
+              color: isActive ? activeColor : isSpoken ? spokenColor : dimColor,
+              textShadow,
+              textTransform: textTransform as any,
+              opacity: isActive ? animatedStyle.opacity : 1,
+              transform: animatedStyle.transform,
+              filter: animatedStyle.filter,
+              transition: 'color 100ms ease, transform 120ms ease, opacity 120ms ease, filter 120ms ease',
+              display: 'inline-flex',
+              lineHeight: 1.1,
+            }}
+          >
+            {applyTextCase(word.text, options.textCase)}
+          </span>
+        )
+      })}
+    </div>
+  )
+
+  const renderWordPopMode = () => {
+    const activeWord = currentCue.words[Math.max(0, currentWordIndex)] || currentCue.words[0]
+    const animatedStyle = getAnimatedStyle(true)
+    return (
+      <p
+        key={cueKey}
+        className={`text-center ${options.size === 'small' ? 'text-lg md:text-xl' : options.size === 'large' ? 'text-3xl md:text-4xl' : 'text-2xl md:text-3xl'} leading-tight`}
+        style={{
+          fontFamily,
+          fontWeight: 800,
+          letterSpacing: '0.045em',
+          color: activeColor,
+          textShadow,
+          textTransform: textTransform as any,
+          transform: animatedStyle.transform,
+          opacity: animatedStyle.opacity,
+          filter: animatedStyle.filter,
+          animation: cueAnimationStyle,
+          transition: 'transform 120ms ease, opacity 120ms ease, filter 120ms ease',
+        }}
+      >
+        {applyTextCase(activeWord.text, options.textCase)}
+      </p>
+    )
+  }
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
       <div className="max-w-[90%]">
-        <p className={`text-center ${fontSize} leading-relaxed`} style={{ fontFamily, fontWeight: 700, letterSpacing: '0.02em' }}>
-          {currentLine.words.map((word, i) => (
-            <span
-              key={`${currentLine.index}-${i}`}
-              style={{
-                color: activeColor,
-                textShadow: textStroke,
-                textTransform: textTransform as any,
-              }}
-            >
-              {word.text}{' '}
-            </span>
-          ))}
-        </p>
+        {subtitleMode === 'word_pop'
+          ? renderWordPopMode()
+          : subtitleMode === 'karaoke'
+            ? renderKaraokeMode()
+            : renderPhraseMode()}
       </div>
     </div>
   )
@@ -98,51 +250,72 @@ interface ClipPlayerProps {
   sourceUrl: string
   subtitleOptions?: SubtitleOptions
   onTrimChange?: (start: number, end: number) => void
+  onPlaybackTimeChange?: (time: number) => void
+  externalSeekTime?: number | null
 }
 
 const DEFAULT_SUB_OPTS: SubtitleOptions = {
-  enabled: true, size: 'medium', color: '#ffffff',
-  position: 'bottom', style: 'bold', background: 'none', font: 'impact', textCase: 'original' as const,
+  enabled: true,
+  size: 'medium',
+  color: '#ffffff',
+  position: 'bottom',
+  style: 'bold',
+  background: 'none',
+  font: 'impact',
+  mode: 'phrase',
+  animationPreset: 'pop',
+  textCase: 'original',
+  watermarkEnabled: true,
 }
 
-export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimChange }: ClipPlayerProps) {
+export default function ClipPlayer({
+  clip,
+  sourceUrl,
+  subtitleOptions,
+  onTrimChange,
+  onPlaybackTimeChange,
+  externalSeekTime,
+}: ClipPlayerProps) {
   const subOpts = subtitleOptions ?? DEFAULT_SUB_OPTS
   const videoRef = useRef<HTMLVideoElement>(null)
   const scrubRef = useRef<HTMLDivElement>(null)
-  const [currentRelative, setCurrentRelative] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  
-  // Trim state — relative to original clip boundaries (0 to duration)
+
   const originalDuration = clip.end_time - clip.start_time
   const [trimStart, setTrimStart] = useState(0)
   const [trimEnd, setTrimEnd] = useState(originalDuration)
   const [dragging, setDragging] = useState<'start' | 'end' | null>(null)
-  
-  const trimmedDuration = trimEnd - trimStart
+
+  const trimmedDuration = Math.max(0.1, trimEnd - trimStart)
   const effectiveStart = clip.start_time + trimStart
   const effectiveEnd = clip.start_time + trimEnd
 
-  // Notify parent of trim changes
   useEffect(() => {
-    if (onTrimChange) onTrimChange(effectiveStart, effectiveEnd)
+    onTrimChange?.(effectiveStart, effectiveEnd)
   }, [effectiveStart, effectiveEnd, onTrimChange])
 
-  // Enforce start/end boundaries using trim handles
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
     video.currentTime = effectiveStart
+    setCurrentTime(trimStart)
+    onPlaybackTimeChange?.(trimStart)
 
     const handleTimeUpdate = () => {
       if (video.currentTime >= effectiveEnd) {
         video.pause()
         video.currentTime = effectiveStart
         setIsPlaying(false)
-        setCurrentRelative(0)
+        setCurrentTime(trimStart)
+        onPlaybackTimeChange?.(trimStart)
         return
       }
-      setCurrentRelative(video.currentTime - effectiveStart)
+
+      const nextTime = Math.max(trimStart, Math.min(trimEnd, video.currentTime - clip.start_time))
+      setCurrentTime(nextTime)
+      onPlaybackTimeChange?.(nextTime)
     }
 
     const handlePlay = () => setIsPlaying(true)
@@ -157,19 +330,34 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
     }
-  }, [effectiveStart, effectiveEnd])
+  }, [clip.start_time, effectiveEnd, effectiveStart, onPlaybackTimeChange, trimEnd, trimStart])
+
+  useEffect(() => {
+    if (externalSeekTime === null || externalSeekTime === undefined) return
+    const video = videoRef.current
+    if (!video) return
+
+    const nextTime = Math.max(trimStart, Math.min(trimEnd, externalSeekTime))
+    video.currentTime = clip.start_time + nextTime
+    setCurrentTime(nextTime)
+    onPlaybackTimeChange?.(nextTime)
+  }, [clip.start_time, externalSeekTime, onPlaybackTimeChange, trimEnd, trimStart])
 
   const togglePlay = () => {
     const video = videoRef.current
     if (!video) return
+
     if (isPlaying) {
       video.pause()
-    } else {
-      if (video.currentTime >= effectiveEnd || video.currentTime < effectiveStart) {
-        video.currentTime = effectiveStart
-      }
-      video.play()
+      return
     }
+
+    if (video.currentTime >= effectiveEnd || video.currentTime < effectiveStart) {
+      video.currentTime = effectiveStart
+      setCurrentTime(trimStart)
+      onPlaybackTimeChange?.(trimStart)
+    }
+    video.play()
   }
 
   const handleScrub = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -177,58 +365,59 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
     if (!video || !scrubRef.current) return
     const rect = scrubRef.current.getBoundingClientRect()
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    // Scrub within trimmed range
-    const newTime = effectiveStart + ratio * trimmedDuration
-    video.currentTime = newTime
+    const newTime = trimStart + ratio * trimmedDuration
+    video.currentTime = clip.start_time + newTime
+    setCurrentTime(newTime)
+    onPlaybackTimeChange?.(newTime)
   }
 
   const handleTrimDrag = (e: React.MouseEvent<HTMLDivElement>, handle: 'start' | 'end') => {
     e.preventDefault()
     e.stopPropagation()
     setDragging(handle)
-    
+
     const onMove = (ev: MouseEvent) => {
       if (!scrubRef.current) return
       const rect = scrubRef.current.getBoundingClientRect()
       const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
       const timePos = ratio * originalDuration
-      
+
       if (handle === 'start') {
-        setTrimStart(Math.min(timePos, trimEnd - 2)) // min 2s clip
+        setTrimStart(Math.min(timePos, trimEnd - 2))
       } else {
-        setTrimEnd(Math.max(timePos, trimStart + 2)) // min 2s clip
+        setTrimEnd(Math.max(timePos, trimStart + 2))
       }
     }
-    
+
     const onUp = () => {
       setDragging(null)
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
-      // Seek to new start if needed
       const video = videoRef.current
-      if (video && handle === 'start') {
-        video.currentTime = clip.start_time + trimStart
+      if (video) {
+        const seekTime = handle === 'start' ? Math.min(trimStart, trimEnd - 2) : Math.max(trimStart, trimEnd)
+        video.currentTime = clip.start_time + seekTime
       }
     }
-    
+
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
 
-  const progress = trimmedDuration > 0 ? (currentRelative / trimmedDuration) * 100 : 0
+  const progress = trimmedDuration > 0 ? ((currentTime - trimStart) / trimmedDuration) * 100 : 0
   const trimStartPct = (trimStart / originalDuration) * 100
   const trimEndPct = (trimEnd / originalDuration) * 100
   const isTrimmed = trimStart > 0.1 || trimEnd < originalDuration - 0.1
+  const relativeTime = Math.max(0, currentTime - trimStart)
 
-  function fmt(s: number): string {
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${sec.toString().padStart(2, '0')}`
+  function fmt(seconds: number): string {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   return (
     <div className="rounded-xl overflow-hidden border border-white/10" style={{ background: '#0A0A0F' }}>
-      {/* Video */}
       <div className="relative aspect-video bg-black">
         <video
           ref={videoRef}
@@ -238,7 +427,6 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           playsInline
         />
 
-        {/* Play button overlay */}
         {!isPlaying && (
           <button
             onClick={togglePlay}
@@ -253,7 +441,6 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           </button>
         )}
 
-        {/* Click to pause when playing */}
         {isPlaying && (
           <button
             onClick={togglePlay}
@@ -261,27 +448,20 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           />
         )}
 
-        {/* Animated subtitles — offset by trim amount */}
         {subOpts.enabled && clip.subtitles && clip.subtitles.length > 0 && (
           <SubtitleOverlay
-            words={clip.subtitles
-              .map(w => ({ ...w, start: w.start - trimStart, end: w.end - trimStart }))
-              .filter(w => w.end > 0 && w.start < trimmedDuration)}
-            currentTime={currentRelative}
+            words={clip.subtitles.filter((word) => word.end > trimStart && word.start < trimEnd)}
+            currentTime={currentTime}
             isPlaying={isPlaying}
             options={subOpts}
           />
         )}
       </div>
 
-      {/* Controls with trim handles */}
       <div className="px-4 py-3 space-y-2">
-        {/* Trim scrubber */}
         <div ref={scrubRef} className="relative h-8 select-none">
-          {/* Background track */}
           <div className="absolute top-3 left-0 right-0 h-2 rounded-full bg-white/10" />
-          
-          {/* Dimmed regions outside trim */}
+
           <div
             className="absolute top-3 left-0 h-2 rounded-l-full bg-black/50"
             style={{ width: `${trimStartPct}%` }}
@@ -290,8 +470,7 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
             className="absolute top-3 right-0 h-2 rounded-r-full bg-black/50"
             style={{ width: `${100 - trimEndPct}%` }}
           />
-          
-          {/* Active trim region */}
+
           <div
             className="absolute top-3 h-2 cursor-pointer"
             style={{
@@ -301,8 +480,7 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
             }}
             onClick={handleScrub}
           />
-          
-          {/* Playback progress */}
+
           <div
             className="absolute top-3 h-2 rounded-l-full pointer-events-none"
             style={{
@@ -311,8 +489,7 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
               background: 'linear-gradient(90deg, #FF4D4D, #FF6B6B)',
             }}
           />
-          
-          {/* Start trim handle */}
+
           <div
             className={`absolute top-0 w-3 h-8 rounded-sm cursor-ew-resize transition-colors ${
               dragging === 'start' ? 'bg-red-400' : 'bg-white/70 hover:bg-white'
@@ -323,8 +500,7 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           >
             <div className="absolute inset-x-0.5 top-2 bottom-2 border-x border-black/30" />
           </div>
-          
-          {/* End trim handle */}
+
           <div
             className={`absolute top-0 w-3 h-8 rounded-sm cursor-ew-resize transition-colors ${
               dragging === 'end' ? 'bg-red-400' : 'bg-white/70 hover:bg-white'
@@ -337,9 +513,8 @@ export default function ClipPlayer({ clip, sourceUrl, subtitleOptions, onTrimCha
           </div>
         </div>
 
-        {/* Time display */}
         <div className="flex items-center justify-between text-xs text-white/40">
-          <span>{fmt(currentRelative)}</span>
+          <span>{fmt(relativeTime)}</span>
           <span className="text-white/20">
             {isTrimmed ? `trimmed: ${fmt(trimmedDuration)}` : `clip: ${fmt(originalDuration)}`}
           </span>

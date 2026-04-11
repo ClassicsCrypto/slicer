@@ -1,30 +1,44 @@
 'use client'
 
+import Image from 'next/image'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Job, Clip, SubtitleWord, SubtitleOptions, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase, SubtitleSize, SubtitleFont, SubtitleColor, SubtitlePosition } from '@/types'
+import { Job, Clip, SubtitleOptions } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
+import { getClipStableId } from '@/lib/clip-id'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
-import ClipPlayer from '@/components/dashboard/ClipPlayer'
+import ClipPreviewEditor from '@/components/dashboard/ClipPreviewEditor'
 import ProcessingView from '@/components/dashboard/ProcessingView'
 
 interface ClipsGalleryProps {
   initialJobs?: Job[]
 }
 
-function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd, originalStartTime }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null; originalStartTime?: number }) {
+function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd, originalStartTime, onAspectRatioChange, onWatermarkToggle }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null; originalStartTime?: number; onAspectRatioChange?: (ratio: string) => void; onWatermarkToggle?: (enabled: boolean) => void }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState('')
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState(aspectRatio || 'custom')
+  const watermarkEnabled = subtitleOptions?.watermarkEnabled !== false
+
+  useEffect(() => {
+    setSelectedAspectRatio(aspectRatio || 'custom')
+  }, [aspectRatio])
+
+  const handleAspectRatioChange = (ratio: string) => {
+    setSelectedAspectRatio(ratio)
+    if (onAspectRatioChange) onAspectRatioChange(ratio)
+  }
 
   const handleDownload = async () => {
     setDownloading(true)
     setProgress('Cutting clip...')
-    
+
     console.log('[Slicer] Export clip subtitles:', clip.subtitles?.length || 0, 'words')
     console.log('[Slicer] First 3 words:', JSON.stringify(clip.subtitles?.slice(0, 3)))
     console.log('[Slicer] Subtitle options sent:', JSON.stringify(subtitleOptions))
-    console.log('[Slicer] Times — clip.start_time:', clip.start_time, 'trimStart:', trimStart, 'trimEnd:', trimEnd, 'originalStartTime:', originalStartTime)
+    console.log('[Slicer] Aspect ratio:', selectedAspectRatio)
+    console.log('[Slicer] Times - clip.start_time:', clip.start_time, 'trimStart:', trimStart, 'trimEnd:', trimEnd, 'originalStartTime:', originalStartTime)
 
     try {
       const apiBase = await getApiUrl()
@@ -39,10 +53,10 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
           subtitles: clip.subtitles || [],
           subtitleOptions: subtitleOptions || {
             enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
-            style: 'bold', background: 'none', font: 'impact',
-            outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'original',
+            style: 'bold', background: 'none', font: 'impact', mode: 'phrase', animationPreset: 'pop',
+            outlineThickness: 'medium', outlineColor: '#000000', shadow: true, textCase: 'original', watermarkEnabled: true,
           },
-          aspectRatio: aspectRatio || 'custom',
+          aspectRatio: selectedAspectRatio,
           originalStartTime: originalStartTime ?? clip.start_time,
         }),
       })
@@ -64,7 +78,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
       a.click()
       URL.revokeObjectURL(url)
 
-      setProgress('✅ Done!')
+      setProgress('Done!')
       setTimeout(() => { setDownloading(false); setProgress('') }, 2000)
     } catch {
       setProgress('Server not available')
@@ -73,21 +87,60 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
   }
 
   return (
-    <button
-      onClick={handleDownload}
-      disabled={downloading}
-      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white transition-all hover:opacity-90 disabled:opacity-50"
-      style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
-    >
-      {downloading ? (
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          {progress}
-        </span>
-      ) : (
-        '⬇️ Export Clip'
-      )}
-    </button>
+    <div className="flex-1 space-y-2">
+      {/* Aspect Ratio Selector */}
+      <div>
+        <label className="block text-[10px] text-white/40 mb-1 uppercase tracking-wider">Export Format</label>
+        <div className="grid grid-cols-4 gap-1">
+          {[
+            { value: 'twitter', label: '16:9', desc: 'Landscape' },
+            { value: 'tiktok', label: '9:16', desc: 'Portrait' },
+            { value: 'youtube_shorts', label: '1:1', desc: 'Square' },
+            { value: 'custom', label: 'Original', desc: 'No crop' },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleAspectRatioChange(opt.value)}
+              className={`py-2 px-1 rounded text-[10px] font-semibold transition-all ${
+                selectedAspectRatio === opt.value
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  : 'bg-white/5 text-white/40 border border-white/10 hover:border-white/20'
+              }`}
+              title={opt.desc}
+            >
+              <div>{opt.label}</div>
+              <div className="text-[8px] text-white/30">{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onWatermarkToggle?.(!watermarkEnabled)}
+          className={`min-w-[132px] rounded-lg border px-3 py-2.5 text-sm font-semibold transition-all ${watermarkEnabled ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-white/10 bg-black/20 text-white/55 hover:border-white/20'}`}
+        >
+          Watermark {watermarkEnabled ? 'On' : 'Off'}
+        </button>
+
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white transition-all hover:opacity-90 disabled:opacity-50"
+          style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
+        >
+          {downloading ? (
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              {progress}
+            </span>
+          ) : (
+            'Export Clip'
+          )}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -105,18 +158,58 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+function cleanClipReason(reason?: string): string {
+  const cleaned = (reason || '')
+    .replace(/^reason\s*[:\-]\s*/i, '')
+    .replace(/^this clip was selected because\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) return 'Selected by the scorer.'
+  return cleaned[0].toUpperCase() + cleaned.slice(1)
+}
+
+function formatClipShortfallReason(requested: number, delivered: number, raw?: string): string | null {
+  if (requested <= delivered) return null
+
+  if (raw && /fewer unique moments/i.test(raw)) {
+    return `Requested ${requested}, delivered ${delivered}. The scorer finished cleanly but only found ${delivered} distinct moments worth keeping.`
+  }
+
+  return raw || `Requested ${requested}, delivered ${delivered}. This run finished, but only ${delivered} clip${delivered === 1 ? '' : 's'} made the final cut.`
+}
+
+function formatFailureReason(raw?: string): string | null {
+  const text = raw?.trim()
+  if (!text) return null
+  if (/503/.test(text) || /UNAVAILABLE/i.test(text)) {
+    return 'Gemini got overloaded during scoring. Hit Retry and it should usually recover on the next pass.'
+  }
+  if (/0 clips/i.test(text)) {
+    return 'The scorer finished but did not find enough usable moments in this run. Retry or rescore it.'
+  }
+  if (/No usable audio track found/i.test(text)) {
+    return 'No usable audio track was found in the source media.'
+  }
+  return text.replace(/\s+/g, ' ')
+}
+
 function ClipCard({
   clip,
   sourceUrl,
   onPreview,
+  onDelete,
 }: {
   clip: Clip
   sourceUrl: string
   onPreview: (clip: Clip) => void
+  onDelete: (clipId: string) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const clipDuration = Number.isFinite(clip.duration) ? clip.duration : Math.max(0, clip.end_time - clip.start_time)
 
   useEffect(() => {
     // Client-side thumbnail: seek video to mid-clip and capture frame
@@ -124,7 +217,7 @@ function ClipCard({
     video.crossOrigin = 'anonymous'
     video.preload = 'metadata'
     video.muted = true
-    const midTime = clip.start_time + (clip.duration / 2)
+    const midTime = clip.start_time + (clipDuration / 2)
 
     video.addEventListener('loadedmetadata', () => {
       video.currentTime = midTime
@@ -139,23 +232,22 @@ function ClipCard({
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
           setThumbUrl(canvas.toDataURL('image/jpeg', 0.7))
         }
-      } catch { /* CORS or other error — fall back to video element */ }
+      } catch { /* CORS or other error - fall back to video element */ }
       video.src = '' // cleanup
     })
     video.src = sourceUrl
     return () => { video.src = '' }
-  }, [sourceUrl, clip.start_time, clip.duration])
+  }, [sourceUrl, clip.start_time, clip.end_time, clipDuration])
 
   return (
     <div
-      className="rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all cursor-pointer group"
+      className="rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all group relative"
       style={{ background: '#15151F' }}
-      onClick={() => onPreview(clip)}
     >
       {/* Thumbnail */}
-      <div className="relative aspect-video bg-black/50 flex items-center justify-center">
+      <div className="relative aspect-video bg-black/50 flex items-center justify-center cursor-pointer" onClick={() => onPreview(clip)}>
         {thumbUrl ? (
-          <img src={thumbUrl} alt="Clip thumbnail" className="w-full h-full object-cover" />
+          <Image src={thumbUrl} alt="Clip thumbnail" fill unoptimized className="object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-black/30">
             <span className="w-6 h-6 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />
@@ -171,7 +263,7 @@ function ClipCard({
         </div>
         {/* Duration badge */}
         <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded font-mono">
-          {Math.round(clip.duration)}s
+          {Math.round(clipDuration)}s
         </div>
         {/* Virality score moved to description area below */}
       </div>
@@ -182,7 +274,7 @@ function ClipCard({
           <div className={`text-xs font-semibold mb-1 ${
             clip.virality_score >= 8 ? 'text-red-400' : clip.virality_score >= 6 ? 'text-yellow-400' : 'text-white/40'
           }`}>
-            🔥 {clip.virality_score}/10 — {
+            Score {clip.virality_score}/10 - {
               clip.virality_score >= 10 ? 'VIRAL'
               : clip.virality_score >= 8 ? 'Incredible'
               : clip.virality_score >= 6 ? 'Solid'
@@ -191,11 +283,31 @@ function ClipCard({
             }
           </div>
         )}
-        <p className="text-xs text-white/40 mb-2 line-clamp-2">{clip.ai_reason}</p>
+        <p className="text-xs text-white/40 mb-2 line-clamp-2">{cleanClipReason(clip.ai_reason)}</p>
         <div className="flex flex-wrap gap-1">
           {clip.matched_categories.slice(0, 3).map((cat) => (
             <Badge key={cat} variant="dark">{formatCategory(cat)}</Badge>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => onPreview(clip)}
+            className="min-w-[88px] flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/75 transition-all hover:border-white/20 hover:text-white"
+          >
+            Preview
+          </button>
+          <button
+            onClick={() => {
+              if (confirm('Delete this clip?')) {
+                setDeleting(true)
+                onDelete(getClipStableId(clip))
+              }
+            }}
+            disabled={deleting}
+            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 transition-all hover:bg-red-500/20 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
         </div>
       </div>
     </div>
@@ -205,28 +317,88 @@ function ClipCard({
 function JobCard({
   job,
   onDelete,
+  onRetry,
+  onRescore,
   onJobComplete,
+  onClipDelete,
 }: {
   job: Job
   onDelete: (id: string) => void
+  onRetry: (id: string) => void
+  onRescore: (id: string) => void
   onJobComplete: (job: Job) => void
+  onClipDelete: (jobId: string, clipId: string) => void
 }) {
   const [previewClip, setPreviewClip] = useState<Clip | null>(null)
-  const [editedTranscript, setEditedTranscript] = useState<string>('')
-  const [showTranscript, setShowTranscript] = useState(false)
-  const [aiCaption, setAiCaption] = useState<string>('')
-  const [captionLoading, setCaptionLoading] = useState(false)
-  const [copiedCaption, setCopiedCaption] = useState<string | null>(null)
   const [trimmedStart, setTrimmedStart] = useState<number | null>(null)
   const [trimmedEnd, setTrimmedEnd] = useState<number | null>(null)
-  const [liveSubOpts, setLiveSubOpts] = useState(job.options?.subtitles || {
-    enabled: true, size: 'medium' as const, color: '#ffffff' as const, position: 'bottom' as const,
-    style: 'bold' as const, background: 'none' as const, font: 'impact' as const,
-    outlineThickness: 'medium' as const, outlineColor: '#000000' as const, shadow: true, textCase: 'original' as const,
-  })
+  const [clipSubtitleOptions, setClipSubtitleOptions] = useState<Record<string, SubtitleOptions>>({})
+  const [clipAspectRatios, setClipAspectRatios] = useState<Record<string, string>>({})
+  const [clipEdits, setClipEdits] = useState<Record<string, Clip>>({})
+
+  const defaultSubtitleOptions: SubtitleOptions = job.options?.subtitles
+    ? { ...job.options.subtitles }
+    : {
+        enabled: true,
+        size: 'medium',
+        color: '#ffffff',
+        position: 'bottom',
+        style: 'bold',
+        background: 'none',
+        font: 'impact',
+        mode: 'phrase',
+        animationPreset: 'pop',
+        outlineThickness: 'medium',
+        outlineColor: '#000000',
+        shadow: true,
+        textCase: 'original',
+        watermarkEnabled: true,
+      }
+
+  const getClipSubtitleOptions = (clipId: string): SubtitleOptions => (
+    clipSubtitleOptions[clipId] ? { ...clipSubtitleOptions[clipId] } : { ...defaultSubtitleOptions }
+  )
+
+  const updateClipSubtitleOptions = (clipId: string, nextOptions: SubtitleOptions) => {
+    setClipSubtitleOptions((prev) => ({ ...prev, [clipId]: nextOptions }))
+  }
+
+  const getClipAspectRatio = (clipId: string) => clipAspectRatios[clipId] || 'custom'
+
+  const updateClipAspectRatio = (clipId: string, nextRatio: string) => {
+    setClipAspectRatios((prev) => ({ ...prev, [clipId]: nextRatio }))
+  }
 
   const isProcessing = job.status === 'processing'
-  const clips = job.clips ?? []
+  const clips = (job.clips ?? []).map((clip) => {
+    const clipId = getClipStableId(clip)
+    return clipEdits[clipId] ? { ...clipEdits[clipId] } : { ...clip, id: clipId }
+  })
+  const requestedClipCount = job.progress?.requestedClipCount ?? job.options?.clipCount ?? clips.length
+  const deliveredClipCount = job.progress?.deliveredClipCount ?? clips.length
+  const streamContext = job.progress?.streamContext
+  const clipShortfallReason = formatClipShortfallReason(requestedClipCount, deliveredClipCount, job.progress?.clipShortfallReason)
+  const failureReason = formatFailureReason(job.progress?.progress)
+  const previewDuration = previewClip
+    ? (Number.isFinite(previewClip.duration) ? previewClip.duration : Math.max(0, previewClip.end_time - previewClip.start_time))
+    : 0
+
+  const handleClipDelete = (clipId: string) => {
+    setClipEdits((prev) => {
+      const next = { ...prev }
+      delete next[clipId]
+      return next
+    })
+    onClipDelete(job.id, clipId)
+  }
+
+  const handlePreviewClipChange = (updatedClip: Clip) => {
+    setClipEdits((prev) => ({ ...prev, [updatedClip.id]: updatedClip }))
+    setPreviewClip(updatedClip)
+  }
+
+  const previewSubtitleOptions = previewClip ? getClipSubtitleOptions(previewClip.id) : defaultSubtitleOptions
+  const previewAspectRatio = previewClip ? getClipAspectRatio(previewClip.id) : 'custom'
 
   return (
     <div
@@ -238,16 +410,47 @@ function JobCard({
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-white truncate">{job.title}</h3>
           <p className="text-xs text-white/30 mt-0.5">{timeAgo(job.created_at)}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-white/45">
+            <span>Requested {requestedClipCount}</span>
+            <span>•</span>
+            <span>Delivered {deliveredClipCount}</span>
+            {streamContext && (
+              <>
+                <span>•</span>
+                <span className="truncate max-w-[220px]">{streamContext}</span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3 ml-4">
           {job.status === 'complete' && (
-            <Badge variant="green">✅ {clips.length} clips</Badge>
+            <Badge variant="green">Done {deliveredClipCount} clips</Badge>
           )}
           {job.status === 'processing' && (
-            <Badge variant="dark">⏳ Processing</Badge>
+            <Badge variant="dark">Processing</Badge>
           )}
           {job.status === 'failed' && (
-            <Badge variant="red">❌ Failed</Badge>
+            <Badge variant="red">Failed</Badge>
+          )}
+          {job.status === 'failed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onRetry(job.id) }}
+              className="text-white/50 hover:text-white"
+            >
+              Retry
+            </Button>
+          )}
+          {job.status === 'complete' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onRescore(job.id) }}
+              className="text-white/40 hover:text-white"
+            >
+              Rescore
+            </Button>
           )}
           {job.status !== 'processing' && (
             <Button
@@ -256,29 +459,51 @@ function JobCard({
               onClick={(e) => { e.stopPropagation(); onDelete(job.id) }}
               className="text-white/30 hover:text-red-400"
             >
-              🗑
+              Delete
             </Button>
           )}
         </div>
       </div>
 
       {/* Body */}
-      <div className="p-5">
+      <div className="p-4">
+        {!!clipShortfallReason && !isProcessing && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/80">
+            {clipShortfallReason}
+          </div>
+        )}
+        {job.status === 'failed' && failureReason && (
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-100/80">
+            {failureReason}
+          </div>
+        )}
         {isProcessing ? (
           <ProcessingView job={job} onComplete={onJobComplete} />
         ) : clips.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {clips.map((clip) => (
               <ClipCard
-                key={clip.id}
+                key={getClipStableId(clip)}
                 clip={clip}
                 sourceUrl={job.source_url}
                 onPreview={setPreviewClip}
+                onDelete={handleClipDelete}
               />
             ))}
           </div>
         ) : (
-          <p className="text-white/30 text-sm text-center py-6">No clips generated.</p>
+          <div className="flex items-center justify-center py-6">
+            <div className="relative flex min-h-[180px] w-full items-center justify-center overflow-hidden rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-6 py-8">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_62%)]" />
+              <Image
+                src="/slicer-watermark-white.png"
+                alt="Slicer watermark"
+                width={1024}
+                height={1024}
+                className="relative z-10 h-auto w-[260px] opacity-30 drop-shadow-[0_0_42px_rgba(255,77,77,0.16)] md:w-[360px]"
+              />
+            </div>
+          </div>
         )}
       </div>
 
@@ -287,256 +512,35 @@ function JobCard({
         <Modal
           open={!!previewClip}
           onClose={() => setPreviewClip(null)}
-          title={`Clip • ${Math.round(previewClip.duration)}s`}
-          maxWidth="max-w-2xl"
+          title={`Clip - ${Math.round(previewDuration)}s`}
+          maxWidth="max-w-5xl"
         >
-          <ClipPlayer
+          <ClipPreviewEditor
             clip={previewClip}
+            jobTitle={job.title}
             sourceUrl={job.source_url}
-            subtitleOptions={liveSubOpts}
+            subtitleOptions={previewSubtitleOptions}
+            exportAspectRatio={previewAspectRatio as 'twitter' | 'tiktok' | 'youtube_shorts' | 'custom'}
+            onSubtitleOptionsChange={(next) => updateClipSubtitleOptions(previewClip.id, next)}
+            onClipChange={handlePreviewClipChange}
             onTrimChange={(s, e) => { setTrimmedStart(s); setTrimmedEnd(e) }}
-          />
-
-          {/* Inline subtitle settings */}
-          <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10 space-y-2">
-            <p className="text-xs text-white/40 font-semibold uppercase tracking-wider">Subtitle Style</p>
-            <div className="grid grid-cols-2 gap-2">
-              {/* Font */}
-              <div>
-                <label className="text-[10px] text-white/30">Font</label>
-                <div className="flex gap-1 mt-0.5">
-                  {([{ v: 'impact' as SubtitleFont, l: 'Impact' }, { v: 'bebas' as SubtitleFont, l: 'Bebas' }, { v: 'montserrat' as SubtitleFont, l: 'Mont' }]).map(f => (
-                    <button key={f.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, font: f.v })}
-                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.font || 'impact') === f.v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{f.l}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Size */}
-              <div>
-                <label className="text-[10px] text-white/30">Size</label>
-                <div className="flex gap-1 mt-0.5">
-                  {(['small', 'medium', 'large'] as SubtitleSize[]).map(v => (
-                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, size: v })}
-                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.size || 'medium') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{v[0].toUpperCase()}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Text Color */}
-              <div>
-                <label className="text-[10px] text-white/30">Text Color</label>
-                <div className="flex gap-1 mt-0.5">
-                  {([{ v: '#ffffff' as SubtitleColor, l: '⬜' }, { v: '#ffff00' as SubtitleColor, l: '🟨' }, { v: '#FF4D4D' as SubtitleColor, l: '🟥' }]).map(c => (
-                    <button key={c.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, color: c.v })}
-                      className={`flex-1 py-1 rounded text-xs transition-all ${(liveSubOpts.color || '#ffffff') === c.v ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}
-                    >{c.l}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Outline Thickness */}
-              <div>
-                <label className="text-[10px] text-white/30">Outline</label>
-                <div className="flex gap-1 mt-0.5">
-                  {(['none', 'thin', 'medium', 'thick'] as Array<SubtitleOutlineThickness | 'none'>).map(v => (
-                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineThickness: v as SubtitleOutlineThickness })}
-                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.outlineThickness || 'medium') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{v === 'none' ? 'Off' : v}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Outline Color */}
-              <div>
-                <label className="text-[10px] text-white/30">Outline Color</label>
-                <div className="flex gap-1 mt-0.5">
-                  {([{ v: '#000000', l: '⬛' }, { v: '#ffffff', l: '⬜' }, { v: '#FF4D4D', l: '🟥' }] as { v: SubtitleOutlineColor; l: string }[]).map(c => (
-                    <button key={c.v} onClick={() => setLiveSubOpts({ ...liveSubOpts, outlineColor: c.v })}
-                      className={`flex-1 py-1 rounded text-xs transition-all ${(liveSubOpts.outlineColor || '#000000') === c.v ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}
-                    >{c.l}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Letter Case */}
-              <div>
-                <label className="text-[10px] text-white/30">Case</label>
-                <div className="flex gap-1 mt-0.5">
-                  {(['upper', 'title', 'original'] as SubtitleCase[]).map(v => (
-                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, textCase: v })}
-                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.textCase || 'upper') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{v === 'upper' ? 'ABC' : v === 'title' ? 'Abc' : 'abc'}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Position */}
-              <div>
-                <label className="text-[10px] text-white/30">Position</label>
-                <div className="flex gap-1 mt-0.5">
-                  {(['bottom', 'center', 'top'] as SubtitlePosition[]).map(v => (
-                    <button key={v} onClick={() => setLiveSubOpts({ ...liveSubOpts, position: v })}
-                      className={`flex-1 py-1 rounded text-[10px] font-semibold transition-all ${(liveSubOpts.position || 'bottom') === v ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >{v === 'bottom' ? '⬇' : v === 'center' ? '⬜' : '⬆'}</button>
-                  ))}
-                </div>
-              </div>
-              {/* Shadow Toggle */}
-              <div className="flex items-end gap-2">
-                <div>
-                  <label className="text-[10px] text-white/30">Shadow</label>
-                  <button onClick={() => setLiveSubOpts({ ...liveSubOpts, shadow: !liveSubOpts.shadow })}
-                    className={`block mt-0.5 px-3 py-1 rounded text-[10px] font-semibold transition-all ${liveSubOpts.shadow ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                  >{liveSubOpts.shadow ? 'ON' : 'OFF'}</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <p className="text-sm text-white/60">{previewClip.ai_reason}</p>
-            <div className="flex flex-wrap gap-1">
-              {previewClip.matched_categories.map((cat) => (
-                <Badge key={cat} variant="teal">{formatCategory(cat)}</Badge>
-              ))}
-            </div>
-            <div className="flex items-center gap-4 text-xs text-white/30 pt-1">
-              <span>Start: {previewClip.start_time.toFixed(1)}s</span>
-              <span>End: {previewClip.end_time.toFixed(1)}s</span>
-              {previewClip.virality_score !== undefined && (
-                <span title={
-                  previewClip.virality_score >= 10 ? 'Guaranteed viral — once-in-a-lifetime moment'
-                  : previewClip.virality_score >= 8 ? 'Incredible — would get shared widely'
-                  : previewClip.virality_score >= 6 ? 'Solid highlight — worth posting'
-                  : previewClip.virality_score >= 4 ? 'Decent but nothing special'
-                  : 'Low energy — filler content'
-                } className={`font-semibold ${
-                  previewClip.virality_score >= 8 ? 'text-red-400'
-                  : previewClip.virality_score >= 6 ? 'text-yellow-400'
-                  : 'text-white/40'
-                }`}>
-                  🔥 {previewClip.virality_score}/10 — {
-                    previewClip.virality_score >= 10 ? 'VIRAL'
-                    : previewClip.virality_score >= 8 ? 'Incredible'
-                    : previewClip.virality_score >= 6 ? 'Solid'
-                    : previewClip.virality_score >= 4 ? 'Decent'
-                    : 'Low'
-                  }</span>
-              )}
-            </div>
-            {/* Transcript editor */}
-            <div className="pt-2">
-              <button
-                onClick={() => {
-                  if (!showTranscript && previewClip.subtitles) {
-                    setEditedTranscript(previewClip.subtitles.map(w => w.text).join(' '))
-                  }
-                  setShowTranscript(!showTranscript)
-                }}
-                className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
-              >
-                {showTranscript ? '▼' : '▶'} Edit Transcript
-              </button>
-              {showTranscript && (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    value={editedTranscript}
-                    onChange={(e) => setEditedTranscript(e.target.value)}
-                    className="w-full h-24 bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white/80 resize-none focus:border-red-500 focus:outline-none"
-                    placeholder="Edit the transcribed text..."
-                  />
-                  <button
-                    onClick={() => {
-                      if (!previewClip.subtitles?.length) return
-                      // Rebuild subtitle words with edited text, keeping original timing
-                      const newWords = editedTranscript.trim().split(/\s+/)
-                      const origWords = previewClip.subtitles
-                      const updated: SubtitleWord[] = newWords.map((text, i) => {
-                        const orig = origWords[Math.min(i, origWords.length - 1)]
-                        return {
-                          text,
-                          start: i < origWords.length ? origWords[i].start : orig.start,
-                          end: i < origWords.length ? origWords[i].end : orig.end,
-                        }
-                      })
-                      setPreviewClip({ ...previewClip, subtitles: updated })
-                      setShowTranscript(false)
-                    }}
-                    className="px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400 font-semibold hover:bg-red-500/30 transition-all"
-                  >
-                    ✓ Apply Changes
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Download buttons */}
+            onExportAspectRatioChange={(ratio) => updateClipAspectRatio(previewClip.id, ratio)}
+          >
             <div className="pt-3 flex gap-2">
-              <DownloadClipButton clip={previewClip} sourceUrl={job.source_url} title={job.title} subtitleOptions={liveSubOpts} aspectRatio={job.options?.platformFormat} trimStart={trimmedStart} trimEnd={trimmedEnd} originalStartTime={previewClip.start_time} />
-              <a
-                href={job.source_url}
-                download={`slicer-full-${job.title}.mp4`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm text-white/60 border border-white/10 hover:border-white/30 transition-all"
-              >
-                📥 Full Video
-              </a>
+              <DownloadClipButton
+                clip={previewClip}
+                sourceUrl={job.source_url}
+                title={job.title}
+                subtitleOptions={previewSubtitleOptions}
+                aspectRatio={previewAspectRatio}
+                onAspectRatioChange={(ratio) => updateClipAspectRatio(previewClip.id, ratio)}
+                trimStart={trimmedStart}
+                trimEnd={trimmedEnd}
+                originalStartTime={previewClip.start_time}
+                onWatermarkToggle={(enabled) => updateClipSubtitleOptions(previewClip.id, { ...previewSubtitleOptions, watermarkEnabled: enabled })}
+              />
             </div>
-
-            {/* Social Export */}
-            <div className="pt-3 border-t border-white/5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-white/40 font-semibold uppercase tracking-wider">📱 Social Caption</span>
-                <button
-                  onClick={async () => {
-                    setCaptionLoading(true)
-                    try {
-                      const transcript = previewClip.subtitles?.map(w => w.text).join(' ') || previewClip.ai_reason
-                      const res = await fetch('/api/caption', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          transcript,
-                          categories: previewClip.matched_categories,
-                          title: job.title,
-                          duration: previewClip.duration,
-                        }),
-                      })
-                      if (res.ok) {
-                        const data = await res.json()
-                        setAiCaption(data.caption)
-                      }
-                    } catch {} finally { setCaptionLoading(false) }
-                  }}
-                  disabled={captionLoading}
-                  className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
-                >
-                  {captionLoading ? '⏳ Generating...' : '✨ Generate Caption'}
-                </button>
-              </div>
-              {aiCaption && (
-                <div className="space-y-2">
-                  <textarea
-                    value={aiCaption}
-                    onChange={(e) => setAiCaption(e.target.value)}
-                    className="w-full h-20 bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white/80 resize-none focus:border-red-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(aiCaption)
-                      setCopiedCaption('copied')
-                      setTimeout(() => setCopiedCaption(null), 2000)
-                    }}
-                    className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${
-                      copiedCaption
-                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                        : 'bg-white/5 text-white/50 border border-white/10 hover:border-white/30'
-                    }`}
-                  >
-                    {copiedCaption ? '✓ Copied to clipboard!' : '📋 Copy Caption'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          </ClipPreviewEditor>
         </Modal>
       )}
     </div>
@@ -584,6 +588,110 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     fetch(`/api/jobs/${jobId}`, { method: 'DELETE' }).catch(console.error)
   }
 
+  const handleClipDelete = async (jobId: string, clipId: string) => {
+    // Optimistic delete - remove clip from the job
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === jobId
+          ? {
+              ...j,
+              clips: j.clips?.filter((c) => getClipStableId(c) !== clipId) ?? [],
+              progress: {
+                ...(j.progress ?? {}),
+                completedClips: (j.progress?.completedClips ?? []).filter((c) => getClipStableId(c) !== clipId),
+                deliveredClipCount: Math.max(0, (j.progress?.deliveredClipCount ?? j.clips?.length ?? 0) - 1),
+              },
+            }
+          : j
+      )
+    )
+
+    try {
+      const res = await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete clip')
+      fetchJobs()
+    } catch (error) {
+      console.error(error)
+      fetchJobs()
+    }
+  }
+
+  const handleRescore = async (jobId: string) => {
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: 'processing',
+              progress: {
+                ...(job.progress ?? {}),
+                phase: 'scoring',
+                inputKind: 'rescore',
+                progress: 'Re-scoring cached transcript...',
+                deliveredClipCount: 0,
+                aiReturnedClipCount: 0,
+                duplicateClipsRemoved: 0,
+                clipShortfallReason: undefined,
+              },
+            }
+          : job,
+      ),
+    )
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rescore' }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to trigger rescore')
+      }
+
+      fetchJobs()
+    } catch (error) {
+      console.error(error)
+      fetchJobs()
+    }
+  }
+
+  const handleRetry = async (jobId: string) => {
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: 'processing',
+              progress: {
+                ...(job.progress ?? {}),
+                phase: 'queued',
+                progress: 'Retrying job...',
+                clipShortfallReason: undefined,
+              },
+            }
+          : job,
+      ),
+    )
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to retry job')
+      }
+
+      fetchJobs()
+    } catch (error) {
+      console.error(error)
+      fetchJobs()
+    }
+  }
+
   const handleJobComplete = async (updatedJob: Job) => {
     // Force status to complete and merge clips
     setJobs((prev) =>
@@ -595,22 +703,33 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
 
   if (jobs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-        <div className="text-5xl">🎬</div>
-        <h3 className="text-xl font-bold text-white">No clips yet</h3>
-        <p className="text-white/40 text-sm">Upload a video to get started</p>
+      <div className="flex items-center justify-center py-16 md:py-24">
+        <div className="relative flex min-h-[300px] w-full items-center justify-center overflow-hidden rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-8 py-14 md:min-h-[340px] md:px-14 md:py-20">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.14),transparent_64%)]" />
+          <Image
+            src="/slicer-watermark-white.png"
+            alt="Slicer watermark"
+            width={1024}
+            height={1024}
+            className="relative z-10 h-auto w-[340px] opacity-40 drop-shadow-[0_0_70px_rgba(255,77,77,0.18)] md:w-[520px]"
+            priority
+          />
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="py-6">
+    <div className="py-4">
       {jobs.map((job) => (
         <JobCard
           key={job.id}
           job={job}
           onDelete={handleDelete}
+          onRetry={handleRetry}
+          onRescore={handleRescore}
           onJobComplete={handleJobComplete}
+          onClipDelete={handleClipDelete}
         />
       ))}
     </div>
