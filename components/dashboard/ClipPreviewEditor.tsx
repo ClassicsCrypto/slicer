@@ -84,6 +84,7 @@ const OUTLINE_THICKNESS_OPTIONS: { value: NonNullable<SubtitleOptions['outlineTh
 
 const TIMELINE_PX_PER_SECOND = 72
 const TIMELINE_MIN_WIDTH = 900
+const TIMELINE_SEGMENT_MIN_WIDTH = 60
 const MIN_SEGMENT_DURATION = 0.35
 const MIN_SEGMENT_GAP = 0.05
 const DEFAULT_TEXT_COLOR = '#ffffff'
@@ -654,7 +655,6 @@ export default function ClipPreviewEditor({
 
     const updatedClip = updateManualSegmentBreak(clip, splitWordIndex, true)
     onClipChange(updatedClip)
-    setSelectedSegmentIndex(null)
     setSegmentBoundsDraft(null)
   }
 
@@ -662,7 +662,6 @@ export default function ClipPreviewEditor({
     if (!selectedSegment) return
     const updatedClip = updateManualSegmentBreak(clip, selectedSegment.wordEndIndex, false)
     onClipChange(updatedClip)
-    setSelectedSegmentIndex(null)
     setSegmentBoundsDraft(null)
   }
 
@@ -1147,7 +1146,8 @@ export default function ClipPreviewEditor({
                   {transcriptSegments.map((segment, index) => {
                     const isSelected = selectedSegmentIndex === index
                     const bounds = isSelected && segmentBoundsDraft ? segmentBoundsDraft : { start: segment.start, end: segment.end }
-                    const width = Math.max(74, (bounds.end - bounds.start) * TIMELINE_PX_PER_SECOND)
+                    const width = Math.max(TIMELINE_SEGMENT_MIN_WIDTH, (bounds.end - bounds.start) * TIMELINE_PX_PER_SECOND)
+                    const zIndex = isSelected ? transcriptSegments.length + 2 : transcriptSegments.length - index
                     return (
                       <button
                         key={`${segment.start}-${segment.end}-${index}`}
@@ -1156,29 +1156,32 @@ export default function ClipPreviewEditor({
                           queueSeek(segment.start)
                           scrollTimelineTo(segment.start)
                         }}
-                        className={`absolute top-3 h-14 px-2 text-left transition-all ${isSelected ? 'bg-red-500/10 shadow-[0_0_24px_rgba(255,77,77,0.12)]' : 'bg-transparent hover:bg-white/[0.03]'}`}
+                        title={segment.text}
+                        aria-label={`${formatTimestamp(bounds.start, true)} ${segment.text}`}
+                        className={`absolute top-3 h-14 overflow-hidden rounded-lg px-2 text-left transition-all ${isSelected ? 'bg-red-500/10 shadow-[0_0_24px_rgba(255,77,77,0.12)]' : 'bg-transparent hover:bg-white/[0.03]'}`}
                         style={{
                           left: `${bounds.start * TIMELINE_PX_PER_SECOND}px`,
                           width: `${width}px`,
+                          zIndex,
                         }}
                       >
-                        <div className={`pr-4 text-[10px] font-semibold uppercase tracking-[0.16em] ${isSelected ? 'text-red-300/80' : 'text-white/28'}`}>
+                        <div className={`pointer-events-none pr-4 text-[10px] font-semibold uppercase tracking-[0.16em] ${isSelected ? 'text-red-300/80' : 'text-white/28'}`}>
                           {formatTimestamp(bounds.start, true)}
                         </div>
-                        <div className={`mt-1 truncate text-sm leading-5 ${isSelected ? 'text-white' : 'text-white/82'}`}>
+                        <div className={`pointer-events-none mt-1 truncate text-sm leading-5 ${isSelected ? 'text-white' : 'text-white/82'}`}>
                           {segment.text}
                         </div>
-                        <div className={`absolute inset-x-0 bottom-0 h-[2px] ${isSelected ? 'bg-red-400/80' : 'bg-white/10'}`} />
+                        <div className={`pointer-events-none absolute inset-x-0 bottom-0 h-[2px] ${isSelected ? 'bg-red-400/80' : 'bg-white/10'}`} />
 
                         {isSelected && (
                           <>
                             <div
-                              className="absolute inset-y-2 left-0.5 w-2 cursor-ew-resize rounded-full bg-white/80 hover:bg-white"
+                              className="absolute inset-y-2 left-0.5 z-[1] w-2 cursor-ew-resize rounded-full bg-white/80 hover:bg-white"
                               onMouseDown={(event) => startSegmentResize(event, 'start')}
                               title="Drag line start"
                             />
                             <div
-                              className="absolute inset-y-2 right-0.5 w-2 cursor-ew-resize rounded-full bg-white/80 hover:bg-white"
+                              className="absolute inset-y-2 right-0.5 z-[1] w-2 cursor-ew-resize rounded-full bg-white/80 hover:bg-white"
                               onMouseDown={(event) => startSegmentResize(event, 'end')}
                               title="Drag line end"
                             />
