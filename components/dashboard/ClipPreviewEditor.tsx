@@ -85,6 +85,10 @@ const OUTLINE_THICKNESS_OPTIONS: { value: NonNullable<SubtitleOptions['outlineTh
 const TIMELINE_PX_PER_SECOND = 72
 const TIMELINE_MIN_WIDTH = 900
 const TIMELINE_SEGMENT_MIN_WIDTH = 60
+const TIMELINE_SEGMENT_HEIGHT = 56
+const TIMELINE_SEGMENT_ROW_GAP = 8
+const TIMELINE_SEGMENT_STACK_GAP_PX = 8
+const TIMELINE_TRACK_PADDING_Y = 12
 const MIN_SEGMENT_DURATION = 0.35
 const MIN_SEGMENT_GAP = 0.05
 const DEFAULT_TEXT_COLOR = '#ffffff'
@@ -436,6 +440,37 @@ export default function ClipPreviewEditor({
       return { start: gapStart, end: gapEnd, duration: gapDuration }
     }).filter(Boolean) as { start: number; end: number; duration: number }[]
   }, [transcriptSegments])
+  const stackedTimelineSegments = useMemo(() => {
+    const laneRightEdges: number[] = []
+
+    return transcriptSegments.map((segment, index) => {
+      const isSelected = selectedSegmentIndex === index
+      const bounds = isSelected && segmentBoundsDraft ? segmentBoundsDraft : { start: segment.start, end: segment.end }
+      const left = bounds.start * TIMELINE_PX_PER_SECOND
+      const width = Math.max(TIMELINE_SEGMENT_MIN_WIDTH, (bounds.end - bounds.start) * TIMELINE_PX_PER_SECOND)
+
+      let lane = 0
+      while (laneRightEdges[lane] !== undefined && left < laneRightEdges[lane]) {
+        lane += 1
+      }
+      laneRightEdges[lane] = left + width + TIMELINE_SEGMENT_STACK_GAP_PX
+
+      return {
+        segment,
+        index,
+        isSelected,
+        bounds,
+        left,
+        width,
+        lane,
+      }
+    })
+  }, [transcriptSegments, selectedSegmentIndex, segmentBoundsDraft])
+  const timelineLaneCount = Math.max(1, stackedTimelineSegments.reduce((max, item) => Math.max(max, item.lane + 1), 1))
+  const timelineTrackHeight = Math.max(
+    96,
+    (TIMELINE_TRACK_PADDING_Y * 2) + (timelineLaneCount * TIMELINE_SEGMENT_HEIGHT) + (Math.max(0, timelineLaneCount - 1) * TIMELINE_SEGMENT_ROW_GAP),
+  )
   const activePublishGuide = selectedPublishPlatform ? PLATFORM_PUBLISH_GUIDE[selectedPublishPlatform] : null
   const activePublishDraft = selectedPublishPlatform ? postDrafts[selectedPublishPlatform] : ''
   const selectedSegmentLastWord = selectedSegment ? orderedSubtitles[selectedSegment.wordEndIndex] : null
@@ -1112,7 +1147,7 @@ export default function ClipPreviewEditor({
                   />
                 </div>
 
-                <div className="relative h-24 rounded-xl border border-white/10 bg-white/[0.08] overflow-hidden">
+                <div className="relative rounded-xl border border-white/10 bg-white/[0.08] overflow-hidden" style={{ height: `${timelineTrackHeight}px` }}>
                   {Array.from({ length: Math.floor(timelineDuration) + 1 }, (_, second) => (
                     <div
                       key={`grid-${second}`}
@@ -1121,17 +1156,22 @@ export default function ClipPreviewEditor({
                     />
                   ))}
 
-                  <div className="absolute left-0 right-0 top-11 h-px bg-white/12" />
+                  <div
+                    className="absolute left-0 right-0 h-px bg-white/12"
+                    style={{ top: `${Math.round(timelineTrackHeight / 2)}px` }}
+                  />
 
                   {gapMarkers.map((gap) => {
                     const gapWidth = Math.max(0, (gap.end - gap.start) * TIMELINE_PX_PER_SECOND)
                     return (
                       <div
                         key={`${gap.start}-${gap.end}`}
-                        className="absolute top-6 bottom-6 rounded-md border border-dashed border-white/10 bg-black/12"
+                        className="absolute rounded-md border border-dashed border-white/10 bg-black/12"
                         style={{
                           left: `${gap.start * TIMELINE_PX_PER_SECOND}px`,
+                          top: `${TIMELINE_TRACK_PADDING_Y}px`,
                           width: `${gapWidth}px`,
+                          height: `${timelineTrackHeight - (TIMELINE_TRACK_PADDING_Y * 2)}px`,
                         }}
                       >
                         {gapWidth > 92 && (
@@ -1143,11 +1183,8 @@ export default function ClipPreviewEditor({
                     )
                   })}
 
-                  {transcriptSegments.map((segment, index) => {
-                    const isSelected = selectedSegmentIndex === index
-                    const bounds = isSelected && segmentBoundsDraft ? segmentBoundsDraft : { start: segment.start, end: segment.end }
-                    const width = Math.max(TIMELINE_SEGMENT_MIN_WIDTH, (bounds.end - bounds.start) * TIMELINE_PX_PER_SECOND)
-                    const zIndex = isSelected ? transcriptSegments.length + 2 : transcriptSegments.length - index
+                  {stackedTimelineSegments.map(({ segment, index, isSelected, bounds, left, width, lane }) => {
+                    const zIndex = isSelected ? (timelineLaneCount + 10) : (timelineLaneCount - lane)
                     return (
                       <button
                         key={`${segment.start}-${segment.end}-${index}`}
@@ -1158,10 +1195,12 @@ export default function ClipPreviewEditor({
                         }}
                         title={segment.text}
                         aria-label={`${formatTimestamp(bounds.start, true)} ${segment.text}`}
-                        className={`absolute top-3 h-14 overflow-hidden rounded-lg px-2 text-left transition-all ${isSelected ? 'bg-red-500/10 shadow-[0_0_24px_rgba(255,77,77,0.12)]' : 'bg-transparent hover:bg-white/[0.03]'}`}
+                        className={`absolute overflow-hidden rounded-lg px-2 text-left transition-all ${isSelected ? 'bg-red-500/10 shadow-[0_0_24px_rgba(255,77,77,0.12)]' : 'bg-transparent hover:bg-white/[0.03]'}`}
                         style={{
-                          left: `${bounds.start * TIMELINE_PX_PER_SECOND}px`,
+                          left: `${left}px`,
+                          top: `${TIMELINE_TRACK_PADDING_Y + (lane * (TIMELINE_SEGMENT_HEIGHT + TIMELINE_SEGMENT_ROW_GAP))}px`,
                           width: `${width}px`,
+                          height: `${TIMELINE_SEGMENT_HEIGHT}px`,
                           zIndex,
                         }}
                       >
