@@ -18,28 +18,38 @@ export async function GET() {
     const allJobs = jobs || []
     const completedJobs = allJobs.filter(j => j.status === 'complete')
 
-    // Calculate total hours processed (clips stored in progress.completedClips)
+    // Calculate aggregate stats from ALL completed jobs in database
     let totalClips = 0
-    let totalDurationSec = 0
+    let totalVideoDurationSec = 0
+
     for (const job of completedJobs) {
       const progress = job.progress as Record<string, any> | null
-      const clips = (progress?.completedClips || []) as Array<{ start_time?: number; end_time?: number }>
+      const clips = (progress?.completedClips || []) as Array<any>
       totalClips += clips.length
-      for (const clip of clips) {
-        totalDurationSec += (clip.end_time || 0) - (clip.start_time || 0)
+
+      // Get actual video duration from progress (stored during download/transcription)
+      const videoDuration = progress?.duration || progress?.videoDuration || 0
+      if (videoDuration > 0) {
+        totalVideoDurationSec += videoDuration
       }
     }
 
-    // Estimate transcription hours (videos are typically longer than clips)
-    // Use a rough estimate: average video ~15min for YouTube, total clips represent ~20% of source
-    const estimatedTranscriptionHours = completedJobs.length * 0.25 // ~15min average per video
+    // Total hours of video analyzed (for transcription metric)
+    const totalHoursProcessed = totalVideoDurationSec / 3600
 
-    // Supabase storage: list files in the slicer-videos bucket
+    // Supabase storage: inspect active folders in the slicer-videos bucket
     let storageMB = 0
+    const storageBreakdown: Array<{ folder: string; files: number; mb: number }> = []
     try {
-      const { data: files } = await supabase.storage.from('slicer-videos').list('uploads', { limit: 1000 })
-      if (files) {
-        storageMB = files.reduce((acc, f) => acc + ((f.metadata?.size || 0) / (1024 * 1024)), 0)
+      for (const folder of ['uploads', 'youtube', 'config', 'test']) {
+        const { data: files } = await supabase.storage.from('slicer-videos').list(folder, { limit: 1000 })
+        const folderMB = (files || []).reduce((acc, f) => acc + ((f.metadata?.size || 0) / (1024 * 1024)), 0)
+        storageBreakdown.push({
+          folder,
+          files: files?.length || 0,
+          mb: parseFloat(folderMB.toFixed(2)),
+        })
+        storageMB += folderMB
       }
     } catch {
       // storage query failed, default to 0
@@ -50,7 +60,7 @@ export async function GET() {
 
     const usageData = {
       assemblyai: {
-        used: parseFloat((estimatedTranscriptionHours * 60).toFixed(0)),
+        used: parseFloat((totalHoursProcessed * 60).toFixed(0)),
         limit: 300,
         unit: 'min/month',
       },
@@ -63,11 +73,12 @@ export async function GET() {
         used: parseFloat(storageMB.toFixed(1)),
         limit: 1000,
         unit: 'MB',
+        breakdown: storageBreakdown,
       },
       stats: {
-        totalJobs: allJobs.length,
+        totalJobs: completedJobs.length,
         totalClips,
-        totalHoursProcessed: parseFloat((totalDurationSec / 3600).toFixed(2)),
+        totalHoursProcessed: parseFloat(totalHoursProcessed.toFixed(2)),
         avgClipsPerJob: completedJobs.length > 0
           ? parseFloat((totalClips / completedJobs.length).toFixed(1))
           : 0,

@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Job, Clip, SubtitleOptions } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import { getClipStableId } from '@/lib/clip-id'
@@ -205,39 +205,31 @@ function ClipCard({
   onPreview: (clip: Clip) => void
   onDelete: (clipId: string) => void
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const clipDuration = Number.isFinite(clip.duration) ? clip.duration : Math.max(0, clip.end_time - clip.start_time)
 
   useEffect(() => {
-    // Client-side thumbnail: seek video to mid-clip and capture frame
-    const video = document.createElement('video')
-    video.crossOrigin = 'anonymous'
-    video.preload = 'metadata'
-    video.muted = true
-    const midTime = clip.start_time + (clipDuration / 2)
+    let cancelled = false
 
-    video.addEventListener('loadedmetadata', () => {
-      video.currentTime = midTime
-    })
-    video.addEventListener('seeked', () => {
+    ;(async () => {
       try {
-        const canvas = document.createElement('canvas')
-        canvas.width = video.videoWidth || 320
-        canvas.height = video.videoHeight || 180
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          setThumbUrl(canvas.toDataURL('image/jpeg', 0.7))
-        }
-      } catch { /* CORS or other error - fall back to video element */ }
-      video.src = '' // cleanup
-    })
-    video.src = sourceUrl
-    return () => { video.src = '' }
-  }, [sourceUrl, clip.start_time, clip.end_time, clipDuration])
+        const apiBase = (await getApiUrl()).replace(/\/$/, '')
+        const midTime = Math.max(0, clip.start_time + (clipDuration / 2))
+        const url = new URL(`${apiBase}/thumbnail`)
+        url.searchParams.set('sourceUrl', sourceUrl)
+        url.searchParams.set('timestamp', midTime.toFixed(2))
+        url.searchParams.set('clipId', clip.id)
+        if (!cancelled) setThumbUrl(url.toString())
+      } catch {
+        if (!cancelled) setThumbUrl(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sourceUrl, clip.start_time, clip.end_time, clipDuration, clip.id])
 
   return (
     <div
@@ -247,7 +239,8 @@ function ClipCard({
       {/* Thumbnail */}
       <div className="relative aspect-video bg-black/50 flex items-center justify-center cursor-pointer" onClick={() => onPreview(clip)}>
         {thumbUrl ? (
-          <Image src={thumbUrl} alt="Clip thumbnail" fill unoptimized className="object-cover" />
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbUrl} alt="Clip thumbnail" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-black/30">
             <span className="w-6 h-6 border-2 border-white/20 border-t-white/50 rounded-full animate-spin" />

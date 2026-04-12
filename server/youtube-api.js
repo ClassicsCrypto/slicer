@@ -44,11 +44,13 @@ const PORT = parseInt(process.env.SLICER_YT_PORT || '3001')
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const TEMP_DIR = path.join(__dirname, 'temp')
+const THUMB_CACHE_DIR = path.join(TEMP_DIR, 'thumb-cache')
 const MAX_DURATION_SEC = 3 * 60 * 60 // 3 hours
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
 
 // Ensure temp dir exists
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
+if (!fs.existsSync(THUMB_CACHE_DIR)) fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true })
 
 // Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
 const videoCache = new Map()
@@ -119,6 +121,7 @@ function cleanupTempArtifacts() {
     const base = path.basename(absolute).toLowerCase()
     if (absolute.includes(`${path.sep}transcriptions${path.sep}`)) return ageMs > 2 * 60 * 60 * 1000
     if (absolute.includes(`${path.sep}transcription-cache${path.sep}`)) return ageMs > 14 * 24 * 60 * 60 * 1000
+    if (absolute.includes(`${path.sep}thumb-cache${path.sep}`)) return ageMs > 7 * 24 * 60 * 60 * 1000
     if (PARTIAL_FILE_RE.test(base)) return ageMs > 6 * 60 * 60 * 1000
     if (base.endsWith('.ass') || base.startsWith('run-scoring-test') || base.startsWith('control-test')) return ageMs > 12 * 60 * 60 * 1000
     return false
@@ -2829,39 +2832,59 @@ async function handleThumbnail(req, res) {
       return inputUrl
     }
 
-    let raw = ''
-    for await (const chunk of req) raw += chunk
-    const body = JSON.parse(raw)
+    const readThumbnailPayload = async () => {
+      if (req.method === 'GET') {
+        const url = new URL(req.url, `http://localhost:${PORT}`)
+        return {
+          sourceUrl: url.searchParams.get('sourceUrl'),
+          timestamp: url.searchParams.get('timestamp'),
+        }
+      }
+
+      let raw = ''
+      for await (const chunk of req) raw += chunk
+      return JSON.parse(raw)
+    }
+
+    const streamThumb = (filePath) => {
+      const stat = fs.statSync(filePath)
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': stat.size,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+      })
+      fs.createReadStream(filePath).pipe(res)
+    }
+
+    const body = await readThumbnailPayload()
     const { sourceUrl, timestamp } = body
 
     if (!sourceUrl) return sendJson(res, 400, { error: 'sourceUrl required' })
 
-    const ts = timestamp || 0
-    const thumbId = crypto.randomBytes(6).toString('hex')
-    const thumbFile = path.join(TEMP_DIR, `thumb-${thumbId}.jpg`)
+    const ts = Math.max(0, parseFloat(timestamp || 0) || 0)
+    const thumbHash = crypto.createHash('sha1').update(`${sourceUrl}|${ts.toFixed(2)}`).digest('hex').slice(0, 20)
+    const thumbFile = path.join(THUMB_CACHE_DIR, `thumb-${thumbHash}.jpg`)
+
+    if (fs.existsSync(thumbFile)) {
+      return streamThumb(thumbFile)
+    }
+
+    const tempThumbFile = path.join(THUMB_CACHE_DIR, `thumb-${thumbHash}-${crypto.randomBytes(4).toString('hex')}.tmp.jpg`)
 
     const inputPath = resolveThumbInputPath(sourceUrl)
 
-    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -q:v 2 -y "${thumbFile}"`
+    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -q:v 2 -y "${tempThumbFile}"`
     console.log(`[thumb] extracting frame at ${ts}s`)
 
     execSync(cmd, { timeout: 15000 })
 
-    if (!fs.existsSync(thumbFile)) {
+    if (!fs.existsSync(tempThumbFile)) {
       return sendJson(res, 500, { error: 'Failed to extract frame' })
     }
 
-    const stat = fs.statSync(thumbFile)
-    res.writeHead(200, {
-      'Content-Type': 'image/jpeg',
-      'Content-Length': stat.size,
-      'Access-Control-Allow-Origin': '*',
-    })
-    const stream = fs.createReadStream(thumbFile)
-    stream.pipe(res)
-    stream.on('end', () => {
-      try { fs.unlinkSync(thumbFile) } catch {}
-    })
+    fs.renameSync(tempThumbFile, thumbFile)
+    streamThumb(thumbFile)
   } catch (err) {
     console.error('[thumb] Error:', err.message)
     sendJson(res, 500, { error: 'Thumbnail extraction failed' })
@@ -2965,7 +2988,7 @@ async function handleInfo(req, res) {
     handleDownload(req, res)
   } else if (req.method === 'POST' && req.url === '/clip') {
     handleClip(req, res)
-  } else if (req.method === 'POST' && req.url === '/thumbnail') {
+  } else if ((req.method === 'POST' || req.method === 'GET') && req.url?.startsWith('/thumbnail')) {
     handleThumbnail(req, res)
   } else if (req.method === 'POST' && req.url === '/transcribe-local') {
     handleTranscribeLocal(req, res)

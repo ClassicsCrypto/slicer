@@ -1,106 +1,179 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { submitTranscription } from '@/lib/assemblyai'
-import { ProcessingOptions } from '@/types'
-import { v4 as uuidv4 } from 'uuid'
+import { getServerApiUrl } from '@/lib/api-url-server'
+import { Job, JobInputKind, JobProgress, ProcessingOptions } from '@/types'
+
+function normalizeJob(job: any): Job {
+  const progress = (job?.progress ?? {}) as JobProgress
+  return {
+    ...job,
+    progress,
+    clips: (progress.completedClips ?? []) as Job['clips'],
+  }
+}
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+function buildProgressUpdate(params: {
+  inputKind: JobInputKind
+  options: ProcessingOptions
+  previous?: JobProgress
+  rawInputUrl?: string
+  sourceUrl?: string
+  rescoreOnly?: boolean
+}): JobProgress {
+  const { inputKind, options, previous, rawInputUrl, sourceUrl, rescoreOnly } = params
+
+  if (rescoreOnly) {
+    return {
+      ...(previous ?? {}),
+      phase: 'scoring',
+      inputKind: 'rescore',
+      progress: 'Re-scoring cached transcript...',
+      requestedClipCount: options.clipCount,
+      deliveredClipCount: 0,
+      aiReturnedClipCount: 0,
+      duplicateClipsRemoved: 0,
+      clipShortfallReason: undefined,
+      completedClips: [],
+      processingStartedAt: new Date().toISOString(),
+    }
+  }
+
+  if (inputKind === 'remote_url') {
+    return {
+      ...(previous ?? {}),
+      phase: 'downloading',
+      inputKind,
+      progress: 'Downloading source stream...',
+      requestedClipCount: options.clipCount,
+      deliveredClipCount: 0,
+      completedClips: [],
+      rawInputUrl,
+      sourceReady: false,
+      processingStartedAt: new Date().toISOString(),
+    }
+  }
+
+  return {
+    ...(previous ?? {}),
+    phase: sourceUrl ? 'transcribing' : 'uploading',
+    inputKind,
+    progress: sourceUrl ? 'Upload complete, starting transcription...' : 'Uploading media...',
+    requestedClipCount: options.clipCount,
+    deliveredClipCount: 0,
+    completedClips: [],
+    sourceReady: Boolean(sourceUrl),
+    processingStartedAt: new Date().toISOString(),
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { sourceUrl, title, options } = body as {
-      sourceUrl: string
-      title: string
-      options: ProcessingOptions
+    const {
+      jobId,
+      title,
+      sourceUrl,
+      rawInputUrl,
+      options,
+      inputKind,
+      rescoreOnly,
+    } = body as {
+      jobId?: string
+      title?: string
+      sourceUrl?: string
+      rawInputUrl?: string
+      options?: ProcessingOptions
+      inputKind?: JobInputKind
+      rescoreOnly?: boolean
     }
 
-    if (!sourceUrl) {
-      return NextResponse.json({ error: 'sourceUrl is required' }, { status: 400 })
+    if (!jobId || !options) {
+      return NextResponse.json({ error: 'jobId and options are required' }, { status: 400 })
     }
 
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('Missing env vars:', {
-        supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-        serviceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        assemblyai: !!process.env.ASSEMBLYAI_API_KEY,
-      })
-      return NextResponse.json({ error: 'Server misconfigured — missing environment variables' }, { status: 500 })
-    }
+    const kind: JobInputKind = rescoreOnly ? 'rescore' : (inputKind ?? (rawInputUrl ? 'remote_url' : 'uploaded_file'))
 
     const supabase = createServerClient()
+    const { data: existingJob, error: existingJobError } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single()
 
-    // Determine user id (dev bypass or anonymous)
-    const devUserId = process.env.NEXT_PUBLIC_DEV_USER_ID
-    const userId = devUserId ?? uuidv4()
-
-    // Create job in processing state
-    const jobId = uuidv4()
-    const { error: insertError } = await supabase.from('jobs').insert({
-      id: jobId,
-      user_id: userId,
-      title: title || new URL(sourceUrl).hostname,
-      source_url: sourceUrl,
-      status: 'processing',
-      options,
-      progress: {
-        phase: 'submitting',
-        completedClips: [],
-      },
-    })
-
-    if (insertError) {
-      console.error('Job insert error:', insertError)
-      return NextResponse.json({ error: 'Failed to create job' }, { status: 500 })
+    if (existingJobError || !existingJob) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // Choose transcription mode: local Whisper or AssemblyAI
-    const useLocalWhisper = process.env.TRANSCRIPTION_MODE === 'local'
+    const progress = buildProgressUpdate({
+      inputKind: kind,
+      options,
+      previous: existingJob.progress,
+      rawInputUrl,
+      sourceUrl,
+      rescoreOnly,
+    })
 
-    if (useLocalWhisper) {
-      // Mark job for local transcription — poll route will start it
-      // (Vercel serverless can't reliably reach the Cloudflare tunnel)
-      console.log(`[process] Local Whisper mode — poll route will initiate transcription`)
+    const { data: updatedJob, error: updateError } = await supabase
+      .from('jobs')
+      .update({
+        title: title?.trim() || existingJob.title,
+        source_url: sourceUrl || rawInputUrl || existingJob.source_url,
+        status: 'processing',
+        options,
+        progress,
+      })
+      .eq('id', jobId)
+      .select('*')
+      .single()
+
+    if (updateError || !updatedJob) {
+      console.error('Process route update error:', updateError)
+      return NextResponse.json({ error: 'Failed to update job before processing' }, { status: 500 })
+    }
+
+    try {
+      const apiBase = await getServerApiUrl()
+      const startResponse = await fetch(`${apiBase}/job-start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          title: updatedJob.title,
+          sourceUrl,
+          rawInputUrl,
+          options,
+          inputKind: kind,
+          rescoreOnly: Boolean(rescoreOnly),
+        }),
+      })
+
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text()
+        throw new Error(errorText || `job-start failed with ${startResponse.status}`)
+      }
+    } catch (startError: any) {
+      console.error('Process route start error:', startError)
       await supabase
         .from('jobs')
         .update({
+          status: 'failed',
           progress: {
-            phase: 'transcribing',
-            transcriptionMode: 'local',
-            localTranscribeId: null, // poll route will set this
-            completedClips: [],
+            ...(progress ?? {}),
+            phase: 'failed',
+            progress: startError?.message ?? 'Failed to start processing job',
           },
         })
         .eq('id', jobId)
-    } else {
-      // AssemblyAI transcription (cloud)
-      try {
-        const transcriptId = await submitTranscription(sourceUrl)
-        console.log(`[process] AssemblyAI submitted: ${transcriptId}`)
 
-        await supabase
-          .from('jobs')
-          .update({
-            progress: {
-              phase: 'transcribing',
-              transcriptId,
-              transcriptionMode: 'assemblyai',
-              completedClips: [],
-            },
-          })
-          .eq('id', jobId)
-      } catch (err) {
-        console.error('AssemblyAI submission error:', err)
-        await supabase
-          .from('jobs')
-          .update({
-            progress: { phase: 'transcribing', transcriptId: null, completedClips: [] },
-          })
-          .eq('id', jobId)
-      }
+      return NextResponse.json({ error: 'Failed to start processing job' }, { status: 500 })
     }
 
-    return NextResponse.json({ jobId }, { status: 201 })
-  } catch (err: any) {
-    console.error('Process route error:', err?.message || err)
-    return NextResponse.json({ error: `Server error: ${err?.message || 'unknown'}` }, { status: 500 })
+    return NextResponse.json({ job: normalizeJob(updatedJob) })
+  } catch (error: any) {
+    console.error('Process route error:', error)
+    return NextResponse.json({ error: error?.message ?? 'Unknown error' }, { status: 500 })
   }
 }
