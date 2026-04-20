@@ -36,15 +36,36 @@ function loadEnv() {
     if (!trimmed || trimmed.startsWith('#')) continue
     const idx = trimmed.indexOf('=')
     if (idx === -1) continue
-    env[trimmed.slice(0, idx)] = trimmed.slice(idx + 1).trim().replace(/^['\"]|['\"]$/g, '').replace(/`r`n$/i, '')
+    env[trimmed.slice(0, idx)] = trimmed
+      .slice(idx + 1)
+      .trim()
+      .replace(/^['\"]|['\"]$/g, '')
+      .replace(/`r`n$/i, '')
   }
   return env
 }
 
-function getJobStoreKind() {
+function getEnvValue(name, fallback = '') {
   const env = loadEnv()
-  const value = (process.env.SLICER_JOB_STORE || env.SLICER_JOB_STORE || '').trim().replace(/`r`n$/i, '')
+  const value = process.env[name] ?? env[name] ?? fallback
+  return typeof value === 'string' ? value.trim().replace(/`r`n$/i, '') : value
+}
+
+function isTruthy(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['1', 'true', 'yes', 'on', 'apply', 'enabled'].includes(normalized)
+}
+
+function getJobStoreKind() {
+  const value = getEnvValue('SLICER_JOB_STORE', '')
   return value === 'sqlite' ? 'sqlite' : 'supabase'
+}
+
+function shouldApplyRetention() {
+  const mode = String(getEnvValue('SLICER_RETENTION_MODE', '')).toLowerCase()
+  if (mode === 'apply') return true
+  if (mode === 'dry-run' || mode === 'dryrun') return false
+  return isTruthy(getEnvValue('SLICER_RETENTION_APPLY', 'false'))
 }
 
 function bytesToMB(bytes) {
@@ -125,9 +146,8 @@ async function loadJobs() {
     return sqliteShadowStore.listShadowJobs(5000)
   }
 
-  const env = loadEnv()
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl = getEnvValue('NEXT_PUBLIC_SUPABASE_URL', '')
+  const supabaseKey = getEnvValue('SUPABASE_SERVICE_ROLE_KEY', '')
   if (!supabaseUrl || !supabaseKey) return []
 
   const supabase = createClient(supabaseUrl, supabaseKey)
@@ -141,10 +161,11 @@ async function loadJobs() {
 }
 
 function summarizeFiles(files) {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
   return {
     count: files.length,
-    totalBytes: files.reduce((sum, file) => sum + file.size, 0),
-    totalGB: bytesToGB(files.reduce((sum, file) => sum + file.size, 0)),
+    totalBytes,
+    totalGB: bytesToGB(totalBytes),
     samples: files.slice(0, 20).map((file) => ({
       relativePath: file.relativePath,
       sizeMB: bytesToMB(file.size),
@@ -153,7 +174,20 @@ function summarizeFiles(files) {
   }
 }
 
-async function buildRetentionReport({ apply = false, reason = 'manual', source = 'manual' } = {}) {
+function buildBudgetStatus(totalCacheBytes) {
+  if (totalCacheBytes >= CACHE_HARD_CAP_GB * 1024 ** 3) return 'hard_cap'
+  if (totalCacheBytes >= CACHE_WARNING_GB * 1024 ** 3) return 'warning'
+  return 'ok'
+}
+
+function buildDiskStatus(diskFreeBytes) {
+  if (diskFreeBytes == null) return 'unknown'
+  if (diskFreeBytes <= LOW_DISK_HARD_STOP_GB * 1024 ** 3) return 'hard_stop'
+  if (diskFreeBytes <= LOW_DISK_WARNING_GB * 1024 ** 3) return 'warning'
+  return 'ok'
+}
+
+async function collectRetentionState() {
   const nowMs = Date.now()
   const jobs = await loadJobs()
   const expiredJobs = jobs.filter((job) => isExpiredJob(job, nowMs))
@@ -211,35 +245,50 @@ async function buildRetentionReport({ apply = false, reason = 'manual', source =
 
   const totalCacheBytes = getDirectorySizeBytes(TEMP_DIR) + getDirectorySizeBytes(DATA_DIR)
   const diskFreeBytes = getDiskFreeBytes(SERVER_DIR)
-  const budgetStatus = totalCacheBytes >= CACHE_HARD_CAP_GB * 1024 ** 3
-    ? 'hard_cap'
-    : totalCacheBytes >= CACHE_WARNING_GB * 1024 ** 3
-      ? 'warning'
-      : 'ok'
-  const diskStatus = diskFreeBytes == null
-    ? 'unknown'
-    : diskFreeBytes <= LOW_DISK_HARD_STOP_GB * 1024 ** 3
-      ? 'hard_stop'
-      : diskFreeBytes <= LOW_DISK_WARNING_GB * 1024 ** 3
-        ? 'warning'
-        : 'ok'
+  const budgetStatus = buildBudgetStatus(totalCacheBytes)
+  const diskStatus = buildDiskStatus(diskFreeBytes)
 
-  const totalCandidateBytes = [
+  const candidateFiles = [
+    ...expiredRootSources,
+    ...transcriptionCacheFiles,
+    ...transcriptionFiles,
+    ...thumbCacheFiles,
+    ...sourceCacheFiles,
+    ...exportTempFiles,
+  ]
+  const totalCandidateBytes = candidateFiles.reduce((sum, file) => sum + file.size, 0)
+
+  return {
+    generatedAt: new Date().toISOString(),
+    nowMs,
+    jobStore: getJobStoreKind(),
+    jobs,
+    expiredJobs,
+    liveJobs,
+    referencedServeFiles,
     expiredRootSources,
     transcriptionCacheFiles,
     transcriptionFiles,
     thumbCacheFiles,
     sourceCacheFiles,
     exportTempFiles,
-  ].flat().reduce((sum, file) => sum + file.size, 0)
+    candidateFiles,
+    totalCandidateBytes,
+    totalCacheBytes,
+    budgetStatus,
+    diskFreeBytes,
+    diskStatus,
+  }
+}
 
-  return {
-    generatedAt: new Date().toISOString(),
+function buildReportFromState(state, { apply = false, reason = 'manual', source = 'manual' } = {}, applied = null) {
+  const report = {
+    generatedAt: state.generatedAt,
     apply,
-    phase: apply ? 'phase5+' : 'phase4-dry-run',
+    phase: apply ? 'phase5-apply' : 'phase4-dry-run',
     reason,
     source,
-    jobStore: getJobStoreKind(),
+    jobStore: state.jobStore,
     policies: {
       completeRetentionDays: COMPLETE_RETENTION_DAYS,
       failedRetentionHours: FAILED_RETENTION_HOURS,
@@ -251,32 +300,139 @@ async function buildRetentionReport({ apply = false, reason = 'manual', source =
       lowDiskHardStopGB: LOW_DISK_HARD_STOP_GB,
     },
     jobs: {
-      total: jobs.length,
-      expired: expiredJobs.length,
-      live: liveJobs.length,
-      expiredJobIds: expiredJobs.map((job) => job.id),
-      expiredJobTitles: expiredJobs.slice(0, 20).map((job) => ({ id: job.id, title: job.title, status: job.status })),
+      total: state.jobs.length,
+      expired: state.expiredJobs.length,
+      live: state.liveJobs.length,
+      expiredJobIds: state.expiredJobs.map((job) => job.id),
+      expiredJobTitles: state.expiredJobs.slice(0, 20).map((job) => ({ id: job.id, title: job.title, status: job.status })),
     },
     candidates: {
-      expiredRootSources: summarizeFiles(expiredRootSources),
-      transcriptionCache: summarizeFiles(transcriptionCacheFiles),
-      transcriptions: summarizeFiles(transcriptionFiles),
-      thumbCache: summarizeFiles(thumbCacheFiles),
-      sourceCache: summarizeFiles(sourceCacheFiles),
-      exportTemp: summarizeFiles(exportTempFiles),
-      totalCandidateBytes,
-      totalCandidateGB: bytesToGB(totalCandidateBytes),
+      expiredRootSources: summarizeFiles(state.expiredRootSources),
+      transcriptionCache: summarizeFiles(state.transcriptionCacheFiles),
+      transcriptions: summarizeFiles(state.transcriptionFiles),
+      thumbCache: summarizeFiles(state.thumbCacheFiles),
+      sourceCache: summarizeFiles(state.sourceCacheFiles),
+      exportTemp: summarizeFiles(state.exportTempFiles),
+      totalCandidateBytes: state.totalCandidateBytes,
+      totalCandidateGB: bytesToGB(state.totalCandidateBytes),
     },
     budget: {
-      currentCacheGB: bytesToGB(totalCacheBytes),
-      currentCacheMB: bytesToMB(totalCacheBytes),
-      status: budgetStatus,
-      diskFreeGB: diskFreeBytes == null ? null : bytesToGB(diskFreeBytes),
-      diskStatus,
+      currentCacheGB: bytesToGB(state.totalCacheBytes),
+      currentCacheMB: bytesToMB(state.totalCacheBytes),
+      status: state.budgetStatus,
+      diskFreeGB: state.diskFreeBytes == null ? null : bytesToGB(state.diskFreeBytes),
+      diskStatus: state.diskStatus,
     },
-    notes: apply
-      ? ['Apply mode enabled. Deletions may occur in later phases.']
-      : ['Dry-run only. Nothing was deleted.', budgetStatus !== 'ok' ? `Cache budget status is ${budgetStatus}.` : null, diskStatus !== 'ok' ? `Disk status is ${diskStatus}.` : null].filter(Boolean),
+    applied,
+  }
+
+  report.notes = apply
+    ? [
+        `Real deletion ${report.applied?.errorCount ? 'completed with errors' : 'completed successfully'}.`,
+        report.applied ? `Deleted ${report.applied.deletedJobCount} jobs and ${report.applied.deletedFileCount} files.` : null,
+        report.budget.status !== 'ok' ? `Cache budget status is ${report.budget.status}.` : null,
+        report.budget.diskStatus !== 'ok' ? `Disk status is ${report.budget.diskStatus}.` : null,
+      ].filter(Boolean)
+    : [
+        'Dry-run only. Nothing was deleted.',
+        report.budget.status !== 'ok' ? `Cache budget status is ${report.budget.status}.` : null,
+        report.budget.diskStatus !== 'ok' ? `Disk status is ${report.budget.diskStatus}.` : null,
+      ].filter(Boolean)
+
+  return report
+}
+
+function isManagedDeletionPath(filePath) {
+  if (!filePath) return false
+  const resolved = path.resolve(filePath)
+  const managedRoots = [path.resolve(TEMP_DIR), path.resolve(DATA_DIR)]
+  return managedRoots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))
+}
+
+function dedupeFiles(files) {
+  const seen = new Set()
+  const unique = []
+  for (const file of files) {
+    const key = path.resolve(file.fullPath)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(file)
+  }
+  return unique
+}
+
+function applyJobDeletion(state) {
+  if (state.jobStore !== 'sqlite') {
+    throw new Error('Phase 5 apply mode is only enabled for SLICER_JOB_STORE=sqlite')
+  }
+
+  const deletedJobIds = []
+  const errors = []
+
+  for (const job of state.expiredJobs) {
+    try {
+      sqliteShadowStore.deleteShadowJob(job.id)
+      if (typeof sqliteShadowStore.verifyShadowJobDeleted === 'function') {
+        const verification = sqliteShadowStore.verifyShadowJobDeleted(job.id, {
+          source: 'retention-sweeper',
+          action: 'ttl_delete',
+        })
+        if (verification && verification.ok === false) {
+          throw new Error(`SQLite delete verification failed for ${job.id}`)
+        }
+      }
+      deletedJobIds.push(job.id)
+    } catch (error) {
+      errors.push({ type: 'job_delete_error', jobId: job.id, message: error.message })
+    }
+  }
+
+  return { deletedJobIds, errors }
+}
+
+function applyFileDeletion(state) {
+  const deletedFiles = []
+  const errors = []
+  let deletedBytes = 0
+
+  for (const file of dedupeFiles(state.candidateFiles)) {
+    if (!isManagedDeletionPath(file.fullPath)) {
+      errors.push({ type: 'unsafe_file_path', relativePath: file.relativePath, fullPath: file.fullPath })
+      continue
+    }
+
+    if (!fs.existsSync(file.fullPath)) continue
+
+    try {
+      const stats = fs.statSync(file.fullPath)
+      fs.unlinkSync(file.fullPath)
+      deletedBytes += stats.size
+      deletedFiles.push({
+        relativePath: file.relativePath,
+        sizeMB: bytesToMB(stats.size),
+      })
+    } catch (error) {
+      errors.push({ type: 'file_delete_error', relativePath: file.relativePath, message: error.message })
+    }
+  }
+
+  return { deletedFiles, deletedBytes, errors }
+}
+
+function applyRetentionDeletion(state) {
+  const jobResult = applyJobDeletion(state)
+  const fileResult = applyFileDeletion(state)
+  const errors = [...jobResult.errors, ...fileResult.errors]
+
+  return {
+    deletedJobIds: jobResult.deletedJobIds,
+    deletedJobCount: jobResult.deletedJobIds.length,
+    deletedFiles: fileResult.deletedFiles,
+    deletedFileCount: fileResult.deletedFiles.length,
+    deletedBytes: fileResult.deletedBytes,
+    deletedGB: bytesToGB(fileResult.deletedBytes),
+    errorCount: errors.length,
+    errors,
   }
 }
 
@@ -293,6 +449,10 @@ function appendSummaryLog(report) {
     budgetStatus: report.budget.status,
     diskStatus: report.budget.diskStatus,
     apply: report.apply,
+    deletedJobCount: report.applied?.deletedJobCount || 0,
+    deletedFileCount: report.applied?.deletedFileCount || 0,
+    deletedGB: report.applied?.deletedGB || 0,
+    errorCount: report.applied?.errorCount || 0,
   })}\n`)
 }
 
@@ -300,7 +460,11 @@ async function runRetentionSweep(options = {}) {
   if (runningSweep) return runningSweep
 
   runningSweep = (async () => {
-    const report = await buildRetentionReport(options)
+    const apply = options.apply === true
+    const state = await collectRetentionState()
+    const applied = apply ? applyRetentionDeletion(state) : null
+    const report = buildReportFromState(state, options, applied)
+
     ensureDir(REPORT_DIR)
     const reportPath = path.join(REPORT_DIR, `retention-sweep-${report.generatedAt.replace(/[:.]/g, '-')}.json`)
     fs.writeFileSync(reportPath, JSON.stringify({ reportPath, ...report }, null, 2))
@@ -319,11 +483,21 @@ function scheduleRetentionSweeps({ intervalMs = SWEEP_INTERVAL_MS, runImmediatel
   if (retentionTimer) return retentionTimer
 
   const invoke = async (reason) => {
+    const apply = shouldApplyRetention()
     try {
-      const result = await runRetentionSweep({ apply: false, reason, source: 'youtube-api-scheduler' })
-      console.log(`[retention-sweeper] Dry-run complete (${reason}). Candidates: ${result.candidates.totalCandidateGB} GB. Budget: ${result.budget.status}. Report: ${result.reportPath}`)
+      const result = await runRetentionSweep({
+        apply,
+        reason,
+        source: 'youtube-api-scheduler',
+      })
+      const prefix = apply ? 'Apply' : 'Dry-run'
+      const suffix = apply
+        ? `Deleted ${result.applied?.deletedJobCount || 0} jobs and ${result.applied?.deletedFileCount || 0} files (${result.applied?.deletedGB || 0} GB).`
+        : `Candidates: ${result.candidates.totalCandidateGB} GB.`
+      console.log(`[retention-sweeper] ${prefix} complete (${reason}). ${suffix} Budget: ${result.budget.status}. Report: ${result.reportPath}`)
     } catch (error) {
-      console.error('[retention-sweeper] Dry-run failed:', error.message)
+      const prefix = apply ? 'Apply' : 'Dry-run'
+      console.error(`[retention-sweeper] ${prefix} failed:`, error.message)
     }
   }
 
@@ -338,7 +512,9 @@ function scheduleRetentionSweeps({ intervalMs = SWEEP_INTERVAL_MS, runImmediatel
 
 module.exports = {
   SUMMARY_LOG_PATH,
-  buildRetentionReport,
+  buildRetentionReport: async (options = {}) => buildReportFromState(await collectRetentionState(), options, null),
+  collectRetentionState,
   runRetentionSweep,
   scheduleRetentionSweeps,
+  shouldApplyRetention,
 }

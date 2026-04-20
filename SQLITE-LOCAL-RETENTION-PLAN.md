@@ -568,6 +568,25 @@ Phase 4 is now live on Henri's local SQLite instance:
 - 7-day TTL for source cache
 - confirm gallery stays clean and no live jobs vanish
 
+### Status on 2026-04-20
+Phase 5 is now live on Henri's local SQLite instance:
+- `server/lib/retention-sweeper.js` now supports real deletion when `SLICER_RETENTION_APPLY=true`
+- destructive apply remains scoped to `SLICER_JOB_STORE=sqlite`; it refuses to run in Supabase mode
+- the startup/hourly sweeper now applies the retention policy automatically on the local API process
+- `server/purge-expired-cache.js --apply` now performs the same real-deletion path as the scheduler
+- deletion results are recorded in both the JSON reports and `server/logs/retention-sweeper.jsonl`
+- synthetic apply smoke passed via `node server/lib/retention-sweeper.smoke.js --apply`, proving that:
+  - expired complete + failed jobs are removed
+  - expired managed cache files are deleted
+  - live/fresh jobs and referenced files remain intact
+- live local validation passed via `node server/purge-expired-cache.js --apply` on the current SQLite state:
+  - deleted 0 jobs
+  - deleted 20 expired transcription-cache files
+  - removed about 0.011 GB of stale cache
+  - `/api/jobs` still returns the same 3 live jobs afterward
+  - `/api/usage` still reports `mode: sqlite` and dropped from about 8378.8 MB to about 8367.2 MB
+- PM2 restart of `slicer-api`, `slicer-preview`, and `slicer-preview-tunnel` confirmed the startup scheduler is now logging `phase5-apply` entries under `jobStore: sqlite`
+
 ## Phase 6: Remove Supabase dependency fully
 Only after SQLite has been stable.
 - remove Supabase env vars from runtime requirements

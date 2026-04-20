@@ -1,14 +1,10 @@
 const { runRetentionSweep } = require('./lib/retention-sweeper.js')
 
 async function main() {
-  const requestedApply = process.argv.includes('--apply')
-  if (requestedApply) {
-    console.warn('[purge-expired-cache] Phase 4 is dry-run only. Ignoring --apply and generating a retention report without deleting anything.')
-  }
-
+  const apply = process.argv.includes('--apply')
   const result = await runRetentionSweep({
-    apply: false,
-    reason: requestedApply ? 'manual_dry_run_apply_requested' : 'manual_dry_run',
+    apply,
+    reason: apply ? 'manual_apply' : 'manual_dry_run',
     source: 'purge-expired-cache',
   })
 
