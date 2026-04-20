@@ -541,6 +541,27 @@ Validated with a sqlite-mode smoke using `server/temp/smoke-sqlite-phase3.js`:
 - log what *would* be deleted
 - do not delete for first validation pass
 
+### Status on 2026-04-20
+Phase 4 is now live on Henri's local SQLite instance:
+- added `server/lib/retention-sweeper.js` to generate dry-run retention reports against the active job store
+- `server/youtube-api.js` now starts the retention sweeper automatically when `SLICER_JOB_STORE=sqlite`
+- startup and hourly sweeps append summary lines to `server/logs/retention-sweeper.jsonl`
+- detailed dry-run reports are written to `server/cleanup-reports/retention-sweep-*.json`
+- `server/purge-expired-cache.js` is now phase-4-safe and always stays in dry-run mode
+- current policy coverage in the dry-run report includes:
+  - expired complete jobs (7 days)
+  - expired failed jobs (48 hours)
+  - root source files older than 7 days and not referenced by live jobs
+  - transcription cache / transcript cache older than 7 days
+  - export temp files older than 12 hours
+  - cache budget status against the 8 GB warning / 10 GB hard cap guardrails
+- validation passed with:
+  - `npm run lint`
+  - `npm run build`
+  - `node server/temp/smoke-phase4-retention.js`
+  - `node server/purge-expired-cache.js`
+  - PM2 restart of `slicer-api`, `slicer-preview`, and `slicer-preview-tunnel` confirming startup dry-run logging under `jobStore: sqlite`
+
 ## Phase 5: Enable real deletion
 - 7-day TTL for complete
 - 48h TTL for failed
