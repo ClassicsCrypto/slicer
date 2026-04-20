@@ -1073,8 +1073,8 @@ function detectVolumeSpikesForFile(filePath) {
 
 const GENRE_SIGNAL_PACKS = {
   general_gaming: {
-    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'got em', 'got him', 'got one', 'headshot', 'killed', 'knocked', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
-    objective: ['captured', 'champion', 'defuse', 'exfil', 'extract', 'final circle', 'first blood', 'flag secured', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
+    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
+    objective: ['captured', 'champion', 'defuse', 'exfil', 'final circle', 'first blood', 'flag secured', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
     reaction: ['clip that', 'holy', 'insane', 'let\'s go', 'no way', 'oh my god', 'oh shit', 'what just happened', 'yo'],
     funny: ['bruh', 'haha', 'i\'m dead', 'im dead', 'lmao', 'no shot', 'wtf'],
     negative: ['afk', 'audio settings', 'chat', 'follow the stream', 'loading', 'lobby', 'menu', 'queue', 'queueing', 'sensitivity', 'settings', 'sub goal', 'thanks for the follow', 'thanks for watching'],
@@ -1108,7 +1108,7 @@ const GENRE_SIGNAL_PACKS = {
     negative: ['timeout', 'warmup'],
   },
   social_sandbox: {
-    hardAction: ['boss fight', 'chain it', 'clear the wave', 'combo', 'fight back', 'got the boss', 'raid'],
+    hardAction: ['boss fight', 'chain it', 'clear the wave', 'combo', 'fight back', 'got the boss'],
     objective: ['event clear', 'farm run', 'flag secured', 'guild win', 'island run', 'portal', 'quest done', 'wave cleared'],
     reaction: ['that was clean', 'that was sick', 'let\'s go'],
     funny: ['bruh', 'lmao'],
@@ -1260,6 +1260,34 @@ function getPriorityMatches(text, priorityProfile) {
     ...priorityProfile.matches.funny,
     ...priorityProfile.matches.conversation,
   ])
+}
+
+function filterHardActionMatches(matches, text) {
+  const lowered = String(text || '').toLowerCase()
+  return matches.filter((term) => {
+    if (term === 'got him' || term === 'got em') {
+      if (/\bgot (?:him|em)\s+(trained|training|set up|setup|working|configured|building|editing|to)\b/.test(lowered)) return false
+      return true
+    }
+
+    if (term === 'got one') {
+      if (/\bgot one\s+(dark\s+fish|fish|button|buttons|link|links|art|generation|generations|training|trained)\b/.test(lowered)) return false
+      return /\bgot one(?:\b|[!.,?])/.test(lowered)
+    }
+
+    return true
+  })
+}
+
+function filterObjectiveMatches(matches, text) {
+  const lowered = String(text || '').toLowerCase()
+  return matches.filter((term) => {
+    if (term === 'exfil') {
+      return /\b(exfil|get out|get to extract|leave|loot|stash|bag is full|we\'re rich|were rich|third party)\b/.test(lowered)
+    }
+
+    return true
+  })
 }
 
 function getActionShotMatches(text) {
@@ -1453,9 +1481,18 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
   const modePack = MODE_SIGNAL_PACKS[detectionMode] || MODE_SIGNAL_PACKS.default
   const text = chunk.text.toLowerCase()
 
+  const hardActionHits = filterHardActionMatches(
+    uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.hardAction, ...pack.hardAction]),
+    text,
+  )
+  const objectiveHits = filterObjectiveMatches(
+    uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.objective, ...pack.objective]),
+    text,
+  )
+
   const hits = {
-    hardAction: uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.hardAction, ...pack.hardAction]),
-    objective: uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.objective, ...pack.objective]),
+    hardAction: hardActionHits,
+    objective: objectiveHits,
     reaction: uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.reaction, ...pack.reaction]),
     funny: uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.funny, ...pack.funny]),
     negative: uniqueMatches(text, [...GENRE_SIGNAL_PACKS.general_gaming.negative, ...pack.negative, ...modePack.negative]),
@@ -1464,7 +1501,7 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
 
   const spikeHits = (volumeSpikes || []).filter((spike) => spike.startSec >= chunk.startSec - 2 && spike.startSec <= chunk.endSec + 2).length
   const density = chunk.words.length / Math.max(chunk.durationSec, 1)
-  const actionShotMatches = getActionShotMatches(text)
+  const actionShotMatches = filterHardActionMatches(getActionShotMatches(text), text)
   const hasGameplayPayoff = hits.hardAction.length + hits.objective.length + actionShotMatches.length > 0
   const priorityMatches = getPriorityMatches(text, priorityProfile)
   const actionPriorityBias = hasActionPriority(priorityProfile)
@@ -1522,7 +1559,12 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
 }
 
 function isGameplayStrictMode(priorityProfile, detectionMode) {
-  return Boolean(priorityProfile?.gameplayRequested || detectionMode === 'gaming')
+  return Boolean(
+    priorityProfile?.gameplayRequested ||
+    priorityProfile?.actionPriorityRequested ||
+    (priorityProfile?.matches?.action?.length ?? 0) > 0 ||
+    detectionMode === 'gaming'
+  )
 }
 
 function hasExplicitActionPriority(priorityProfile) {
@@ -1532,12 +1574,12 @@ function hasExplicitActionPriority(priorityProfile) {
 function getConcreteActionMatches(text, priorityProfile) {
   const lowered = String(text || '').toLowerCase()
   const clutchVerbLike = /\bclutched\b|\bclutch (play|plays|round|rounds|win|wins|shot|shots|kill|kills|moment|moments)\b/.test(lowered)
-  const actionTerms = uniqueMatches(lowered, [
+  const actionTerms = filterHardActionMatches(uniqueMatches(lowered, [
     ...GENRE_SIGNAL_PACKS.general_gaming.hardAction,
     ...(priorityProfile?.matches?.action || []),
-  ]).filter((term) => term !== 'clutch' || clutchVerbLike)
-  const objectiveTerms = uniqueMatches(lowered, [...GENRE_SIGNAL_PACKS.general_gaming.objective])
-  const actionShotTerms = getActionShotMatches(lowered)
+  ]), lowered).filter((term) => term !== 'clutch' || clutchVerbLike)
+  const objectiveTerms = filterObjectiveMatches(uniqueMatches(lowered, [...GENRE_SIGNAL_PACKS.general_gaming.objective]), lowered)
+  const actionShotTerms = filterHardActionMatches(getActionShotMatches(lowered), lowered)
   const directActionTerms = [...new Set([...actionTerms, ...objectiveTerms, ...actionShotTerms])]
 
   return {
@@ -1573,9 +1615,7 @@ function passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) {
   }
 
   if (explicitActionPriority && concreteSignals.directActionTerms.length === 0 && actionPriorityCount === 0 && objectivePriorityCount === 0) {
-    if (!strongReactionBurst && candidate.score < 22) {
-      return false
-    }
+    return false
   }
 
   if (strongGameplaySignal) return true
@@ -1602,13 +1642,14 @@ function clipTextMatchesGameplayAsk(clipText, priorityProfile, detectionMode) {
   const text = String(clipText || '').toLowerCase()
   const farewellLike = /(catch you|ggs|good night|goodnight|see you|thanks man|thanks bro|take care)/.test(text)
   const aftermathLike = isCelebrationAftermathLike(text)
-  const gameplayTerms = uniqueMatches(text, [
-    ...GENRE_SIGNAL_PACKS.general_gaming.hardAction,
-    ...GENRE_SIGNAL_PACKS.general_gaming.objective,
-    ...(priorityProfile?.matches?.action || []),
-    ...(priorityProfile?.matches?.reaction || []),
-  ])
   const concreteSignals = getConcreteActionMatches(text, priorityProfile)
+  const gameplayTerms = [...new Set([
+    ...concreteSignals.actionTerms,
+    ...concreteSignals.objectiveTerms,
+    ...concreteSignals.actionShotTerms,
+    ...uniqueMatches(text, priorityProfile?.matches?.action || []),
+    ...uniqueMatches(text, priorityProfile?.matches?.reaction || []),
+  ])]
   const actionTerms = concreteSignals.actionTerms
   const directActionTerms = concreteSignals.directActionTerms
   const nonClutchActionTerms = actionTerms.filter((term) => term !== 'clutch')
@@ -1619,11 +1660,7 @@ function clipTextMatchesGameplayAsk(clipText, priorityProfile, detectionMode) {
   if (aftermathLike && directActionTerms.length === 0 && concreteSignals.objectiveTerms.length <= 1) return false
   if (hasExplicitActionPriority(priorityProfile) && directActionTerms.length === 0) {
     const actionAdjacentContext = /(avenge me|back me up|cover me|cover you|flag carrier|got the flag|grabbed the flag|he'?s low|he is low|on me|push that|stole the flag)/.test(text)
-    const reactionSupported = uniqueMatches(text, [
-      ...GENRE_SIGNAL_PACKS.general_gaming.reaction,
-      ...(priorityProfile?.matches?.reaction || []),
-    ]).length > 0
-    if (!actionAdjacentContext && !reactionSupported) return false
+    if (!actionAdjacentContext) return false
   }
   if (weakNearMiss && strongActionWords.length === 0) return false
   if (gameplayTerms.length > 0) return true
@@ -1638,16 +1675,23 @@ function isLowPayoffClipWindow(clipText, priorityProfile, detectionMode) {
   const farewellLike = /(gg'?s?, guys|gg'?s everyone|good night|goodnight|see you tomorrow|thanks for watching|thanks for hanging|catch you next time)/.test(text)
   const aftermathLike = isCelebrationAftermathLike(text)
   const coordinationLike = /(i'll cover you|cover you|wait for me|come on|jump in|where are you|let'?s go to|lets go to)/.test(text)
+  const workflowChatterLike = /(buttons in discord|export the x post|quest descriptions|raid descriptions|twitter post|trained with the|generations for the art)/.test(text)
+  const fishingChatterLike = /\b(dark fish|first fish|fishing|caught a fish|caught fish|fish off)\b/.test(text)
   const passiveKillFeedLike = /\b(?:he|she|they|[a-z0-9_]{3,}) got killed by\b/.test(text)
   const concreteSignals = getConcreteActionMatches(text, priorityProfile)
-  const payoffTerms = uniqueMatches(text, [
-    ...GENRE_SIGNAL_PACKS.general_gaming.hardAction,
-    ...GENRE_SIGNAL_PACKS.general_gaming.objective,
-    ...GENRE_SIGNAL_PACKS.general_gaming.reaction,
-    ...GENRE_SIGNAL_PACKS.general_gaming.funny,
-  ])
+  const payoffTerms = [...new Set([
+    ...concreteSignals.actionTerms,
+    ...concreteSignals.objectiveTerms,
+    ...concreteSignals.actionShotTerms,
+    ...uniqueMatches(text, GENRE_SIGNAL_PACKS.general_gaming.reaction),
+    ...uniqueMatches(text, GENRE_SIGNAL_PACKS.general_gaming.funny),
+  ])]
 
   if ((transitionLike || farewellLike) && concreteSignals.actionTerms.length === 0 && concreteSignals.objectiveTerms.length === 0 && concreteSignals.actionShotTerms.length === 0 && payoffTerms.length === 0) {
+    return true
+  }
+
+  if (hasExplicitActionPriority(priorityProfile) && (workflowChatterLike || fishingChatterLike) && concreteSignals.directActionTerms.length === 0) {
     return true
   }
 
@@ -1660,6 +1704,21 @@ function isLowPayoffClipWindow(clipText, priorityProfile, detectionMode) {
   }
 
   if (coordinationLike && payoffTerms.length === 0 && detectionMode !== 'conversation') {
+    return true
+  }
+
+  return false
+}
+
+function shouldDropExplicitActionClip(clip, priorityProfile) {
+  if (!hasExplicitActionPriority(priorityProfile)) return false
+
+  const text = String((clip?.subtitles || []).map((word) => word?.text || '').join(' ')).toLowerCase()
+  if (!text) return false
+
+  if (/\bgot him trained\b/.test(text)) return true
+  if (/\bgot one\s+(?:dark\s+fish|fish)\b/.test(text)) return true
+  if (/(buttons in discord|export the x post|quest descriptions|raid descriptions|twitter post|trained with the|generations for the art|dark fish|first fish|fishing|caught a fish|caught fish|fish off)/.test(text)) {
     return true
   }
 
@@ -2512,13 +2571,23 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
+      let explicitActionDrops = 0
+      if (hasExplicitActionPriority(priorityProfile) && result.length > 0) {
+        for (let index = result.length - 1; index >= 0; index -= 1) {
+          if (!shouldDropExplicitActionClip(result[index], priorityProfile)) continue
+          result.splice(index, 1)
+          selectedClips.splice(index, 1)
+          explicitActionDrops += 1
+        }
+      }
+
       if (result.length < clipCount) {
         if (result.length === 0) {
           clipShortfallReason = priorityProfile.gameplayRequested
             ? `Requested ${clipCount}, delivered 0. No strong gameplay moments matched the current source and priority hint.`
             : `Requested ${clipCount}, delivered 0. No strong distinct moments were found in the current source.`
         } else {
-          clipShortfallReason = `Requested ${clipCount}, delivered ${result.length}. ${duplicateClipsRemoved > 0 ? `${duplicateClipsRemoved} near-duplicate moments were collapsed.` : 'Gemini returned fewer unique moments than requested.'}${backfilledClipsAdded > 0 ? ` Added ${backfilledClipsAdded} extra moments from local scoring, but the run still came up short.` : ''}`
+          clipShortfallReason = `Requested ${clipCount}, delivered ${result.length}. ${duplicateClipsRemoved > 0 ? `${duplicateClipsRemoved} near-duplicate moments were collapsed.` : 'Gemini returned fewer unique moments than requested.'}${backfilledClipsAdded > 0 ? ` Added ${backfilledClipsAdded} extra moments from local scoring, but the run still came up short.` : ''}${explicitActionDrops > 0 ? ` Removed ${explicitActionDrops} off-target moments after final action-priority filtering.` : ''}`
         }
       }
 
