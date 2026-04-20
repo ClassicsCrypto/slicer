@@ -520,6 +520,21 @@ Flip local machine only:
 
 Validate every checklist item above.
 
+### Status on 2026-04-20
+Phase 3 is now live on Henri's local Slicer instance:
+- `.env.local` sets `SLICER_JOB_STORE=sqlite`
+- the Next API job routes now read/write SQLite through `lib/job-store/store.ts`
+- `server/youtube-api.js` now fetches and updates jobs through SQLite when that flag is active
+- `/api/usage` now reports local cache/storage metrics in sqlite mode instead of depending on Supabase job reads
+
+Validated with a sqlite-mode smoke using `server/temp/smoke-sqlite-phase3.js`:
+- `/api/usage` reported `mode: sqlite`
+- `/api/jobs` read the seeded SQLite job set
+- a temporary sqlite-only job was created
+- `/api/process` + the local worker advanced that job and failed it cleanly on an invalid URL
+- `/api/jobs/[jobId]/poll` returned the terminal failure from SQLite
+- the temporary job deleted cleanly and disappeared from `/api/jobs`
+
 ## Phase 4: Enable retention in dry-run mode
 - run sweeper on startup
 - run every hour

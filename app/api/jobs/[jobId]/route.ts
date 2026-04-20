@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
-import { mirrorJobToShadowSqlite, removeJobFromShadowSqlite } from '@/lib/job-store/shadow'
+import { deleteJobRecord, getJobRecord, updateJobRecord } from '@/lib/job-store/store'
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job } from '@/types'
@@ -20,29 +19,19 @@ async function normalizeJob(job: any): Promise<Job> {
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: { jobId: string } }) {
-  const supabase = createServerClient()
-
-  await supabase.from('clips').delete().eq('job_id', params.jobId)
-  const { error: jobError } = await supabase.from('jobs').delete().eq('id', params.jobId)
+  const { error: jobError } = await deleteJobRecord(params.jobId, 'api/jobs/[jobId] DELETE')
 
   if (jobError) {
     return NextResponse.json({ error: jobError.message }, { status: 500 })
   }
-
-  await removeJobFromShadowSqlite(params.jobId, 'api/jobs/[jobId] DELETE')
   return NextResponse.json({ ok: true })
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { jobId: string } }) {
-  const supabase = createServerClient()
-
   try {
     const body = await request.json()
-    const { data: existingJob, error: fetchError } = await supabase
-      .from('jobs')
-      .select('*')
-      .eq('id', params.jobId)
-      .single()
+    const existingJob = await getJobRecord(params.jobId, 'api/jobs/[jobId] PATCH fetch')
+    const fetchError = !existingJob ? new Error('Job not found') : null
 
     if (fetchError || !existingJob) {
       return NextResponse.json({ error: fetchError?.message || 'Job not found' }, { status: 404 })
@@ -67,18 +56,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { jobId:
       return NextResponse.json({ error: 'No supported fields to update' }, { status: 400 })
     }
 
-    const { data, error } = await supabase
-      .from('jobs')
-      .update(patch)
-      .eq('id', params.jobId)
-      .select('*')
-      .single()
+    const data = await updateJobRecord(params.jobId, patch, 'api/jobs/[jobId] PATCH')
+    const error = !data ? new Error('Job not found') : null
 
     if (error || !data) {
       return NextResponse.json({ error: error?.message || 'Job not found' }, { status: 404 })
     }
-
-    await mirrorJobToShadowSqlite(data, 'api/jobs/[jobId] PATCH')
     return NextResponse.json({ job: await normalizeJob(data) })
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
@@ -86,13 +69,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { jobId:
 }
 
 export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
-  const supabase = createServerClient()
-
-  const { data: job, error: fetchError } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('id', params.jobId)
-    .single()
+  const job = await getJobRecord(params.jobId, 'api/jobs/[jobId] POST fetch')
+  const fetchError = !job ? new Error('Job not found') : null
 
   if (fetchError || !job) {
     return NextResponse.json({ error: fetchError?.message || 'Job not found' }, { status: 404 })

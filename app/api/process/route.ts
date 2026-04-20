@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
-import { mirrorJobToShadowSqlite } from '@/lib/job-store/shadow'
+import { getJobRecord, updateJobRecord } from '@/lib/job-store/store'
 import { getServerApiUrl } from '@/lib/api-url-server'
 import { Job, JobInputKind, JobProgress, ProcessingOptions } from '@/types'
 
@@ -97,12 +96,8 @@ export async function POST(req: NextRequest) {
 
     const kind: JobInputKind = rescoreOnly ? 'rescore' : (inputKind ?? (rawInputUrl ? 'remote_url' : 'uploaded_file'))
 
-    const supabase = createServerClient()
-    const { data: existingJob, error: existingJobError } = await supabase
-      .from('jobs')
-      .select('*')
-      .eq('id', jobId)
-      .single()
+    const existingJob = await getJobRecord(jobId, 'api/process POST fetch')
+    const existingJobError = !existingJob ? new Error('Job not found') : null
 
     if (existingJobError || !existingJob) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -117,25 +112,20 @@ export async function POST(req: NextRequest) {
       rescoreOnly,
     })
 
-    const { data: updatedJob, error: updateError } = await supabase
-      .from('jobs')
-      .update({
-        title: title?.trim() || existingJob.title,
-        source_url: sourceUrl || rawInputUrl || existingJob.source_url,
-        status: 'processing',
-        options,
-        progress,
-      })
-      .eq('id', jobId)
-      .select('*')
-      .single()
+    const updatedJob = await updateJobRecord(jobId, {
+      title: title?.trim() || existingJob.title,
+      source_url: sourceUrl || rawInputUrl || existingJob.source_url,
+      status: 'processing',
+      options,
+      progress,
+      updated_at: new Date().toISOString(),
+    }, 'api/process POST start')
+    const updateError = !updatedJob ? new Error('Failed to update job before processing') : null
 
     if (updateError || !updatedJob) {
       console.error('Process route update error:', updateError)
       return NextResponse.json({ error: 'Failed to update job before processing' }, { status: 500 })
     }
-
-    await mirrorJobToShadowSqlite(updatedJob, 'api/process POST start')
 
     try {
       const apiBase = await getServerApiUrl()
@@ -159,28 +149,14 @@ export async function POST(req: NextRequest) {
       }
     } catch (startError: any) {
       console.error('Process route start error:', startError)
-      const { data: failedJob } = await supabase
-        .from('jobs')
-        .update({
-          status: 'failed',
-          progress: {
-            ...(progress ?? {}),
-            phase: 'failed',
-            progress: startError?.message ?? 'Failed to start processing job',
-          },
-        })
-        .eq('id', jobId)
-        .select('*')
-        .single()
-
-      await mirrorJobToShadowSqlite(failedJob ?? {
-        ...updatedJob,
+      await updateJobRecord(jobId, {
         status: 'failed',
         progress: {
           ...(progress ?? {}),
           phase: 'failed',
           progress: startError?.message ?? 'Failed to start processing job',
         },
+        updated_at: new Date().toISOString(),
       }, 'api/process POST failback')
 
       return NextResponse.json({ error: 'Failed to start processing job' }, { status: 500 })

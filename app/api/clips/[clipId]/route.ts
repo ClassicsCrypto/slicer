@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getClipStableId, normalizeClips } from '@/lib/clip-id'
-import { createServerClient } from '@/lib/supabase'
-import { mirrorJobToShadowSqlite } from '@/lib/job-store/shadow'
+import { listJobRecords, updateJobRecord } from '@/lib/job-store/store'
 import { Clip } from '@/types'
 
 export async function DELETE(
@@ -9,23 +8,17 @@ export async function DELETE(
   { params }: { params: { clipId: string } },
 ) {
   const { clipId } = params
-  const supabase = createServerClient()
 
   try {
-    // Find the job that contains this clip
-    const { data: jobs, error: fetchError } = await supabase
-      .from('jobs')
-      .select('*')
-      .not('progress', 'is', null)
+    const jobs = await listJobRecords(200, 'api/clips/[clipId] DELETE scan')
 
-    if (fetchError) {
-      console.error('Error fetching jobs:', fetchError)
+    if (!Array.isArray(jobs)) {
       return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 })
     }
 
     // Find which job contains this clip
     let targetJob: Record<string, any> | null = null
-    for (const job of jobs || []) {
+    for (const job of jobs) {
       const completedClips = normalizeClips((job.progress?.completedClips || []) as Clip[])
       if (completedClips.some((c) => getClipStableId(c) === clipId)) {
         targetJob = job
@@ -51,19 +44,17 @@ export async function DELETE(
         : undefined,
     }
 
-    const { data: updatedJob, error: updateError } = await supabase
-      .from('jobs')
-      .update({ progress: nextProgress })
-      .eq('id', targetJob.id)
-      .select('*')
-      .single()
+    const updatedJob = await updateJobRecord(targetJob.id, {
+      progress: nextProgress,
+      updated_at: new Date().toISOString(),
+    }, 'api/clips/[clipId] DELETE')
+    const updateError = !updatedJob ? new Error('Failed to delete clip') : null
 
     if (updateError) {
       console.error('Error updating job:', updateError)
       return NextResponse.json({ error: 'Failed to delete clip' }, { status: 500 })
     }
 
-    await mirrorJobToShadowSqlite(updatedJob ?? { ...targetJob, progress: nextProgress }, 'api/clips/[clipId] DELETE')
     console.log(`Deleted clip ${clipId} from job ${targetJob.id}`)
     return NextResponse.json({ success: true })
   } catch (err) {

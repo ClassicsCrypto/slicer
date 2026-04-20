@@ -61,11 +61,37 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 const activeJobRuns = new Set()
 const PARTIAL_FILE_RE = /\.(part|ytdl)$/i
 
+function getJobStoreKind() {
+  return process.env.SLICER_JOB_STORE === 'sqlite' ? 'sqlite' : 'supabase'
+}
+
+function isSqlitePrimaryJobStore() {
+  return getJobStoreKind() === 'sqlite'
+}
+
+function buildUpdatedSqliteJob(existing, patch) {
+  return {
+    ...existing,
+    ...patch,
+    id: existing.id,
+    user_id: patch.user_id ?? existing.user_id,
+    title: patch.title ?? existing.title,
+    source_url: patch.source_url ?? existing.source_url,
+    options: patch.options ?? existing.options,
+    progress: patch.progress ?? existing.progress,
+    created_at: patch.created_at ?? existing.created_at,
+    updated_at: patch.updated_at ?? new Date().toISOString(),
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function fetchJob(jobId) {
+  if (isSqlitePrimaryJobStore()) {
+    return sqliteShadowStore.getShadowJob(jobId)
+  }
   if (!SUPABASE_URL || !SUPABASE_KEY) return null
   const response = await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${jobId}&select=*`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -75,6 +101,14 @@ async function fetchJob(jobId) {
 }
 
 async function updateJob(jobId, patch) {
+  if (isSqlitePrimaryJobStore()) {
+    const existing = sqliteShadowStore.getShadowJob(jobId)
+    if (!existing) return null
+    const updatedJob = buildUpdatedSqliteJob(existing, patch)
+    sqliteShadowStore.upsertShadowJob(updatedJob)
+    return sqliteShadowStore.getShadowJob(jobId)
+  }
+
   if (!SUPABASE_URL || !SUPABASE_KEY) return null
   await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${jobId}`, {
     method: 'PATCH',
@@ -2000,7 +2034,7 @@ async function handleTranscribeLocal(req, res) {
 
     sendJson(res, 200, { transcribeId, cached: true })
 
-    if (requestJobId && SUPABASE_URL && SUPABASE_KEY) {
+    if (requestJobId) {
       setImmediate(async () => {
         try {
           await mergeJobProgress(requestJobId, {
@@ -2124,7 +2158,7 @@ async function handleTranscribeLocal(req, res) {
             cacheKey: cacheKey ? getTranscriptionCacheKey(cacheKey) : undefined,
           })
 
-          if (requestJobId && SUPABASE_URL && SUPABASE_KEY) {
+          if (requestJobId) {
             mergeJobProgress(requestJobId, {
               phase: 'transcribing',
               progress: 'Transcription complete, preparing scoring...',
@@ -2136,7 +2170,7 @@ async function handleTranscribeLocal(req, res) {
             }).then(() => {
               console.log(`[transcribe-local] ${transcribeId} pushed summary to job ${requestJobId}`)
             }).catch(err => {
-              console.error(`[transcribe-local] Supabase push failed:`, err.message)
+              console.error(`[transcribe-local] Job store push failed:`, err.message)
             })
           }
         } catch (parseErr) {
@@ -2487,12 +2521,8 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
-      if (SUPABASE_URL && SUPABASE_KEY) {
-        const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${jobId}&select=status,progress`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-        })
-        const checkData = await checkRes.json()
-        const currentJob = checkData?.[0]
+      {
+        const currentJob = await fetchJob(jobId)
         if (currentJob?.status === 'complete') {
           console.log(`[score-clips] Job ${jobId} already complete — skipping push`)
         } else {
@@ -2513,7 +2543,7 @@ Return ONLY compact JSON on ONE LINE:
               completedAt: new Date().toISOString(),
             },
           })
-          console.log(`[score-clips] Pushed ${result.length} clips to Supabase job ${jobId}`)
+          console.log(`[score-clips] Pushed ${result.length} clips to ${getJobStoreKind()} job ${jobId}`)
         }
       }
     } catch (err) {

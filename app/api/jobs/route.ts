@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { createServerClient } from '@/lib/supabase'
-import { mirrorJobToShadowSqlite, mirrorJobsToShadowSqlite } from '@/lib/job-store/shadow'
+import { createJobRecord, listJobRecords, updateJobRecord } from '@/lib/job-store/store'
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job, JobProgress } from '@/types'
@@ -58,46 +57,34 @@ function buildTimedOutProgress(progress: JobProgress, ageMs: number): JobProgres
   }
 }
 
-async function recoverStaleJob(supabase: ReturnType<typeof createServerClient>, job: any) {
+async function recoverStaleJob(job: any) {
   if (job?.status !== 'processing') return job
 
   const ageMs = Date.now() - getActivityTimestamp(job)
   if (ageMs < STALE_JOB_MS) return job
 
   const progress = buildTimedOutProgress((job.progress ?? {}) as JobProgress, ageMs)
-  const { data } = await supabase
-    .from('jobs')
-    .update({ status: 'failed', progress, updated_at: new Date().toISOString() })
-    .eq('id', job.id)
-    .select('*')
-    .single()
-
-  const recoveredJob = data ?? { ...job, status: 'failed', progress }
-  await mirrorJobToShadowSqlite(recoveredJob, 'api/jobs recoverStaleJob')
-  return recoveredJob
+  return (await updateJobRecord(job.id, {
+    status: 'failed',
+    progress,
+    updated_at: new Date().toISOString(),
+  }, 'api/jobs recoverStaleJob')) ?? { ...job, status: 'failed', progress }
 }
 
 export async function GET() {
-  const supabase = createServerClient()
-
-  const { data: jobsData, error } = await supabase
-    .from('jobs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50)
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  let jobsData: any[] = []
+  try {
+    jobsData = await listJobRecords(50, 'api/jobs GET')
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? 'Failed to list jobs' }, { status: 500 })
   }
 
-  const recoveredJobs = await Promise.all((jobsData ?? []).map((job) => recoverStaleJob(supabase, job)))
-  await mirrorJobsToShadowSqlite(recoveredJobs, 'api/jobs GET seed')
+  const recoveredJobs = await Promise.all((jobsData ?? []).map((job) => recoverStaleJob(job)))
   const normalizedJobs = await Promise.all(recoveredJobs.map((job) => normalizeJob(job)))
   return NextResponse.json({ jobs: normalizedJobs })
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServerClient()
   const body = await request.json()
   const createdAt = new Date().toISOString()
 
@@ -109,9 +96,8 @@ export async function POST(request: NextRequest) {
     requestedClipCount: body.options?.clipCount,
   })
 
-  const { data, error } = await supabase
-    .from('jobs')
-    .insert({
+  try {
+    const data = await createJobRecord({
       id: body.jobId || uuidv4(),
       user_id: '00000000-0000-0000-0000-000000000001',
       title: body.title || 'Untitled Video',
@@ -121,14 +107,10 @@ export async function POST(request: NextRequest) {
       progress: initialProgress,
       created_at: createdAt,
       updated_at: createdAt,
-    })
-    .select('*')
-    .single()
+    }, 'api/jobs POST create')
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ job: await normalizeJob(data) })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? 'Failed to create job' }, { status: 500 })
   }
-
-  await mirrorJobToShadowSqlite(data, 'api/jobs POST create')
-  return NextResponse.json({ job: await normalizeJob(data) })
 }
