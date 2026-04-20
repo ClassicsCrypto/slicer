@@ -25,6 +25,7 @@ const crypto = require('crypto')
 const { Readable } = require('stream')
 const { pipeline } = require('stream/promises')
 const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
+const retentionSweeper = require('./lib/retention-sweeper.js')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -3057,6 +3058,11 @@ async function handleInfo(req, res) {
 
 server.listen(PORT, () => {
   cleanupTempArtifacts()
+  if (isSqlitePrimaryJobStore() && process.env.SLICER_ENABLE_RETENTION_SWEEPER !== 'false') {
+    retentionSweeper.scheduleRetentionSweeps({ runImmediately: true })
+  } else {
+    console.log('[retention-sweeper] skipped (SLICER_JOB_STORE != sqlite or sweeper disabled)')
+  }
   console.log(`\n🎬 Slicer Local API running on http://localhost:${PORT}`)
   console.log(`   POST /download  - Download YouTube/Twitch video`)
   console.log(`   POST /clip      - Export clip segment via FFmpeg`)
