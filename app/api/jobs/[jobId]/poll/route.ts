@@ -39,7 +39,7 @@ async function recoverStaleJob(supabase: ReturnType<typeof createServerClient>, 
     .single()
 
   const recoveredJob = data ?? { ...job, status: 'failed', progress }
-  await mirrorJobToShadowSqlite(recoveredJob)
+  await mirrorJobToShadowSqlite(recoveredJob, 'api/jobs/[jobId]/poll recoverStaleJob')
   return recoveredJob
 }
 
@@ -57,7 +57,7 @@ export async function GET(_request: NextRequest, { params }: { params: { jobId: 
   }
 
   const job = await recoverStaleJob(supabase, data)
-  await mirrorJobToShadowSqlite(job)
+  await mirrorJobToShadowSqlite(job, 'api/jobs/[jobId]/poll GET')
   const progress = (job.progress ?? {}) as JobProgress
 
   return NextResponse.json({

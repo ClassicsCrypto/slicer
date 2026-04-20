@@ -507,7 +507,8 @@ Behavior:
 
 ### Status on 2026-04-20
 Shadow writes are now active for the main job write paths with Supabase still serving all reads.
-The remaining Phase 2 hardening item is explicit parity-diff logging on every mirrored write.
+Parity-diff logging is now active on mirrored writes and deletes via `server/logs/sqlite-shadow-parity.jsonl`.
+Healthy writes stay quiet; only mismatches are appended to the parity log.
 
 ### Why
 This is the safest way to prove parity without risking the current working flow.

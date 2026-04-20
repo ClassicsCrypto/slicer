@@ -3,16 +3,22 @@ const path = require('path')
 const Database = require('better-sqlite3')
 
 const DATA_DIR = path.join(__dirname, '..', 'data')
+const LOG_DIR = path.join(__dirname, '..', 'logs')
 const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+const PARITY_LOG_PATH = path.join(LOG_DIR, 'sqlite-shadow-parity.jsonl')
 const COMPLETE_RETENTION_DAYS = Number(process.env.SLICER_JOB_RETENTION_DAYS || 7)
 const FAILED_RETENTION_HOURS = Number(process.env.SLICER_FAILED_RETENTION_HOURS || 48)
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
 
 let db = null
 
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true })
+}
+
 function getDb() {
   if (db) return db
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+  ensureDir(DATA_DIR)
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -129,6 +135,89 @@ function toRow(job) {
   }
 }
 
+function sortObjectDeep(value) {
+  if (Array.isArray(value)) return value.map((item) => sortObjectDeep(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, nested]) => [key, sortObjectDeep(nested)]),
+    )
+  }
+  return value
+}
+
+function stableSerialize(value) {
+  return JSON.stringify(sortObjectDeep(value))
+}
+
+function normalizeComparableProgress(progress) {
+  return {
+    ...(progress || {}),
+    completedClips: Array.isArray(progress?.completedClips) ? progress.completedClips : [],
+  }
+}
+
+function toComparableJobFromRow(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    status: row.status,
+    input_kind: row.input_kind,
+    raw_input_url: row.raw_input_url,
+    source_url: row.source_url,
+    source_path: row.source_path,
+    source_cache_key: row.source_cache_key,
+    options: JSON.parse(row.options_json || '{}'),
+    progress: normalizeComparableProgress(JSON.parse(row.progress_json || '{}')),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    expires_at: row.expires_at,
+  }
+}
+
+function toComparableJob(job) {
+  const row = toRow(job)
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    status: row.status,
+    input_kind: row.input_kind,
+    raw_input_url: row.raw_input_url,
+    source_url: row.source_url,
+    source_path: row.source_path,
+    source_cache_key: row.source_cache_key,
+    options: JSON.parse(row.options_json || '{}'),
+    progress: normalizeComparableProgress(JSON.parse(row.progress_json || '{}')),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    expires_at: row.expires_at,
+  }
+}
+
+function diffComparableJobs(expected, actual) {
+  if (!actual) return [{ field: 'shadow_row', expected: 'present', actual: null }]
+
+  return Object.keys(expected).flatMap((field) => {
+    if (stableSerialize(expected[field]) === stableSerialize(actual[field])) return []
+    return [{ field, expected: expected[field], actual: actual[field] }]
+  })
+}
+
+function appendParityLog(entry) {
+  ensureDir(LOG_DIR)
+  fs.appendFileSync(PARITY_LOG_PATH, `${JSON.stringify({ loggedAt: new Date().toISOString(), ...entry })}\n`)
+}
+
+function getShadowJobRow(jobId) {
+  return getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(jobId)
+}
+
 function upsertShadowJob(job) {
   if (!isSqliteShadowEnabled() || !job?.id) return
   const row = toRow(job)
@@ -167,8 +256,67 @@ function deleteShadowJob(jobId) {
   getDb().prepare('DELETE FROM jobs WHERE id = ?').run(jobId)
 }
 
+function verifyShadowJobParity(job, context = {}) {
+  const expected = toComparableJob(job)
+  const actual = toComparableJobFromRow(getShadowJobRow(expected.id))
+  const mismatches = diffComparableJobs(expected, actual)
+  const result = {
+    ok: mismatches.length === 0,
+    jobId: expected.id,
+    mismatches,
+    expected,
+    actual,
+  }
+
+  if (!result.ok) {
+    appendParityLog({
+      type: 'job_parity_mismatch',
+      source: context.source || 'unknown',
+      action: context.action || 'upsert',
+      jobId: expected.id,
+      mismatches,
+    })
+  }
+
+  return result
+}
+
+function verifyShadowJobDeleted(jobId, context = {}) {
+  const actual = toComparableJobFromRow(getShadowJobRow(jobId))
+  const result = {
+    ok: !actual,
+    jobId,
+    actual,
+  }
+
+  if (!result.ok) {
+    appendParityLog({
+      type: 'job_delete_mismatch',
+      source: context.source || 'unknown',
+      action: context.action || 'delete',
+      jobId,
+      actual,
+    })
+  }
+
+  return result
+}
+
 function getShadowJob(jobId) {
-  return getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(jobId)
+  const row = getShadowJobRow(jobId)
+  if (!row) return null
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    status: row.status,
+    source_url: row.source_url || '',
+    source_path: row.source_path,
+    options: JSON.parse(row.options_json || '{}'),
+    progress: JSON.parse(row.progress_json || '{}'),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
 }
 
 function listShadowJobs(limit = 50) {
@@ -177,9 +325,12 @@ function listShadowJobs(limit = 50) {
 
 module.exports = {
   DB_PATH,
+  PARITY_LOG_PATH,
   isSqliteShadowEnabled,
   upsertShadowJob,
   deleteShadowJob,
+  verifyShadowJobParity,
+  verifyShadowJobDeleted,
   getShadowJob,
   listShadowJobs,
 }

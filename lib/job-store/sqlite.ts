@@ -7,7 +7,9 @@ import Database from 'better-sqlite3'
 import type { JobInputKind, JobProgress } from '@/types'
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
+const LOG_DIR = path.join(process.cwd(), 'server', 'logs')
 const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+const PARITY_LOG_PATH = path.join(LOG_DIR, 'sqlite-shadow-parity.jsonl')
 const COMPLETE_RETENTION_DAYS = Number(process.env.SLICER_JOB_RETENTION_DAYS || 7)
 const FAILED_RETENTION_HOURS = Number(process.env.SLICER_FAILED_RETENTION_HOURS || 48)
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
@@ -32,12 +34,54 @@ type ShadowJobRow = {
   deleted_at: string | null
 }
 
+type ComparableShadowJob = {
+  id: string
+  user_id: string
+  title: string
+  status: string
+  input_kind: string
+  raw_input_url: string | null
+  source_url: string | null
+  source_path: string | null
+  source_cache_key: string | null
+  options: Record<string, any>
+  progress: Record<string, any>
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  expires_at: string | null
+}
+
+export type ShadowParityMismatch = {
+  field: keyof ComparableShadowJob | 'shadow_row'
+  expected: unknown
+  actual: unknown
+}
+
+export type ShadowParityResult = {
+  ok: boolean
+  jobId: string
+  mismatches: ShadowParityMismatch[]
+  expected: ComparableShadowJob
+  actual: ComparableShadowJob | null
+}
+
+export type ShadowDeleteParityResult = {
+  ok: boolean
+  jobId: string
+  actual: ComparableShadowJob | null
+}
+
 let db: Database.Database | null = null
+
+function ensureDir(dirPath: string) {
+  fs.mkdirSync(dirPath, { recursive: true })
+}
 
 function getDb() {
   if (db) return db
 
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+  ensureDir(DATA_DIR)
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -154,6 +198,91 @@ function toShadowRow(job: any): ShadowJobRow {
   }
 }
 
+function sortObjectDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sortObjectDeep(item))
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, nested]) => [key, sortObjectDeep(nested)])
+    return Object.fromEntries(entries)
+  }
+  return value
+}
+
+function stableSerialize(value: unknown) {
+  return JSON.stringify(sortObjectDeep(value))
+}
+
+function normalizeComparableProgress(progress: Record<string, any>) {
+  return {
+    ...progress,
+    completedClips: Array.isArray(progress?.completedClips) ? progress.completedClips : [],
+  }
+}
+
+function toComparableShadowJobFromRow(row: ShadowJobRow | undefined): ComparableShadowJob | null {
+  if (!row) return null
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    status: row.status,
+    input_kind: row.input_kind,
+    raw_input_url: row.raw_input_url,
+    source_url: row.source_url,
+    source_path: row.source_path,
+    source_cache_key: row.source_cache_key,
+    options: JSON.parse(row.options_json || '{}'),
+    progress: normalizeComparableProgress(JSON.parse(row.progress_json || '{}')),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    expires_at: row.expires_at,
+  }
+}
+
+function toComparableShadowJob(job: any): ComparableShadowJob {
+  const row = toShadowRow(job)
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    status: row.status,
+    input_kind: row.input_kind,
+    raw_input_url: row.raw_input_url,
+    source_url: row.source_url,
+    source_path: row.source_path,
+    source_cache_key: row.source_cache_key,
+    options: JSON.parse(row.options_json || '{}'),
+    progress: normalizeComparableProgress(JSON.parse(row.progress_json || '{}')),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    expires_at: row.expires_at,
+  }
+}
+
+function diffComparableShadowJobs(expected: ComparableShadowJob, actual: ComparableShadowJob | null): ShadowParityMismatch[] {
+  if (!actual) {
+    return [{ field: 'shadow_row', expected: 'present', actual: null }]
+  }
+
+  const fields = Object.keys(expected) as Array<keyof ComparableShadowJob>
+  return fields.flatMap((field) => {
+    if (stableSerialize(expected[field]) === stableSerialize(actual[field])) return []
+    return [{ field, expected: expected[field], actual: actual[field] }]
+  })
+}
+
+function appendParityLog(entry: Record<string, unknown>) {
+  ensureDir(LOG_DIR)
+  fs.appendFileSync(PARITY_LOG_PATH, `${JSON.stringify({ loggedAt: new Date().toISOString(), ...entry })}\n`)
+}
+
+function getShadowJobRow(jobId: string) {
+  return getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(jobId) as ShadowJobRow | undefined
+}
+
 function fromShadowRow(row: ShadowJobRow | undefined) {
   if (!row) return null
   return {
@@ -217,9 +346,54 @@ export function deleteShadowJob(jobId: string) {
   getDb().prepare('DELETE FROM jobs WHERE id = ?').run(jobId)
 }
 
+export function verifyShadowJobParity(job: any, context?: { source?: string; action?: string }): ShadowParityResult {
+  const expected = toComparableShadowJob(job)
+  const actual = toComparableShadowJobFromRow(getShadowJobRow(expected.id))
+  const mismatches = diffComparableShadowJobs(expected, actual)
+  const result: ShadowParityResult = {
+    ok: mismatches.length === 0,
+    jobId: expected.id,
+    mismatches,
+    expected,
+    actual,
+  }
+
+  if (!result.ok) {
+    appendParityLog({
+      type: 'job_parity_mismatch',
+      source: context?.source || 'unknown',
+      action: context?.action || 'upsert',
+      jobId: expected.id,
+      mismatches,
+    })
+  }
+
+  return result
+}
+
+export function verifyShadowJobDeleted(jobId: string, context?: { source?: string; action?: string }): ShadowDeleteParityResult {
+  const actual = toComparableShadowJobFromRow(getShadowJobRow(jobId))
+  const result: ShadowDeleteParityResult = {
+    ok: !actual,
+    jobId,
+    actual,
+  }
+
+  if (!result.ok) {
+    appendParityLog({
+      type: 'job_delete_mismatch',
+      source: context?.source || 'unknown',
+      action: context?.action || 'delete',
+      jobId,
+      actual,
+    })
+  }
+
+  return result
+}
+
 export function getShadowJob(jobId: string) {
-  const row = getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(jobId) as ShadowJobRow | undefined
-  return fromShadowRow(row)
+  return fromShadowRow(getShadowJobRow(jobId))
 }
 
 export function listShadowJobs(limit = 50) {
@@ -234,4 +408,8 @@ export function getShadowJobCount() {
 
 export function getShadowDbPath() {
   return DB_PATH
+}
+
+export function getShadowParityLogPath() {
+  return PARITY_LOG_PATH
 }

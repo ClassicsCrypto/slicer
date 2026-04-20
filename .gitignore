@@ -37,5 +37,6 @@ next-env.d.ts
 server/temp/
 server/cleanup-reports/
 server/data/*.sqlite*
+server/logs/
 
 .vercel

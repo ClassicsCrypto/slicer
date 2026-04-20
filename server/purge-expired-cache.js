@@ -147,6 +147,13 @@ async function main() {
       for (const jobId of expiredJobIds) {
         try {
           sqliteShadowStore.deleteShadowJob(jobId)
+          const parity = sqliteShadowStore.verifyShadowJobDeleted(jobId, {
+            source: 'purge-expired-cache',
+            action: 'delete',
+          })
+          if (!parity.ok) {
+            console.warn(`Shadow delete parity mismatch for ${jobId}. Log: ${sqliteShadowStore.PARITY_LOG_PATH}`)
+          }
         } catch (err) {
           console.error(`Failed to delete shadow job ${jobId}:`, err.message)
         }

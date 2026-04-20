@@ -91,6 +91,14 @@ async function updateJob(jobId, patch) {
   if (updated && sqliteShadowStore.isSqliteShadowEnabled()) {
     try {
       sqliteShadowStore.upsertShadowJob(updated)
+      const parity = sqliteShadowStore.verifyShadowJobParity(updated, {
+        source: 'youtube-api/updateJob',
+        action: 'upsert',
+      })
+      if (!parity.ok) {
+        const fields = (parity.mismatches || []).map((mismatch) => mismatch.field).join(', ') || 'unknown'
+        console.warn(`[shadow-sqlite] Parity mismatch for ${jobId} after youtube-api/updateJob. Fields: ${fields}. Log: ${sqliteShadowStore.PARITY_LOG_PATH}`)
+      }
     } catch (error) {
       console.error('[shadow-sqlite] Failed to mirror job from youtube-api update:', jobId, error.message)
     }

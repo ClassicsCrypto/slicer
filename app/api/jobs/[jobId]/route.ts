@@ -29,7 +29,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: { jobI
     return NextResponse.json({ error: jobError.message }, { status: 500 })
   }
 
-  await removeJobFromShadowSqlite(params.jobId)
+  await removeJobFromShadowSqlite(params.jobId, 'api/jobs/[jobId] DELETE')
   return NextResponse.json({ ok: true })
 }
 
@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { jobId:
       return NextResponse.json({ error: error?.message || 'Job not found' }, { status: 404 })
     }
 
-    await mirrorJobToShadowSqlite(data)
+    await mirrorJobToShadowSqlite(data, 'api/jobs/[jobId] PATCH')
     return NextResponse.json({ job: await normalizeJob(data) })
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })

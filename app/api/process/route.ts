@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to update job before processing' }, { status: 500 })
     }
 
-    await mirrorJobToShadowSqlite(updatedJob)
+    await mirrorJobToShadowSqlite(updatedJob, 'api/process POST start')
 
     try {
       const apiBase = await getServerApiUrl()
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
           phase: 'failed',
           progress: startError?.message ?? 'Failed to start processing job',
         },
-      })
+      }, 'api/process POST failback')
 
       return NextResponse.json({ error: 'Failed to start processing job' }, { status: 500 })
     }

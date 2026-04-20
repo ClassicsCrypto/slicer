@@ -73,7 +73,7 @@ async function recoverStaleJob(supabase: ReturnType<typeof createServerClient>, 
     .single()
 
   const recoveredJob = data ?? { ...job, status: 'failed', progress }
-  await mirrorJobToShadowSqlite(recoveredJob)
+  await mirrorJobToShadowSqlite(recoveredJob, 'api/jobs recoverStaleJob')
   return recoveredJob
 }
 
@@ -91,7 +91,7 @@ export async function GET() {
   }
 
   const recoveredJobs = await Promise.all((jobsData ?? []).map((job) => recoverStaleJob(supabase, job)))
-  await mirrorJobsToShadowSqlite(recoveredJobs)
+  await mirrorJobsToShadowSqlite(recoveredJobs, 'api/jobs GET seed')
   const normalizedJobs = await Promise.all(recoveredJobs.map((job) => normalizeJob(job)))
   return NextResponse.json({ jobs: normalizedJobs })
 }
@@ -129,6 +129,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  await mirrorJobToShadowSqlite(data)
+  await mirrorJobToShadowSqlite(data, 'api/jobs POST create')
   return NextResponse.json({ job: await normalizeJob(data) })
 }

@@ -63,7 +63,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to delete clip' }, { status: 500 })
     }
 
-    await mirrorJobToShadowSqlite(updatedJob ?? { ...targetJob, progress: nextProgress })
+    await mirrorJobToShadowSqlite(updatedJob ?? { ...targetJob, progress: nextProgress }, 'api/clips/[clipId] DELETE')
     console.log(`Deleted clip ${clipId} from job ${targetJob.id}`)
     return NextResponse.json({ success: true })
   } catch (err) {
