@@ -239,6 +239,41 @@ Retention is based on **job completion state**, not just file age.
 ## Export temp artifacts
 - retain for **12 hours or less**
 
+## Storage budget guardrails
+We should explicitly target a **local Slicer cache budget under 10 GB**.
+
+### Budget definition
+The 10 GB target applies to the working storage footprint for:
+- `server/data/source-cache/`
+- `server/data/thumb-cache/`
+- `server/data/exports-temp/`
+- any remaining transient temp/source files still needed by active jobs
+
+SQLite itself is negligible by comparison and is not the risk.
+
+### Watermarks
+- **Target:** stay under **10 GB**
+- **Warning threshold:** **8 GB**
+- **Hard cap response:** if cache exceeds **10 GB**, prune oldest reusable cache entries first
+- **Safety stop:** if free disk drops below **20 GB**, run aggressive cleanup immediately
+- **Last-resort stop:** if free disk drops below **10 GB**, reject new jobs until cleanup frees space
+
+### Prune order when over budget
+1. expired completed jobs (>7 days)
+2. expired failed jobs (>48h)
+3. expired source cache (>7 days since last use)
+4. oldest reusable source cache entries by `last_used_at`
+5. oldest thumbnails / export temp artifacts
+
+### Critical protection rule
+Never prune:
+- active processing jobs
+- the source file currently backing an active job
+- source files still referenced by a non-expired job
+
+### Operational proof point
+On 2026-04-20, a one-off historical purge removed the approved expired jobs plus stale root media and dropped the live `server/temp` footprint from roughly **111 GB** to **8.18 GB**, proving the budget is realistic if cleanup is enforced.
+
 ### Critical rule
 Deletion should always be:
 1. mark candidate rows
