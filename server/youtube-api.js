@@ -24,6 +24,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { Readable } = require('stream')
 const { pipeline } = require('stream/promises')
+const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -74,7 +75,7 @@ async function fetchJob(jobId) {
 }
 
 async function updateJob(jobId, patch) {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null
   await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${jobId}`, {
     method: 'PATCH',
     headers: {
@@ -85,6 +86,17 @@ async function updateJob(jobId, patch) {
     },
     body: JSON.stringify(patch),
   })
+
+  const updated = await fetchJob(jobId)
+  if (updated && sqliteShadowStore.isSqliteShadowEnabled()) {
+    try {
+      sqliteShadowStore.upsertShadowJob(updated)
+    } catch (error) {
+      console.error('[shadow-sqlite] Failed to mirror job from youtube-api update:', jobId, error.message)
+    }
+  }
+
+  return updated
 }
 
 async function mergeJobProgress(jobId, patch, statusOverride) {
@@ -2476,26 +2488,22 @@ Return ONLY compact JSON on ONE LINE:
         if (currentJob?.status === 'complete') {
           console.log(`[score-clips] Job ${jobId} already complete — skipping push`)
         } else {
-          await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${jobId}`, {
-            method: 'PATCH',
-            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({
-              status: 'complete',
-              progress: {
-                ...(currentJob?.progress || {}),
-                phase: 'complete',
-                progress: result.length ? 'Clip selection complete.' : 'No strong clips matched the request.',
-                completedClips: result,
-                streamContext: `${detectedGame} (${detectedPackLabel})`,
-                requestedClipCount: clipCount,
-                shortlistClipCount: shortlistCount,
-                aiReturnedClipCount: clips.length,
-                duplicateClipsRemoved,
-                deliveredClipCount: result.length,
-                clipShortfallReason,
-                completedAt: new Date().toISOString(),
-              },
-            }),
+          await updateJob(jobId, {
+            status: 'complete',
+            progress: {
+              ...(currentJob?.progress || {}),
+              phase: 'complete',
+              progress: result.length ? 'Clip selection complete.' : 'No strong clips matched the request.',
+              completedClips: result,
+              streamContext: `${detectedGame} (${detectedPackLabel})`,
+              requestedClipCount: clipCount,
+              shortlistClipCount: shortlistCount,
+              aiReturnedClipCount: clips.length,
+              duplicateClipsRemoved,
+              deliveredClipCount: result.length,
+              clipShortfallReason,
+              completedAt: new Date().toISOString(),
+            },
           })
           console.log(`[score-clips] Pushed ${result.length} clips to Supabase job ${jobId}`)
         }

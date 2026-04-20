@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const { createClient } = require('@supabase/supabase-js')
+const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 
 const COMPLETE_RETENTION_DAYS = 7
 const FAILED_RETENTION_HOURS = 48
@@ -140,6 +141,16 @@ async function main() {
       await supabase.from('clips').delete().in('job_id', ids)
       const { error: deleteError } = await supabase.from('jobs').delete().in('id', ids)
       if (deleteError) throw deleteError
+    }
+
+    if (sqliteShadowStore.isSqliteShadowEnabled()) {
+      for (const jobId of expiredJobIds) {
+        try {
+          sqliteShadowStore.deleteShadowJob(jobId)
+        } catch (err) {
+          console.error(`Failed to delete shadow job ${jobId}:`, err.message)
+        }
+      }
     }
 
     for (const file of filesToDelete) {

@@ -485,7 +485,15 @@ Do this first.
 
 ### Output
 - app still runs on Supabase
-- SQLite code exists but is not live
+- SQLite code exists in parallel at `server/data/slicer.sqlite`
+
+### Status on 2026-04-20
+This is now live locally:
+- `better-sqlite3` installed
+- SQLite schema bootstrap added
+- shadow-store helpers added in `lib/job-store/*` and `server/lib/sqlite-shadow-store.js`
+- `GET/POST/PATCH/DELETE` job routes now mirror snapshots into SQLite while keeping Supabase as the source of truth
+- `server/youtube-api.js` now mirrors job-progress writes into SQLite after Supabase updates
 
 ## Phase 2: Shadow-write mode
 Add env flag:
@@ -496,6 +504,10 @@ Behavior:
 - keep reads from Supabase
 - write to Supabase and SQLite
 - diff critical fields after writes and log mismatches
+
+### Status on 2026-04-20
+Shadow writes are now active for the main job write paths with Supabase still serving all reads.
+The remaining Phase 2 hardening item is explicit parity-diff logging on every mirrored write.
 
 ### Why
 This is the safest way to prove parity without risking the current working flow.

@@ -1,259 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { pollTranscription } from '@/lib/assemblyai'
-import { scoreTranscriptWithGroq } from '@/lib/groq'
-import { Clip, SubtitleWord } from '@/types'
-import { AssemblyAIResult } from '@/lib/assemblyai'
-import { v4 as uuidv4 } from 'uuid'
+import { mirrorJobToShadowSqlite } from '@/lib/job-store/shadow'
+import { JobProgress } from '@/types'
 
-/**
- * Extract word-level subtitles for a clip from AssemblyAI transcript words.
- * Times are converted to seconds relative to clip start.
- */
-function extractSubtitles(
-  transcript: AssemblyAIResult,
-  clipStartSec: number,
-  clipEndSec: number,
-): SubtitleWord[] {
-  const words = transcript.words ?? []
-  const subs: SubtitleWord[] = []
+export const maxDuration = 30
 
-  for (const w of words) {
-    const wordStartSec = w.start / 1000
-    const wordEndSec = w.end / 1000
+const STALE_JOB_MS = 2 * 60 * 60 * 1000
 
-    // Include words that overlap with the clip's time range (0.5s buffer on both sides)
-    if (wordStartSec >= clipStartSec - 0.5 && wordEndSec <= clipEndSec + 0.5) {
-      subs.push({
-        text: w.text,
-        start: parseFloat(Math.max(0, wordStartSec - clipStartSec).toFixed(2)),
-        end: parseFloat((wordEndSec - clipStartSec).toFixed(2)),
-      })
-    }
-  }
-
-  return subs
+function getActivityTimestamp(job: any): number {
+  const progress = (job?.progress ?? {}) as JobProgress
+  const candidate = progress.completedAt || job?.updated_at || progress.processingStartedAt || job?.created_at
+  const ts = candidate ? new Date(candidate).getTime() : NaN
+  return Number.isFinite(ts) ? ts : Date.now()
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { jobId: string } },
-) {
-  const { jobId } = params
+function buildTimedOutProgress(progress: JobProgress, ageMs: number): JobProgress {
+  const minutes = Math.max(1, Math.round(ageMs / 60000))
+  return {
+    ...progress,
+    phase: 'failed',
+    progress: `Processing timed out after ${minutes} minutes without completing. Please retry.`,
+    completedAt: new Date().toISOString(),
+  }
+}
+
+async function recoverStaleJob(supabase: ReturnType<typeof createServerClient>, job: any) {
+  if (job?.status !== 'processing') return job
+
+  const ageMs = Date.now() - getActivityTimestamp(job)
+  if (ageMs < STALE_JOB_MS) return job
+
+  const progress = buildTimedOutProgress((job.progress ?? {}) as JobProgress, ageMs)
+  const { data } = await supabase
+    .from('jobs')
+    .update({ status: 'failed', progress, updated_at: new Date().toISOString() })
+    .eq('id', job.id)
+    .select('id, user_id, title, source_url, options, status, progress, created_at, updated_at')
+    .single()
+
+  const recoveredJob = data ?? { ...job, status: 'failed', progress }
+  await mirrorJobToShadowSqlite(recoveredJob)
+  return recoveredJob
+}
+
+export async function GET(_request: NextRequest, { params }: { params: { jobId: string } }) {
   const supabase = createServerClient()
 
-  try {
-    // Fetch job
-    const { data: jobs, error: jobError } = await supabase
-      .from('jobs')
-      .select('*')
-      .eq('id', jobId)
-      .limit(1)
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id, user_id, title, source_url, options, status, progress, created_at, updated_at')
+    .eq('id', params.jobId)
+    .single()
 
-    const job = jobs?.[0]
-    if (jobError || !job) {
-      console.error(`[poll] job ${jobId} not found:`, jobError?.message)
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
-    }
-    console.log(`[poll] job ${jobId} status=${job.status} phase=${job.progress?.phase}`)
-
-    // Already complete or failed — return current state
-    if (job.status === 'complete' || job.status === 'failed') {
-      const clips = (job.progress?.completedClips ?? []) as Clip[]
-      return NextResponse.json({ status: job.status, clips })
-    }
-
-    const transcriptId = job.progress?.transcriptId as string | undefined
-    const localTranscribeId = job.progress?.localTranscribeId as string | undefined
-    const transcriptionMode = job.progress?.transcriptionMode as string | undefined
-
-    // ─── Local Whisper path ───
-    if (transcriptionMode === 'local') {
-      // Start transcription on first poll if not started yet
-      if (!localTranscribeId) {
-        try {
-          const { getApiUrl } = await import('@/lib/api-url')
-          const apiBase = await getApiUrl()
-          console.log(`[poll] Starting local transcription for ${job.source_url?.slice(0, 80)}...`)
-          const startRes = await fetch(`${apiBase}/transcribe-local`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audioUrl: job.source_url }),
-          })
-          if (startRes.ok) {
-            const startData = await startRes.json()
-            console.log(`[poll] Local transcription started: ${startData.transcribeId}`)
-            await supabase.from('jobs').update({
-              progress: { ...job.progress, localTranscribeId: startData.transcribeId },
-            }).eq('id', jobId)
-          }
-        } catch (err: any) {
-          console.error('[poll] Failed to start local transcription:', err?.message)
-        }
-        return NextResponse.json({ status: 'processing', phase: 'transcribing', progress: 'Starting transcription...' })
-      }
-
-      try {
-        const { getApiUrl } = await import('@/lib/api-url')
-        const apiBase = await getApiUrl()
-        const pollRes = await fetch(`${apiBase}/transcribe-poll/${localTranscribeId}`)
-        const pollData = await pollRes.json()
-
-        if (pollData.status === 'error') {
-          await supabase.from('jobs').update({
-            status: 'failed',
-            progress: { ...job.progress, phase: 'failed', error: pollData.error },
-          }).eq('id', jobId)
-          return NextResponse.json({ status: 'failed', error: pollData.error })
-        }
-
-        if (pollData.status !== 'complete') {
-          return NextResponse.json({ status: 'processing', phase: 'transcribing', progress: pollData.progress })
-        }
-
-        // Convert local Whisper result to AssemblyAI-compatible format
-        const whisperResult = pollData.result
-        const transcript: AssemblyAIResult = {
-          id: localTranscribeId,
-          status: 'completed',
-          text: whisperResult.text,
-          words: (whisperResult.words || []).map((w: any) => ({
-            text: w.text,
-            start: w.start,  // already in ms
-            end: w.end,
-            confidence: w.confidence || 0.9,
-          })),
-        }
-
-        // Continue to scoring (same as AssemblyAI path below)
-        console.log(`[poll] Local Whisper complete! ${whisperResult.words?.length} words. Calling Groq...`)
-        await supabase.from('jobs').update({
-          progress: { ...job.progress, phase: 'scoring' },
-        }).eq('id', jobId)
-
-        // Score and create clips (shared logic below)
-        return await scoreAndCreateClips(supabase, job, jobId, transcript)
-      } catch (err) {
-        console.error('[poll] Local Whisper poll error:', err)
-        return NextResponse.json({ status: 'processing', phase: 'transcribing' })
-      }
-    }
-
-    // ─── AssemblyAI path ───
-    // Not yet submitted
-    if (!transcriptId) {
-      return NextResponse.json({ status: 'processing', phase: 'submitting' })
-    }
-
-    // Poll AssemblyAI
-    const transcript = await pollTranscription(transcriptId)
-
-    if (transcript.status === 'error') {
-      await supabase.from('jobs').update({
-        status: 'failed',
-        progress: {
-          ...job.progress,
-          phase: 'failed',
-          error: transcript.error ?? 'AssemblyAI error',
-        },
-      }).eq('id', jobId)
-
-      return NextResponse.json({ status: 'failed', error: transcript.error })
-    }
-
-    if (transcript.status !== 'completed') {
-      return NextResponse.json({ status: 'processing', phase: 'transcribing' })
-    }
-
-    // Transcript complete — score with Groq (AssemblyAI path)
-    console.log(`[poll] transcript complete! Calling Groq for scoring...`)
-    return await scoreAndCreateClips(supabase, job, jobId, transcript)
-  } catch (err) {
-    console.error('Poll route error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  if (error || !data) {
+    return NextResponse.json({ error: error?.message || 'Job not found' }, { status: 404 })
   }
-}
 
-// Shared scoring + clip creation logic
-async function scoreAndCreateClips(supabase: any, job: any, jobId: string, transcript: AssemblyAIResult) {
-  try {
-    await supabase.from('jobs').update({
-      progress: { ...job.progress, phase: 'scoring' },
-    }).eq('id', jobId)
+  const job = await recoverStaleJob(supabase, data)
+  await mirrorJobToShadowSqlite(job)
+  const progress = (job.progress ?? {}) as JobProgress
 
-    const options = job.options
-    console.log(`[poll] options: clipCount=${options.clipCount} clipLength=${options.clipLength} aiFocus=${JSON.stringify(options.aiFocus)}`)
-    
-    let moments: Awaited<ReturnType<typeof scoreTranscriptWithGroq>> = []
-    try {
-      moments = await scoreTranscriptWithGroq(
-        transcript,
-        options.aiFocus ?? [],
-        options.clipCount ?? 5,
-        parseInt(options.clipLength ?? '30'),
-      )
-      console.log(`[poll] Groq returned ${moments.length} moments`)
-    } catch (groqErr) {
-      console.error(`[poll] Groq scoring FAILED:`, groqErr)
-      moments = []
-    }
-
-    // If no moments from AI, create sequential fallback clips
-    if (moments.length === 0) {
-      console.log(`[poll] no AI moments — using sequential fallback`)
-      const clipCount = job.options?.clipCount ?? 3
-      const clipLength = parseInt(job.options?.clipLength ?? '30')
-      for (let i = 0; i < clipCount; i++) {
-        moments.push({
-          start_time: i * Math.ceil(clipLength / 2),
-          end_time: i * Math.ceil(clipLength / 2) + clipLength,
-          virality_score: 5,
-          matched_categories: job.options?.aiFocus?.slice(0, 1) ?? [],
-          ai_reason: 'Sequential clip placement (no speech detected)',
-        })
-      }
-    }
-
-    const clipMode = process.env.CLIP_MODE ?? 'instant'
-    const clips: Clip[] = moments.map((m) => {
-      const clipId = uuidv4()
-      const r2Key =
-        clipMode === 'instant'
-          ? `${job.source_url}#t=${m.start_time},${m.end_time}`
-          : `clips/${jobId}/${clipId}.mp4`
-
-      // Extract word-level subtitles for this clip's time range
-      const subtitles = extractSubtitles(transcript, m.start_time, m.end_time)
-
-      return {
-        id: clipId,
-        job_id: jobId,
-        render_id: '',
-        r2_key: r2Key,
-        duration: m.end_time - m.start_time,
-        start_time: m.start_time,
-        end_time: m.end_time,
-        matched_categories: m.matched_categories,
-        ai_reason: m.ai_reason,
-        virality_score: m.virality_score,
-        subtitles,
-        created_at: new Date().toISOString(),
-      }
-    })
-
-    // Store clips in job.progress.completedClips and mark complete
-    await supabase.from('jobs').update({
-      status: 'complete',
-      progress: {
-        ...job.progress,
-        phase: 'complete',
-        completedClips: clips,
-      },
-    }).eq('id', jobId)
-
-    return NextResponse.json({ status: 'complete', clips })
-  } catch (err) {
-    console.error('scoreAndCreateClips error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
+  return NextResponse.json({
+    status: job.status,
+    phase: progress.phase ?? (job.status === 'failed' ? 'failed' : 'queued'),
+    progress,
+    streamContext: progress.streamContext,
+    deliveredClipCount: progress.deliveredClipCount,
+    clipShortfallReason: progress.clipShortfallReason,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
+  })
 }
