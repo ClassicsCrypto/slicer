@@ -1783,6 +1783,81 @@ function getGameplayLeadInSec(text, priorityProfile, detectionMode) {
   return 0
 }
 
+function normalizeCueToken(text) {
+  return sanitizeTranscriptToken(String(text || '').toLowerCase()).replace(/[^a-z0-9']+/g, '')
+}
+
+function findPhraseStartSecInSubtitles(subtitles, phrase) {
+  const phraseTokens = String(phrase || '')
+    .split(/\s+/)
+    .map(normalizeCueToken)
+    .filter(Boolean)
+
+  if (phraseTokens.length === 0) return null
+
+  const tokens = (subtitles || [])
+    .map((word) => ({
+      start: Number(word?.start) || 0,
+      token: normalizeCueToken(word?.text),
+    }))
+    .filter((word) => word.token)
+
+  for (let index = 0; index <= tokens.length - phraseTokens.length; index += 1) {
+    let matched = true
+    for (let offset = 0; offset < phraseTokens.length; offset += 1) {
+      if (tokens[index + offset].token !== phraseTokens[offset]) {
+        matched = false
+        break
+      }
+    }
+
+    if (matched) {
+      return tokens[index].start
+    }
+  }
+
+  return null
+}
+
+function getPriorityCuePhrasesForWindow(clipText, priorityProfile) {
+  const concreteSignals = getConcreteActionMatches(clipText, priorityProfile)
+  return [...new Set([
+    ...(priorityProfile?.exactPhrases || []),
+    ...(priorityProfile?.matches?.action || []),
+    ...concreteSignals.actionTerms,
+    ...concreteSignals.objectiveTerms,
+    ...concreteSignals.actionShotTerms,
+  ])]
+}
+
+function findPriorityCueMatchInPayload(payload, priorityProfile) {
+  const subtitles = payload?.clip?.subtitles || []
+  if (subtitles.length === 0) return null
+
+  const clipText = subtitles.map((word) => word?.text || '').join(' ')
+  const cuePhrases = getPriorityCuePhrasesForWindow(clipText, priorityProfile)
+  let bestMatch = null
+
+  for (const phrase of cuePhrases) {
+    const relativeStartSec = findPhraseStartSecInSubtitles(subtitles, phrase)
+    if (relativeStartSec == null) continue
+
+    const absoluteStartSec = payload.selectedWindow.startSec + relativeStartSec
+    if (!bestMatch || absoluteStartSec < bestMatch.absoluteStartSec || (absoluteStartSec === bestMatch.absoluteStartSec && String(phrase).length > String(bestMatch.phrase).length)) {
+      bestMatch = { phrase, relativeStartSec, absoluteStartSec }
+    }
+  }
+
+  return bestMatch
+}
+
+function getPriorityCueTrimLeadSec(phrase) {
+  const lowered = String(phrase || '').toLowerCase()
+  if (/(killing frenzy|killing spree|double kill|triple kill|flag secured|captured the flag|got our flag|got the flag)/.test(lowered)) return 2.5
+  if (/(fought him off|fought them off|got him|got one|picked off|one down|revenge|bang|headshot)/.test(lowered)) return 3
+  return 3.5
+}
+
 function buildPriorityAwareClipPayload(startSec, viralityScore, aiReason, words, clipLength, detectionMode, priorityProfile) {
   let payload = buildClipPayloadFromWindow(startSec, viralityScore, aiReason, words, clipLength, detectionMode)
   if (!payload) return null
@@ -1791,6 +1866,18 @@ function buildPriorityAwareClipPayload(startSec, viralityScore, aiReason, words,
   if (leadInSec > 0) {
     const shifted = buildClipPayloadFromWindow(Math.max(0, startSec - leadInSec), viralityScore, aiReason, words, clipLength, detectionMode)
     if (shifted) payload = shifted
+  }
+
+  const cueMatch = findPriorityCueMatchInPayload(payload, priorityProfile)
+  if (cueMatch) {
+    const trimmedStartSec = Math.max(payload.selectedWindow.startSec, cueMatch.absoluteStartSec - getPriorityCueTrimLeadSec(cueMatch.phrase))
+    const minTrimDeltaSec = 1.25
+    const minRemainingDurationSec = Math.max(14, clipLength * 0.72)
+
+    if (trimmedStartSec - payload.selectedWindow.startSec >= minTrimDeltaSec && payload.selectedWindow.endSec - trimmedStartSec >= minRemainingDurationSec) {
+      const trimmed = buildClipPayloadFromRange(trimmedStartSec, payload.selectedWindow.endSec, viralityScore, aiReason, words, detectionMode)
+      if (trimmed) payload = trimmed
+    }
   }
 
   return payload
@@ -1950,9 +2037,11 @@ function mapCandidateScoreToVirality(score) {
   return 5
 }
 
-function buildClipPayloadFromWindow(startSec, viralityScore, aiReason, words, clipLength, detectionMode) {
-  const clipStartMs = startSec * 1000
-  const clipEndMs = (startSec + clipLength) * 1000
+function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, words, detectionMode) {
+  const safeStartSec = Math.max(0, Number(startSec) || 0)
+  const safeEndSec = Math.max(safeStartSec + 1, Number(endSec) || safeStartSec + 1)
+  const clipStartMs = safeStartSec * 1000
+  const clipEndMs = safeEndSec * 1000
   const subtitles = words
     .filter(w => w.start >= clipStartMs - 500 && w.end <= clipEndMs + 500)
     .map(w => ({
@@ -1967,20 +2056,24 @@ function buildClipPayloadFromWindow(startSec, viralityScore, aiReason, words, cl
 
   return {
     selectedWindow: {
-      startSec,
-      endSec: startSec + clipLength,
+      startSec: safeStartSec,
+      endSec: safeEndSec,
       text: clipText,
     },
     clip: {
-      start_time: startSec,
-      end_time: startSec + clipLength,
-      duration: clipLength,
+      start_time: safeStartSec,
+      end_time: safeEndSec,
+      duration: parseFloat((safeEndSec - safeStartSec).toFixed(2)),
       virality_score: viralityScore,
       ai_reason: (aiReason || buildClipReasonFromWindow(clipText, detectionMode)).slice(0, 120),
       matched_categories: [],
       subtitles,
     },
   }
+}
+
+function buildClipPayloadFromWindow(startSec, viralityScore, aiReason, words, clipLength, detectionMode) {
+  return buildClipPayloadFromRange(startSec, startSec + clipLength, viralityScore, aiReason, words, detectionMode)
 }
 
 function formatCandidateLine(candidate) {
