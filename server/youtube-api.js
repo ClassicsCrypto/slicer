@@ -1073,7 +1073,7 @@ function detectVolumeSpikesForFile(filePath) {
 
 const GENRE_SIGNAL_PACKS = {
   general_gaming: {
-    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'fought him off', 'fought them off', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
+    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'fought him off', 'fought them off', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'killing frenzy', 'killing spree', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
     objective: ['captured', 'captured the flag', 'caps the flag', 'champion', 'defuse', 'exfil', 'final circle', 'first blood', 'flag secured', 'got our flag', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
     reaction: ['clip that', 'holy', 'insane', 'let\'s go', 'no way', 'oh my god', 'oh shit', 'what just happened', 'yo'],
     funny: ['bruh', 'haha', 'i\'m dead', 'im dead', 'lmao', 'no shot', 'wtf'],
@@ -1163,7 +1163,7 @@ const GENRE_PACK_LABELS = {
 }
 
 const PRIORITY_HINT_SIGNAL_TERMS = {
-  action: ['ace', 'boss', 'capture', 'captured', 'clutch', 'combo', 'comeback', 'double kill', 'downed one', 'fight back', 'first kill', 'flag', 'goal', 'got one', 'headshot', 'kill', 'knocked', 'objective', 'raid', 'save', 'score', 'scored', 'steal', 'stole', 'team wipe', 'triple kill', 'victory', 'wave cleared', 'we won', 'wiped', 'win'],
+  action: ['ace', 'boss', 'capture', 'captured', 'clutch', 'combo', 'comeback', 'double kill', 'downed one', 'fight back', 'first kill', 'flag', 'goal', 'got one', 'headshot', 'kill', 'killing frenzy', 'killing spree', 'knocked', 'objective', 'raid', 'save', 'score', 'scored', 'steal', 'stole', 'team wipe', 'triple kill', 'victory', 'wave cleared', 'we won', 'wiped', 'win'],
   reaction: ['celebration', 'comeback', 'hype', 'pop off', 'reaction', 'rage', 'scream', 'trash talk'],
   funny: ['fail', 'funny', 'laugh', 'lmao', 'wtf'],
   conversation: ['dialogue', 'discussion', 'quote', 'speech', 'story', 'take'],
@@ -1192,6 +1192,8 @@ const ACTION_SHOT_TERMS = [
   'he\'s dead',
   'killed one',
   'killed two',
+  'killing frenzy',
+  'killing spree',
   'one down',
   'one shot',
   'picked him',
@@ -1230,11 +1232,22 @@ const ACTION_SHOT_PATTERNS = [
 
 const MUSIC_LYRIC_TERMS = ['anthem', 'blessing', 'blessed', 'chorus', 'groovin', 'grooving', 'lyrics', 'melody', 'paradise', 'rhythm', 'singing', 'studio', 'verse']
 
+function parsePriorityHintPhrases(raw) {
+  return [...new Set(String(raw || '')
+    .split(/[\n,;|/]+/)
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((part) => part.length >= 3)
+    .filter((part) => part.split(/\s+/).length <= 6))]
+}
+
 function buildPriorityProfile(priorityHint, detectionMode) {
   const raw = String(priorityHint || '').trim().toLowerCase()
+  const exactPhrases = parsePriorityHintPhrases(raw)
   if (!raw) {
     return {
       raw: '',
+      exactPhrases: [],
       gameplayRequested: detectionMode === 'gaming',
       matches: { action: [], reaction: [], funny: [], conversation: [] },
     }
@@ -1249,6 +1262,7 @@ function buildPriorityProfile(priorityHint, detectionMode) {
 
   return {
     raw,
+    exactPhrases,
     gameplayRequested: detectionMode === 'gaming',
     actionPriorityRequested: matches.action.length > 0,
     matches,
@@ -1262,6 +1276,7 @@ function hasActionPriority(priorityProfile) {
 function getPriorityMatches(text, priorityProfile) {
   if (!priorityProfile?.raw) return []
   return uniqueMatches(text, [
+    ...(priorityProfile.exactPhrases || []),
     ...priorityProfile.matches.action,
     ...priorityProfile.matches.reaction,
     ...priorityProfile.matches.funny,
@@ -1661,7 +1676,7 @@ function clipTextMatchesGameplayAsk(clipText, priorityProfile, detectionMode) {
   const directActionTerms = concreteSignals.directActionTerms
   const nonClutchActionTerms = actionTerms.filter((term) => term !== 'clutch')
   const weakNearMiss = /(almost killed|almost got|almost had|nearly killed|nearly got)/.test(text)
-  const strongActionWords = uniqueMatches(text, ['bang', 'clutch', 'double kill', 'flag secured', 'got the flag', 'grabbed the flag', 'stole the flag', 'got him', 'got me', 'headshot', 'killed me', 'sniper'])
+  const strongActionWords = uniqueMatches(text, ['bang', 'clutch', 'double kill', 'flag secured', 'got the flag', 'grabbed the flag', 'killing frenzy', 'killing spree', 'stole the flag', 'got him', 'got me', 'headshot', 'killed me', 'sniper'])
 
   if (farewellLike && nonClutchActionTerms.length === 0) return false
   if (aftermathLike && directActionTerms.length === 0 && concreteSignals.objectiveTerms.length <= 1) return false
@@ -1671,7 +1686,7 @@ function clipTextMatchesGameplayAsk(clipText, priorityProfile, detectionMode) {
   }
   if (weakNearMiss && strongActionWords.length === 0) return false
   if (gameplayTerms.length > 0) return true
-  return /(bang|clutch|double kill|flag secured|got the flag|grabbed the flag|got him|got me|gets me|headshot|sniper|stole the flag|taken out)/.test(text)
+  return /(bang|clutch|double kill|flag secured|got the flag|grabbed the flag|got him|got me|gets me|headshot|killing frenzy|killing spree|sniper|stole the flag|taken out)/.test(text)
 }
 
 function isLowPayoffClipWindow(clipText, priorityProfile, detectionMode) {
@@ -1740,12 +1755,14 @@ function getCandidatePriorityRank(candidate, priorityProfile) {
   const objectiveCount = concreteSignals.objectiveTerms.length
   const reactionCount = candidate.hits?.reaction?.length || 0
   const priorityCount = candidate.priorityMatches?.length || 0
+  const exactPhraseCount = uniqueMatches(candidate.text, priorityProfile?.exactPhrases || []).length
   const aftermathPenalty = candidate.aftermathLike && directActionCount === 0 ? 8 : 0
   const reactionOnlyPenalty = reactionCount > 0 && directActionCount === 0 && objectiveCount === 0 ? 4 : 0
 
   return (candidate.score || 0)
     + directActionCount * 6
     + objectiveCount * 3
+    + exactPhraseCount * 8
     + priorityCount * 2
     + (candidate.spikeHits || 0) * 1.5
     - aftermathPenalty
@@ -1757,12 +1774,12 @@ function getGameplayLeadInSec(text, priorityProfile, detectionMode) {
 
   const lowered = String(text || '').trim().toLowerCase()
   const reactiveStart = /^(oh|yo|bro|what|damn|wow|oh my god)/.test(lowered)
-  const directActionLead = /(avenge me|bang|flag secured|flag captured|from far away|got him|got one|got taken out|one down|picked off|revenge|taken out|they got it)/.test(lowered)
+  const directActionLead = /(avenge me|bang|flag secured|flag captured|from far away|got him|got one|got taken out|killing frenzy|killing spree|one down|picked off|revenge|taken out|they got it)/.test(lowered)
   if (!reactiveStart && !directActionLead) return 0
 
   if (/(got taken out|killed me|got me|gets me|melts me|melted|they got it|avenge me)/.test(lowered)) return 6
   if (/(did we win|we won|we lost|won the round|lost the round)/.test(lowered)) return 10
-  if (/(flag secured|headshot|double kill|one shot|sniper|flag|captured|defuse|clutched|clutch play|clutch round|got him|got one|picked off|from far away|bang|revenge)/.test(lowered)) return 6
+  if (/(flag secured|headshot|double kill|killing frenzy|killing spree|one shot|sniper|flag|captured|defuse|clutched|clutch play|clutch round|got him|got one|picked off|from far away|bang|revenge)/.test(lowered)) return 6
   return 0
 }
 
@@ -1919,7 +1936,7 @@ function buildClipReasonFromWindow(clipText, detectionMode) {
   if (!text) return 'Strong moment from the stream'
 
   const lowered = text.toLowerCase()
-  if (/(clutch|ace|wiped|wipe|headshot|double kill|triple kill|one shot)/.test(lowered)) return 'Gameplay payoff with a strong reaction'
+  if (/(clutch|ace|wiped|wipe|headshot|double kill|killing frenzy|killing spree|triple kill|one shot)/.test(lowered)) return 'Gameplay payoff with a strong reaction'
   if (/(caps? the flag|got our flag|got the flag|flag secured|captured the flag|stole the flag)/.test(lowered)) return 'Objective swing with a live reaction'
   if (/(won|victory|raid complete|wave cleared|goal|champion)/.test(lowered)) return 'A clean win or objective swing'
   if (/(bruh|lmao|haha|wtf|no way)/.test(lowered) || detectionMode === 'funny') return 'Funny reaction with a clear payoff'
@@ -2062,6 +2079,29 @@ function shouldSkipDuplicateClip(selectedClips, candidateStartSec, candidateEndS
     if (startDelta <= 16 && similarity >= 0.45) return true
     if (startDelta <= 28 && similarity >= 0.58) return true
     return overlapRatio >= 0.4 && similarity >= 0.55
+  })
+}
+
+function clipWindowMatchesPriorityCue(text, priorityProfile) {
+  if (!priorityProfile?.raw) return false
+
+  return uniqueMatches(text, [
+    ...(priorityProfile.exactPhrases || []),
+    ...(priorityProfile.matches?.action || []),
+  ]).length > 0
+}
+
+function shouldSkipPriorityAdjacentSetup(selectedClips, candidateWindow, priorityProfile) {
+  if (!hasActionPriority(priorityProfile)) return false
+  if (!candidateWindow?.text) return false
+  if (clipWindowMatchesPriorityCue(candidateWindow.text, priorityProfile)) return false
+
+  return selectedClips.some((existing) => {
+    if (!clipWindowMatchesPriorityCue(existing?.text, priorityProfile)) return false
+
+    const overlapSec = Math.max(0, Math.min(existing.endSec, candidateWindow.endSec) - Math.max(existing.startSec, candidateWindow.startSec))
+    const startDelta = Math.abs(existing.startSec - candidateWindow.startSec)
+    return overlapSec >= 4 || startDelta <= 30
   })
 }
 
@@ -2516,6 +2556,9 @@ Return ONLY compact JSON on ONE LINE:
         if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) {
           continue
         }
+        if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) {
+          continue
+        }
 
         if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) {
           duplicateClipsRemoved += 1
@@ -2547,6 +2590,7 @@ Return ONLY compact JSON on ONE LINE:
           if (!payload) continue
           if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
           if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
+          if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
 
           selectedClips.push(payload.selectedWindow)
@@ -2575,6 +2619,7 @@ Return ONLY compact JSON on ONE LINE:
           if (!payload) continue
           if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
           if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
+          if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
 
           selectedClips.push(payload.selectedWindow)
