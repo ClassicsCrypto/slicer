@@ -1073,8 +1073,8 @@ function detectVolumeSpikesForFile(filePath) {
 
 const GENRE_SIGNAL_PACKS = {
   general_gaming: {
-    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
-    objective: ['captured', 'champion', 'defuse', 'exfil', 'final circle', 'first blood', 'flag secured', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
+    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'fought him off', 'fought them off', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
+    objective: ['captured', 'captured the flag', 'caps the flag', 'champion', 'defuse', 'exfil', 'final circle', 'first blood', 'flag secured', 'got our flag', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
     reaction: ['clip that', 'holy', 'insane', 'let\'s go', 'no way', 'oh my god', 'oh shit', 'what just happened', 'yo'],
     funny: ['bruh', 'haha', 'i\'m dead', 'im dead', 'lmao', 'no shot', 'wtf'],
     negative: ['afk', 'audio settings', 'chat', 'follow the stream', 'loading', 'lobby', 'menu', 'queue', 'queueing', 'sensitivity', 'settings', 'sub goal', 'thanks for the follow', 'thanks for watching'],
@@ -1170,12 +1170,16 @@ const PRIORITY_HINT_SIGNAL_TERMS = {
 }
 
 const ACTION_SHOT_TERMS = [
+  'caps the flag',
   'double kill',
   'downed one',
   'first blood',
   'first kill',
   'flag secured',
+  'fought him off',
+  'fought them off',
   'got the flag',
+  'got our flag',
   'fried him',
   'fried them',
   'grabbed the flag',
@@ -1206,7 +1210,10 @@ const ACTION_SHOT_TERMS = [
 ]
 
 const ACTION_SHOT_PATTERNS = [
+  { label: 'caps the flag', pattern: /\bcaps? the flag\b/ },
+  { label: 'fought them off', pattern: /\bfought (?:him|her|them) off\b/ },
   { label: 'got someone', pattern: /\bgot (?:him|her|them|em|one|two|another)\b/ },
+  { label: 'got our flag', pattern: /\b(?:they|we) got (?:our|the) flag\b/ },
   { label: 'taken out', pattern: /\b(?:got )?taken out\b/ },
   { label: 'flag secured', pattern: /\bflag (?:secured|captured|returned|stolen|grabbed)\b/ },
   { label: 'got the flag', pattern: /\b(?:got|grabbed|stole) the flag\b/ },
@@ -1913,6 +1920,7 @@ function buildClipReasonFromWindow(clipText, detectionMode) {
 
   const lowered = text.toLowerCase()
   if (/(clutch|ace|wiped|wipe|headshot|double kill|triple kill|one shot)/.test(lowered)) return 'Gameplay payoff with a strong reaction'
+  if (/(caps? the flag|got our flag|got the flag|flag secured|captured the flag|stole the flag)/.test(lowered)) return 'Objective swing with a live reaction'
   if (/(won|victory|raid complete|wave cleared|goal|champion)/.test(lowered)) return 'A clean win or objective swing'
   if (/(bruh|lmao|haha|wtf|no way)/.test(lowered) || detectionMode === 'funny') return 'Funny reaction with a clear payoff'
   return 'Memorable moment with a clear reaction'
@@ -2389,7 +2397,11 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
 
       const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
       const targetCandidates = pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, detectionMode)
-      const topCandidates = buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, detectionMode).sort((a, b) => a.startSec - b.startSec)
+      const topCandidates = buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, detectionMode).sort((a, b) => {
+        const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+        if (rankDelta !== 0) return rankDelta
+        return a.startSec - b.startSec
+      })
       const shortlistCount = gameplayStrict
         ? Math.min(48, Math.max(clipCount * 5, 22))
         : Math.min(40, Math.max(clipCount * 4, 18))
