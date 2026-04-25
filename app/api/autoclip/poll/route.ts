@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listAutoclipSubscriptions, updateAutoclipSubscription } from '@/lib/autoclip-store'
+import { buildAutoclipFingerprint, findAutoclipDuplicate, getAutoclipCreatorKey, listAutoclipSubscriptions, recordAutoclipEvent, updateAutoclipSubscription } from '@/lib/autoclip-store'
 import { findLatestTwitchSource } from '@/lib/twitch'
 import { findLatestYouTubeSource } from '@/lib/youtube'
+import { findLatestXSource } from '@/lib/x'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -28,11 +29,12 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
   const mode = body.mode === 'live' ? 'live' : 'vod'
   const dryRun = Boolean(body.dryRun)
-  const subscriptions = listAutoclipSubscriptions('active')
+  const platformPriority: Record<string, number> = { twitch: 0, youtube: 1, x: 2, direct: 3 }
+  const subscriptions = listAutoclipSubscriptions('active').sort((a, b) => (platformPriority[a.platform] ?? 9) - (platformPriority[b.platform] ?? 9))
   const results: any[] = []
 
   for (const subscription of subscriptions) {
-    if (subscription.platform !== 'twitch' && subscription.platform !== 'youtube') {
+    if (subscription.platform !== 'twitch' && subscription.platform !== 'youtube' && subscription.platform !== 'x') {
       results.push({ subscriptionId: subscription.id, platform: subscription.platform, status: 'skipped', reason: 'platform connector not implemented yet' })
       continue
     }
@@ -40,7 +42,9 @@ export async function POST(request: NextRequest) {
     try {
       const source = subscription.platform === 'youtube'
         ? await findLatestYouTubeSource(subscription.handle || subscription.channelUrl || '')
-        : await findLatestTwitchSource(subscription.handle || subscription.channelUrl || '', mode)
+        : subscription.platform === 'x'
+          ? await findLatestXSource(subscription.handle || subscription.channelUrl || '')
+          : await findLatestTwitchSource(subscription.handle || subscription.channelUrl || '', mode)
       if (!source) {
         updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt })
         results.push({ subscriptionId: subscription.id, status: 'no_source', mode })
@@ -53,12 +57,31 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      const creatorKey = getAutoclipCreatorKey(subscription)
+      const fingerprint = buildAutoclipFingerprint({ creatorKey, title: source.title, publishedAt: (source as any).publishedAt || (source as any).startedAt })
+      const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, publishedAt: (source as any).publishedAt || (source as any).startedAt })
+      if (duplicate) {
+        updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt, lastSeenStreamId: source.id })
+        results.push({ subscriptionId: subscription.id, status: 'duplicate_stream', source, duplicate })
+        continue
+      }
+
       if (dryRun) {
-        results.push({ subscriptionId: subscription.id, status: 'would_queue', source })
+        results.push({ subscriptionId: subscription.id, status: 'would_queue', source, fingerprint })
         continue
       }
 
       const run = await triggerRun(request.nextUrl.origin, subscription.id, source)
+      recordAutoclipEvent({
+        creatorKey,
+        fingerprint,
+        platform: subscription.platform,
+        sourceId: source.id,
+        sourceUrl: source.url,
+        title: source.title,
+        jobId: run.jobId,
+        detectedAt: (source as any).publishedAt || (source as any).startedAt || startedAt,
+      })
       updateAutoclipSubscription(subscription.id, {
         lastCheckedAt: startedAt,
         lastSeenStreamId: source.id,
@@ -72,4 +95,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ checkedAt: startedAt, mode, dryRun, results })
 }
+
 

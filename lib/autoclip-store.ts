@@ -29,6 +29,20 @@ function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_autoclip_status ON autoclip_subscriptions(status);
     CREATE INDEX IF NOT EXISTS idx_autoclip_platform_handle ON autoclip_subscriptions(platform, handle);
+    CREATE TABLE IF NOT EXISTS autoclip_events (
+      id TEXT PRIMARY KEY,
+      creator_key TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      source_url TEXT NOT NULL,
+      title TEXT,
+      job_id TEXT,
+      detected_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_fingerprint ON autoclip_events(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_creator_detected ON autoclip_events(creator_key, detected_at DESC);
   `)
   return db
 }
@@ -171,4 +185,80 @@ export function updateAutoclipSubscription(id: string, patch: Partial<AutoclipSu
 export function deleteAutoclipSubscription(id: string) {
   const result = getDb().prepare('DELETE FROM autoclip_subscriptions WHERE id = ?').run(id)
   return result.changes > 0
+}
+
+function normalizeTitleForFingerprint(title: string) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(live|stream|streaming|vod|broadcast|part\s*\d+)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
+function getCreatorKey(input: { ownerEmail?: string; ownerName?: string; handle?: string; channelUrl?: string }) {
+  return String(input.ownerEmail || input.ownerName || input.handle || input.channelUrl || 'unknown')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .trim()
+}
+
+function getTimeBucket(publishedAt?: string | null) {
+  const ms = publishedAt ? new Date(publishedAt).getTime() : Date.now()
+  const bucketMs = 3 * 60 * 60 * 1000
+  return Math.floor((Number.isFinite(ms) ? ms : Date.now()) / bucketMs)
+}
+
+export function buildAutoclipFingerprint(input: { creatorKey: string; title?: string; publishedAt?: string | null }) {
+  return `${input.creatorKey}:${getTimeBucket(input.publishedAt)}:${normalizeTitleForFingerprint(input.title || '')}`
+}
+
+export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: string; publishedAt?: string | null }) {
+  const bucket = getTimeBucket(input.publishedAt)
+  const minDate = new Date((bucket - 1) * 3 * 60 * 60 * 1000).toISOString()
+  const maxDate = new Date((bucket + 2) * 3 * 60 * 60 * 1000).toISOString()
+  const row = getDb().prepare(`
+    SELECT * FROM autoclip_events
+    WHERE creator_key = @creator_key
+      AND (fingerprint = @fingerprint OR detected_at BETWEEN @minDate AND @maxDate)
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, minDate, maxDate })
+  return row || null
+}
+
+export function recordAutoclipEvent(input: {
+  creatorKey: string
+  fingerprint: string
+  platform: string
+  sourceId: string
+  sourceUrl: string
+  title?: string
+  jobId?: string
+  detectedAt?: string
+}) {
+  const now = new Date().toISOString()
+  const row = {
+    id: uuidv4(),
+    creator_key: input.creatorKey,
+    fingerprint: input.fingerprint,
+    platform: input.platform,
+    source_id: input.sourceId,
+    source_url: input.sourceUrl,
+    title: input.title || null,
+    job_id: input.jobId || null,
+    detected_at: input.detectedAt || now,
+    created_at: now,
+  }
+  getDb().prepare(`
+    INSERT INTO autoclip_events (id, creator_key, fingerprint, platform, source_id, source_url, title, job_id, detected_at, created_at)
+    VALUES (@id, @creator_key, @fingerprint, @platform, @source_id, @source_url, @title, @job_id, @detected_at, @created_at)
+  `).run(row)
+  return row
+}
+
+export function getAutoclipCreatorKey(subscription: AutoclipSubscription) {
+  return getCreatorKey(subscription)
 }
