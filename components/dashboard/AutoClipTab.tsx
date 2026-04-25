@@ -65,6 +65,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function AutoClipTab() {
+  const [platform, setPlatform] = useState<'twitch' | 'youtube'>('twitch')
   const [handle, setHandle] = useState('')
   const [email, setEmail] = useState('')
   const [clipCount, setClipCount] = useState(10)
@@ -99,7 +100,7 @@ export default function AutoClipTab() {
 
   const createSubscription = async () => {
     if (!cleanedHandle) {
-      setError('Enter a Twitch handle first')
+      setError(`Enter a ${platform === 'youtube' ? 'YouTube channel' : 'Twitch handle'} first`)
       return
     }
     setSubmitting(true)
@@ -116,16 +117,16 @@ export default function AutoClipTab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          platform: 'twitch',
+          platform,
           handle: cleanedHandle,
           ownerEmail: email.trim() || undefined,
-          title: `Twitch auto-clips: ${cleanedHandle}`,
+          title: `${platform === 'youtube' ? 'YouTube' : 'Twitch'} auto-clips: ${cleanedHandle}`,
           options,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create auto-clip signup')
-      setMessage(`Auto-clipping enabled for twitch.tv/${cleanedHandle}`)
+      setMessage(`Auto-clipping enabled for ${platform === 'youtube' ? 'YouTube' : 'twitch.tv'}/${cleanedHandle}`)
       setHandle('')
       setEmail('')
       setPriorityHint('')
@@ -198,11 +199,11 @@ export default function AutoClipTab() {
             <p className="text-red-400 text-sm font-bold mb-2">AUTO-CLIP SIGNUP</p>
             <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Let Slicer watch the stream for you.</h1>
             <p className="text-white/50 leading-7">
-              Lowest-friction flow: users enter a Twitch handle once. Slicer checks for new archive VODs, queues the latest one, and processes clips with their saved settings.
+              Lowest-friction flow: users enter a Twitch or YouTube handle once. Slicer checks for new public VODs/uploads, queues the latest one, and processes clips with their saved settings.
             </p>
           </div>
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/80 max-w-md">
-            <strong className="text-amber-100">Admin note:</strong> Twitch auto-detection needs backend <code className="text-amber-50">TWITCH_CLIENT_ID</code> and <code className="text-amber-50">TWITCH_CLIENT_SECRET</code>. Users never see those.
+            <strong className="text-amber-100">Admin note:</strong> Twitch auto-detection needs backend <code className="text-amber-50">TWITCH_CLIENT_ID</code> and <code className="text-amber-50">TWITCH_CLIENT_SECRET</code>. YouTube uses public channel RSS for basic latest-upload detection. Users never see backend credentials.
           </div>
         </div>
       </section>
@@ -211,16 +212,35 @@ export default function AutoClipTab() {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6 space-y-5">
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Create auto-clip signup</h2>
-            <p className="text-sm text-white/35">Twitch first. YouTube/X connectors can reuse this same signup table later.</p>
+            <p className="text-sm text-white/35">Twitch and YouTube are available. X stays manual URL until paid/scraper access is chosen.</p>
+          </div>
+
+          <div>
+            <span className="text-sm font-medium text-white/70 mb-2 block">Platform</span>
+            <div className="grid grid-cols-2 gap-2 max-w-md">
+              {([
+                { value: 'twitch', label: 'Twitch', desc: 'Archive VODs' },
+                { value: 'youtube', label: 'YouTube', desc: 'Public uploads' },
+              ] as const).map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setPlatform(item.value)}
+                  className={`rounded-lg border px-3 py-2.5 text-left transition-all ${platform === item.value ? 'border-red-500 bg-red-500/10 text-white' : 'border-white/10 text-white/45 hover:text-white hover:border-white/25'}`}
+                >
+                  <div className="text-sm font-bold">{item.label}</div>
+                  <div className="text-[11px] text-white/30">{item.desc}</div>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="block">
-              <span className="text-sm font-medium text-white/70 mb-2 block">Twitch handle</span>
+              <span className="text-sm font-medium text-white/70 mb-2 block">{platform === 'youtube' ? 'YouTube channel / @handle' : 'Twitch handle'}</span>
               <input
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
-                placeholder="cryptosloth or twitch.tv/cryptosloth"
+                placeholder={platform === 'youtube' ? '@MarsCatsVoyage or youtube.com/@MarsCatsVoyage' : 'cryptosloth or twitch.tv/cryptosloth'}
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-red-500 focus:outline-none"
               />
             </label>
@@ -267,6 +287,12 @@ export default function AutoClipTab() {
             />
           </label>
 
+          {platform === 'youtube' && (
+            <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs leading-5 text-blue-100/75">
+              YouTube auto-detect uses public channel RSS. It works for public uploads/archive posts; private, members-only, or unlisted videos will not appear.
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3 items-center">
             <Button onClick={createSubscription} disabled={submitting || !cleanedHandle}>
               {submitting ? 'Saving…' : 'Enable Auto-Clipping'}
@@ -305,7 +331,7 @@ export default function AutoClipTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-white font-bold">{sub.platform === 'twitch' ? '🟣' : '📺'} {sub.handle || sub.channelUrl}</span>
+                        <span className="text-white font-bold">{sub.platform === 'twitch' ? 'Twitch' : sub.platform === 'youtube' ? 'YouTube' : 'Video'} - {sub.handle || sub.channelUrl}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border ${sub.status === 'active' ? 'border-green-500/30 text-green-300 bg-green-500/10' : 'border-white/10 text-white/35 bg-white/5'}`}>{sub.status}</span>
                       </div>
                       <div className="text-xs text-white/30 space-y-1">
