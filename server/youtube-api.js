@@ -1894,7 +1894,7 @@ function isDirectActionCandidate(candidate) {
 function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, detectionMode) {
   const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
   const actionPriority = hasActionPriority(priorityProfile)
-  return Math.max(40, Math.min(180, Math.max(clipCount * (gameplayStrict ? 10 : actionPriority ? 11 : 9), Math.round(videoDurationMin * (gameplayStrict ? 1.1 : actionPriority ? 1.05 : 0.95)))))
+  return Math.max(80, Math.min(320, Math.max(clipCount * (gameplayStrict ? 18 : actionPriority ? 20 : 16), Math.round(videoDurationMin * (gameplayStrict ? 1.8 : actionPriority ? 1.7 : 1.55)))))
 }
 
 function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, detectionMode) {
@@ -1905,7 +1905,7 @@ function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priori
   const pool = []
   const buckets = Math.max(5, Math.min(10, Math.ceil(totalSec / 720)))
   const bucketDuration = Math.max(1, totalSec / buckets)
-  const perBucket = Math.max(actionPriority ? 4 : 3, Math.ceil(targetCandidates / buckets))
+  const perBucket = Math.max(actionPriority ? 8 : 6, Math.ceil(targetCandidates / buckets))
   const seen = new Set()
 
   for (let bucketIndex = 0; bucketIndex < buckets; bucketIndex += 1) {
@@ -1920,7 +1920,7 @@ function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priori
         if (actionPriority) {
           return candidate.score >= 8 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff || candidate.priorityMatches?.length > 0 || candidate.spikeHits > 0
         }
-        return candidate.score >= 6 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff
+        return candidate.score >= 3 || candidate.signalDensity >= 1 || candidate.hasGameplayPayoff || candidate.spikeHits > 0 || candidate.wholeTranscriptScout
       })
       .slice(0, perBucket)
 
@@ -2655,15 +2655,16 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
 Detected game/context: ${detectedGame}.${customGameHint}
 ${priorityHintText ? `User priority hint: ${priorityHintText}` : ''}
 
-Look across the WHOLE transcript. Return only moments with likely viral payoff: gameplay swings, kills/clutches/objectives, funny failures, rage/laugh reactions, or unusually quotable moments.
-Skip intros, setup chatter, music/lyrics, generic ROI talk, and weak vibes.
+Look across the WHOLE transcript and return a WIDE candidate set: ideally 30-60 possible moments.
+Include obvious viral moments, second-tier usable moments, and quiet gameplay payoffs the chunk scorer may miss: kills/clutches/objectives, funny failures, rage/laugh reactions, sudden audio spikes, quotable lines, or weird context shifts.
+Skip intros, pure setup chatter, music/lyrics, generic ROI talk, and weak vibes, but do not be too conservative. Gemini will judge later.
 Use absolute stream seconds from the timestamps.
 Return compact JSON only:
 {"moments":[{"s":1060,"v":8,"r":"SMG laser beam reaction with payoff"}]}
 
 FULL TRANSCRIPT:
 ${scoutTranscript}`
-          const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.15, maxOutputTokens: 2500, timeoutMs: 70000 })
+          const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.2, maxOutputTokens: 6000, timeoutMs: 90000 })
           const scoutJson = extractJsonObject(scoutContent)
           if (scoutJson) {
             let scoutParsed
@@ -2678,7 +2679,7 @@ ${scoutTranscript}`
             const boostedScoutCandidates = scoutChunks
               .map((chunk) => {
                 const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile)
-                const scoutBoost = Math.max(12, Math.min(32, (chunk.scoutScore || 7) * 3))
+                const scoutBoost = Math.max(20, Math.min(45, (chunk.scoutScore || 7) * 4))
                 return {
                   ...scored,
                   score: scored.score + scoutBoost,
@@ -2686,7 +2687,7 @@ ${scoutTranscript}`
                   scoutReason: chunk.scoutReason,
                 }
               })
-              .filter((candidate) => candidate.score > 0 || candidate.signalDensity >= 1 || candidate.scoutScore >= 7)
+              .filter((candidate) => candidate.score > -8 || candidate.signalDensity >= 1 || candidate.wholeTranscriptScout)
 
             scoredCandidates = mergeChunkSources(boostedScoutCandidates, scoredCandidates)
             scoutCandidatesAdded = boostedScoutCandidates.length
@@ -2710,8 +2711,8 @@ ${scoutTranscript}`
         return a.startSec - b.startSec
       })
       const shortlistCount = gameplayStrict
-        ? Math.min(48, Math.max(clipCount * 5, 22))
-        : Math.min(40, Math.max(clipCount * 4, 18))
+        ? Math.min(96, Math.max(clipCount * 9, 40))
+        : Math.min(90, Math.max(clipCount * 8, 36))
       console.log(`[score-clips] ${detectedGame} → ${detectedPackLabel}; ${chunkSource.length} chunks scored, ${topCandidates.length} candidates sent to Gemini`)
 
       if (topCandidates.length === 0) {
@@ -2744,8 +2745,9 @@ Detected game: ${detectedGame}
 Genre pack used for pre-scoring: ${detectedPackLabel}.${customGameHint}
 ${priorityHintBlock}
 
-Task: Pick the best candidate moments from the list below.
-Return between 0 and ${shortlistCount} clips. If the remaining options are weak, return fewer.
+Task: Rank the best candidate moments from the list below.
+Return a broad ranked list, not just the obvious safest picks. Aim for at least ${Math.max(clipCount * 3, 24)} candidates and up to ${shortlistCount}; the app will dedupe and keep the best ${clipCount}.
+Only return fewer than ${clipCount * 2} if the source is truly empty of usable moments.
 ${clipFocus}
 ${scoringRubric}
 
@@ -2852,7 +2854,7 @@ Return ONLY compact JSON on ONE LINE:
         const startSec = normalizeModelClipStartSec(c.s ?? c.start_sec ?? 0, topCandidates, introSkipSec, totalSec)
         const score = c.v ?? c.virality_score ?? 7
         if (startSec === 0 && result.length > 0) continue
-        if (score < 6) continue
+        if (score < 5) continue
 
         const payload = buildPriorityAwareClipPayload(startSec, score, c.r || c.ai_reason, words, clipLength, detectionMode, priorityProfile)
         if (!payload) continue
@@ -2880,12 +2882,12 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       if (result.length < clipCount) {
-        const backfillThreshold = hasActionPriority(priorityProfile) ? 10 : gameplayStrict ? 18 : 24
+        const backfillThreshold = hasActionPriority(priorityProfile) ? 6 : gameplayStrict ? 8 : 10
         for (const candidate of scoredCandidates) {
           if (result.length >= clipCount) break
           if (candidate.score < backfillThreshold) continue
           if (!passesGameplayPriorityGate(candidate, priorityProfile, detectionMode)) continue
-          if (!candidate.hasGameplayPayoff && candidate.signalDensity < 2) continue
+          if (!candidate.hasGameplayPayoff && candidate.signalDensity < 1 && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
 
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
@@ -2902,6 +2904,31 @@ Return ONLY compact JSON on ONE LINE:
           if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
           if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
+
+          selectedClips.push(payload.selectedWindow)
+          result.push(payload.clip)
+          backfilledClipsAdded += 1
+        }
+      }
+
+      if (result.length < clipCount) {
+        for (const candidate of topCandidates) {
+          if (result.length >= clipCount) break
+          if (candidate.score < 3 && !candidate.wholeTranscriptScout && candidate.signalDensity < 1 && candidate.spikeHits < 1) continue
+
+          const payload = buildPriorityAwareClipPayload(
+            Math.max(0, Math.round(candidate.startSec)),
+            mapCandidateScoreToVirality(Math.max(candidate.score, 8)),
+            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, detectionMode),
+            words,
+            clipLength,
+            detectionMode,
+            priorityProfile,
+          )
+
+          if (!payload) continue
+          if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
+          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode) && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
 
           selectedClips.push(payload.selectedWindow)
           result.push(payload.clip)
