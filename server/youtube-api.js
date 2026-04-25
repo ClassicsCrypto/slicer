@@ -1063,12 +1063,41 @@ function detectVolumeSpikesForFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return []
   try {
     const { analyzeAudioEnergy, findVolumeSpikes } = require('./audio-energy')
-    const segments = analyzeAudioEnergy(filePath, 10)
-    return findVolumeSpikes(segments, 6)
+    const segments = analyzeAudioEnergy(filePath, 3)
+    const spikes = findVolumeSpikes(segments, 4)
+    return clusterAudioActionSpikes(spikes, 9).slice(0, 80)
   } catch (error) {
     console.error('[audio-energy] Failed:', error.message)
     return []
   }
+}
+
+function clusterAudioActionSpikes(spikes, gapSec = 9) {
+  const sorted = [...(spikes || [])].sort((a, b) => a.startSec - b.startSec)
+  const clusters = []
+
+  for (const spike of sorted) {
+    const last = clusters[clusters.length - 1]
+    if (!last || spike.startSec - last.endSec > gapSec) {
+      clusters.push({
+        startSec: spike.startSec,
+        endSec: spike.endSec,
+        spikeLevel: spike.spikeLevel || 0,
+        spikeCount: 1,
+      })
+    } else {
+      last.endSec = Math.max(last.endSec, spike.endSec)
+      last.spikeLevel = Math.max(last.spikeLevel, spike.spikeLevel || 0)
+      last.spikeCount += 1
+    }
+  }
+
+  return clusters
+    .map((cluster) => ({
+      ...cluster,
+      actionScore: (cluster.spikeLevel || 0) + cluster.spikeCount * 3,
+    }))
+    .sort((a, b) => b.actionScore - a.actionScore)
 }
 
 const GENRE_SIGNAL_PACKS = {
@@ -1555,6 +1584,7 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
   score += priorityMatches.length * 9
   score += actionPriorityBonus
   score += spikeHits * 9
+  if (chunk.audioAction) score += Math.min(36, 16 + (chunk.audioActionScore || 0) * 2)
   score += Math.min(5, density)
   score += durationBonus
   score -= calibrationPenalty
@@ -1577,6 +1607,8 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
     priorityMatches,
     musicLike,
     aftermathLike,
+    audioAction: Boolean(chunk.audioAction),
+    audioActionScore: chunk.audioActionScore || 0,
   }
 }
 
@@ -2085,6 +2117,7 @@ function formatCandidateLine(candidate) {
     candidate.priorityMatches?.length ? `P${candidate.priorityMatches.length}` : '',
     candidate.hits.negative.length ? `N${candidate.hits.negative.length}` : '',
     candidate.spikeHits ? `S${candidate.spikeHits}` : '',
+    candidate.audioAction ? `GUN${Math.round(candidate.audioActionScore || 1)}` : '',
   ].filter(Boolean).join(' ')
 
   const priorityCue = candidate.priorityMatches?.length
@@ -2148,6 +2181,41 @@ function buildScoutChunksFromMoments(moments, words, introSkipSec, totalSec, cli
 
   return chunks
 }
+
+function buildAudioActionChunks(volumeSpikes, words, introSkipSec, totalSec, clipLength) {
+  const chunks = []
+  const seen = new Set()
+
+  for (const spike of (volumeSpikes || [])) {
+    const spikeStart = Number(spike.startSec)
+    if (!Number.isFinite(spikeStart) || spikeStart < introSkipSec || spikeStart > totalSec) continue
+    const centerSec = Math.max(introSkipSec, Math.min(totalSec, (spike.startSec + (spike.endSec || spike.startSec)) / 2))
+    const bucket = Math.round(centerSec / 6) * 6
+    if (seen.has(bucket)) continue
+    seen.add(bucket)
+
+    const windowStart = Math.max(introSkipSec, centerSec - Math.max(8, clipLength * 0.35))
+    const windowEnd = Math.min(totalSec, centerSec + Math.max(12, clipLength * 0.55))
+    const scopedWords = words
+      .filter((word) => (word.start || 0) / 1000 >= windowStart && (word.end || 0) / 1000 <= windowEnd)
+      .map((word) => sanitizeTranscriptToken(word.text))
+      .filter(Boolean)
+
+    if (scopedWords.length < 2) continue
+    chunks.push({
+      startSec: windowStart,
+      endSec: windowEnd,
+      durationSec: Math.max(4, windowEnd - windowStart),
+      words: scopedWords,
+      text: scopedWords.join(' '),
+      audioAction: true,
+      audioActionScore: spike.actionScore || spike.spikeLevel || spike.spikeCount || 1,
+    })
+  }
+
+  return chunks
+}
+
 
 async function callGeminiText(apiKey, model, prompt, options = {}) {
   const { temperature = 0.2, maxOutputTokens = 2048, retries = 4 } = options
@@ -2343,7 +2411,7 @@ async function handleTranscribeLocal(req, res) {
   if (cached) {
     const transcribeId = crypto.randomBytes(8).toString('hex')
     const filePath = resolveServedFilePath(audioUrl, audioPath)
-    const volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 30)
+    const volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 80)
     const cacheKey = getTranscriptionCacheKey(cacheSource)
     setTranscription(transcribeId, { status: 'complete', result: cached, volumeSpikes, cached: true, cacheKey })
     console.log(`[transcribe-local] Cache hit! ${cached.words?.length} words. Skipping Groq, using cached result directly.`)
@@ -2460,7 +2528,7 @@ async function handleTranscribeLocal(req, res) {
             if (audioFileForAnalysis !== filePath) {
               console.log(`[transcribe-local] ${transcribeId} using pre-extracted WAV for audio analysis (fast path)`)
             }
-            volumeSpikes = detectVolumeSpikesForFile(audioFileForAnalysis).slice(0, 30)
+            volumeSpikes = detectVolumeSpikesForFile(audioFileForAnalysis).slice(0, 80)
             console.log(`[transcribe-local] ${transcribeId} found ${volumeSpikes.length} volume spikes`)
           } catch (e) {
             console.error(`[transcribe-local] Audio energy analysis failed:`, e.message)
@@ -2629,9 +2697,10 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
         text: segment.text,
       }))
       const actionCueChunks = buildActionCueChunks(words, introSkipSec, totalSec, priorityProfile)
+      const audioActionChunks = buildAudioActionChunks(volumeSpikes, words, introSkipSec, totalSec, clipLength)
       const chunkSource = eventChunks.length > 0
-        ? mergeChunkSources(eventChunks, [...actionCueChunks, ...fallbackChunks])
-        : mergeChunkSources(actionCueChunks, fallbackChunks)
+        ? mergeChunkSources([...audioActionChunks, ...eventChunks], [...actionCueChunks, ...fallbackChunks])
+        : mergeChunkSources([...audioActionChunks, ...actionCueChunks], fallbackChunks)
 
       let scoredCandidates = chunkSource
         .map((chunk) => scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile))
@@ -2763,6 +2832,7 @@ Important selection rules:
 - For s, use the candidate's absolute stream start second from the timestamp itself, like 1978 or 2656. Never return list positions like 32 or 44.
 ${priorityStrictnessBlock}
 ${spikeContext}
+- Candidates tagged GUN came from dense loud audio sections that may indicate shots/fights/explosions even when transcript is quiet. Treat them as important action candidates and inspect nearby transcript carefully.
 
 CANDIDATES (${topCandidates.length}):
 ${candidatesText}
