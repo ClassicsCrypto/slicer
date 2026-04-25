@@ -2132,26 +2132,44 @@ async function callGeminiText(apiKey, model, prompt, options = {}) {
 
 
 async function callOpenRouterText(apiKey, model, prompt, options = {}) {
-  const { temperature = 0.2, maxOutputTokens = 4096, retries = 3 } = options
+  const { temperature = 0.2, maxOutputTokens = 4096, retries = 2, timeoutMs = 45000 } = options
   const baseUrl = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
   let lastError = null
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://deputy-stats-implies-beaches.trycloudflare.com',
-        'X-Title': 'Slicer',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature,
-        max_tokens: maxOutputTokens,
-      }),
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let response
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://deputy-stats-implies-beaches.trycloudflare.com',
+          'X-Title': 'Slicer',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature,
+          max_tokens: maxOutputTokens,
+        }),
+      })
+    } catch (error) {
+      clearTimeout(timer)
+      lastError = error?.name === 'AbortError'
+        ? new Error(`OpenRouter timed out after ${timeoutMs}ms`)
+        : error
+      if (attempt === retries) break
+      const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1))
+      console.warn(`[openrouter] ${model} attempt ${attempt}/${retries} failed: ${lastError.message}. Retrying in ${backoffMs}ms`)
+      await sleep(backoffMs)
+      continue
+    } finally {
+      clearTimeout(timer)
+    }
 
     if (response.ok) {
       const data = await response.json()
@@ -2652,9 +2670,19 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       if ((CLIP_SCORER === 'openrouter' || CLIP_SCORER === 'ab') && OPENROUTER_API_KEY) {
-        openRouterContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
-        content = openRouterContent
-        scorerUsed = 'openrouter'
+        try {
+          openRouterContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+          content = openRouterContent
+          scorerUsed = 'openrouter'
+        } catch (openRouterError) {
+          console.warn(`[openrouter] scorer failed for job ${jobId}: ${openRouterError.message}`)
+          if (!geminiContent && GEMINI_API_KEY) {
+            geminiContent = await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+          }
+          if (!geminiContent) throw openRouterError
+          content = geminiContent
+          scorerUsed = 'gemini_fallback'
+        }
       } else {
         if (!GEMINI_API_KEY) throw new Error('Gemini scorer requested but GEMINI_API_KEY is missing')
         geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
