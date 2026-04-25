@@ -2532,7 +2532,7 @@ async function handleScoreClips(req, res) {
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
-      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || '').toLowerCase()
+      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || 'openrouter').toLowerCase()
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
