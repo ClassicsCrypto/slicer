@@ -2090,8 +2090,63 @@ function formatCandidateLine(candidate) {
   const priorityCue = candidate.priorityMatches?.length
     ? ` priority=${candidate.priorityMatches.join(', ')}`
     : ''
+  const scoutCue = candidate.wholeTranscriptScout
+    ? ` scout=${String(candidate.scoutReason || 'whole transcript').slice(0, 90)}`
+    : ''
 
-  return `[${formatClock(candidate.startSec)}-${formatClock(candidate.endSec)}] pre=${candidate.score.toFixed(1)}${tags ? ` ${tags}` : ''}${priorityCue} :: ${candidate.text.slice(0, 220)}`
+  return `[${formatClock(candidate.startSec)}-${formatClock(candidate.endSec)}] pre=${candidate.score.toFixed(1)}${tags ? ` ${tags}` : ''}${priorityCue}${scoutCue} :: ${candidate.text.slice(0, 220)}`
+}
+
+
+function buildWholeTranscriptForScout(segments, maxChars = 120000) {
+  const lines = (segments || []).map((segment) => `[${formatClock(segment.startSec)}] ${segment.text}`)
+  const joined = lines.join('\n')
+  if (joined.length <= maxChars) return joined
+
+  const keep = []
+  let used = 0
+  const step = Math.max(1, Math.ceil(lines.length / 650))
+  for (let i = 0; i < lines.length; i += step) {
+    const line = lines[i]
+    if (used + line.length + 1 > maxChars) break
+    keep.push(line)
+    used += line.length + 1
+  }
+  return keep.join('\n')
+}
+
+function buildScoutChunksFromMoments(moments, words, introSkipSec, totalSec, clipLength) {
+  const chunks = []
+  const seen = new Set()
+
+  for (const moment of moments || []) {
+    const rawStart = Number(moment?.s ?? moment?.start ?? moment?.startSec ?? moment?.timestamp)
+    if (!Number.isFinite(rawStart)) continue
+    const centerSec = Math.max(introSkipSec, Math.min(totalSec, rawStart))
+    const bucket = Math.round(centerSec / 5) * 5
+    if (seen.has(bucket)) continue
+    seen.add(bucket)
+
+    const windowStart = Math.max(introSkipSec, centerSec - Math.min(8, Math.max(4, clipLength * 0.25)))
+    const windowEnd = Math.min(totalSec, centerSec + Math.min(16, Math.max(8, clipLength * 0.55)))
+    const scopedWords = words
+      .filter((word) => (word.start || 0) / 1000 >= windowStart && (word.end || 0) / 1000 <= windowEnd)
+      .map((word) => sanitizeTranscriptToken(word.text))
+      .filter(Boolean)
+
+    if (scopedWords.length < 3) continue
+    chunks.push({
+      startSec: windowStart,
+      endSec: windowEnd,
+      durationSec: Math.max(4, windowEnd - windowStart),
+      words: scopedWords,
+      text: scopedWords.join(' '),
+      scoutReason: String(moment?.r || moment?.reason || moment?.why || 'whole-transcript scout pick').slice(0, 140),
+      scoutScore: Number(moment?.v ?? moment?.score ?? 7) || 7,
+    })
+  }
+
+  return chunks
 }
 
 async function callGeminiText(apiKey, model, prompt, options = {}) {
@@ -2477,6 +2532,7 @@ async function handleScoreClips(req, res) {
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
+      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || '').toLowerCase()
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
@@ -2577,7 +2633,7 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
         ? mergeChunkSources(eventChunks, [...actionCueChunks, ...fallbackChunks])
         : mergeChunkSources(actionCueChunks, fallbackChunks)
 
-      const scoredCandidates = chunkSource
+      let scoredCandidates = chunkSource
         .map((chunk) => scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile))
         .filter((chunk) => {
           if (chunk.score > 0) return true
@@ -2590,6 +2646,53 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
           }
           return false
         })
+
+      let scoutCandidatesAdded = 0
+      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
+        try {
+          const scoutTranscript = buildWholeTranscriptForScout(segments)
+          const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
+Detected game/context: ${detectedGame}.${customGameHint}
+${priorityHintText ? `User priority hint: ${priorityHintText}` : ''}
+
+Look across the WHOLE transcript. Return only moments with likely viral payoff: gameplay swings, kills/clutches/objectives, funny failures, rage/laugh reactions, or unusually quotable moments.
+Skip intros, setup chatter, music/lyrics, generic ROI talk, and weak vibes.
+Use absolute stream seconds from the timestamps.
+Return compact JSON only:
+{"moments":[{"s":1060,"v":8,"r":"SMG laser beam reaction with payoff"}]}
+
+FULL TRANSCRIPT:
+${scoutTranscript}`
+          const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.15, maxOutputTokens: 2500, timeoutMs: 70000 })
+          const scoutJson = extractJsonObject(scoutContent)
+          if (scoutJson) {
+            const scoutParsed = JSON.parse(scoutJson)
+            const scoutChunks = buildScoutChunksFromMoments(scoutParsed.moments || scoutParsed.clips || [], words, introSkipSec, totalSec, clipLength)
+            const boostedScoutCandidates = scoutChunks
+              .map((chunk) => {
+                const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile)
+                const scoutBoost = Math.max(12, Math.min(32, (chunk.scoutScore || 7) * 3))
+                return {
+                  ...scored,
+                  score: scored.score + scoutBoost,
+                  wholeTranscriptScout: true,
+                  scoutReason: chunk.scoutReason,
+                }
+              })
+              .filter((candidate) => candidate.score > 0 || candidate.signalDensity >= 1 || candidate.scoutScore >= 7)
+
+            scoredCandidates = mergeChunkSources(boostedScoutCandidates, scoredCandidates)
+            scoutCandidatesAdded = boostedScoutCandidates.length
+            console.log(`[score-clips] Whole-transcript scout added ${scoutCandidatesAdded} candidates via ${OPENROUTER_CLIP_MODEL}`)
+          } else {
+            console.warn('[score-clips] Whole-transcript scout returned no JSON; continuing with local candidates')
+          }
+        } catch (scoutError) {
+          console.warn(`[score-clips] Whole-transcript scout failed: ${scoutError.message}`)
+        }
+      }
+
+      scoredCandidates = scoredCandidates
         .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
 
       const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
