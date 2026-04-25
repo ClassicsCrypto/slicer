@@ -2666,7 +2666,14 @@ ${scoutTranscript}`
           const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.15, maxOutputTokens: 2500, timeoutMs: 70000 })
           const scoutJson = extractJsonObject(scoutContent)
           if (scoutJson) {
-            const scoutParsed = JSON.parse(scoutJson)
+            let scoutParsed
+            try {
+              scoutParsed = JSON.parse(scoutJson)
+            } catch (scoutParseError) {
+              const momentMatches = [...scoutJson.matchAll(/\{\s*\"s\"\s*:\s*(\d+)\s*,\s*\"v\"\s*:\s*(\d+)\s*,\s*\"r\"\s*:\s*\"([^\"\\]*)/g)]
+              scoutParsed = { moments: momentMatches.map((m) => ({ s: Number(m[1]), v: Number(m[2]), r: m[3] })) }
+              console.warn(`[score-clips] Whole-transcript scout JSON was malformed; recovered ${scoutParsed.moments.length} moments`)
+            }
             const scoutChunks = buildScoutChunksFromMoments(scoutParsed.moments || scoutParsed.clips || [], words, introSkipSec, totalSec, clipLength)
             const boostedScoutCandidates = scoutChunks
               .map((chunk) => {
