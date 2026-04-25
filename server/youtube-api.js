@@ -2130,6 +2130,47 @@ async function callGeminiText(apiKey, model, prompt, options = {}) {
   throw lastError || new Error('Gemini failed with unknown error')
 }
 
+
+async function callOpenRouterText(apiKey, model, prompt, options = {}) {
+  const { temperature = 0.2, maxOutputTokens = 4096, retries = 3 } = options
+  const baseUrl = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+  let lastError = null
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'https://deputy-stats-implies-beaches.trycloudflare.com',
+        'X-Title': 'Slicer',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: maxOutputTokens,
+      }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      return data.choices?.[0]?.message?.content ?? ''
+    }
+
+    const errorText = await response.text()
+    lastError = new Error(`OpenRouter failed: ${response.status} ${errorText}`)
+    const retryable = response.status === 429 || response.status >= 500
+    if (!retryable || attempt === retries) break
+
+    const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1))
+    console.warn(`[openrouter] ${model} attempt ${attempt}/${retries} failed with ${response.status}. Retrying in ${backoffMs}ms`)
+    await sleep(backoffMs)
+  }
+
+  throw lastError || new Error('OpenRouter failed with unknown error')
+}
+
 function extractJsonObject(text) {
   const stripped = String(text || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
   return stripped.match(/\{[\s\S]*\}/)?.[0] ?? null
@@ -2414,7 +2455,10 @@ async function handleScoreClips(req, res) {
     try {
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY
       const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview'
-      if (!GEMINI_API_KEY) throw new Error('No GEMINI_API_KEY configured')
+      const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
+      const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
+      const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
+      if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
       const introSkipMin = totalSec > 1800 ? 7 : 2
@@ -2474,6 +2518,7 @@ Return JSON only on one line:
 
 TRANSCRIPT EXCERPTS:\n${transcriptText}`
 
+        if (!GEMINI_API_KEY) throw new Error('No Gemini key for genre detection')
         const genreContent = await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, genrePrompt, { maxOutputTokens: 512, temperature: 0.1 })
         const genreJson = extractJsonObject(genreContent)
         if (genreJson) {
@@ -2594,10 +2639,37 @@ ${candidatesText}
 Return ONLY compact JSON on ONE LINE:
 {"clips":[{"s":1978,"v":7,"r":"fair exchange kill"},{"s":2656,"v":8,"r":"flag secured payoff"}]}`
 
-      console.log(`[score-clips] Calling Gemini for job ${jobId} (${topCandidates.length} candidates, ${chunkSource.length} chunks, ${words.length} words)`)
+      console.log(`[score-clips] Calling clip scorer (${CLIP_SCORER}) for job ${jobId} (${topCandidates.length} candidates, ${chunkSource.length} chunks, ${words.length} words)`)
 
-      const content = await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
-      console.log(`[score-clips] Gemini raw response (${content.length} chars): "${content.substring(0, 200)}"`)
+      let content = ''
+      let scorerUsed = 'gemini'
+      let scorerComparison = null
+      let geminiContent = ''
+      let openRouterContent = ''
+
+      if (CLIP_SCORER === 'ab' && GEMINI_API_KEY) {
+        geminiContent = await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+      }
+
+      if ((CLIP_SCORER === 'openrouter' || CLIP_SCORER === 'ab') && OPENROUTER_API_KEY) {
+        openRouterContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+        content = openRouterContent
+        scorerUsed = 'openrouter'
+      } else {
+        if (!GEMINI_API_KEY) throw new Error('Gemini scorer requested but GEMINI_API_KEY is missing')
+        geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+        content = geminiContent
+      }
+
+      if (CLIP_SCORER === 'ab') {
+        scorerComparison = {
+          selected: scorerUsed,
+          gemini: { model: GEMINI_MODEL, responseChars: geminiContent.length, preview: geminiContent.substring(0, 500) },
+          openrouter: { model: OPENROUTER_CLIP_MODEL, responseChars: openRouterContent.length, preview: openRouterContent.substring(0, 500) },
+        }
+      }
+
+      console.log(`[score-clips] ${scorerUsed} raw response (${content.length} chars): "${content.substring(0, 200)}"`)
       const jsonPayload = extractJsonObject(content)
       if (!jsonPayload) throw new Error('No JSON found in Gemini response')
       // Fix common JSON issues: unescaped quotes in strings, truncated arrays
@@ -2620,10 +2692,10 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       const clips = gemParsed.clips ?? []
-      console.log(`[score-clips] Gemini returned ${clips.length} clips for ${detectedGame}`)
+      console.log(`[score-clips] ${scorerUsed} returned ${clips.length} clips for ${detectedGame}`)
 
       if (clips.length === 0) {
-        console.warn(`[score-clips] Gemini returned 0 clips for ${jobId}; falling back to local quality gates only`)
+        console.warn(`[score-clips] ${scorerUsed} returned 0 clips for ${jobId}; falling back to local quality gates only`)
       }
 
       // Deduplicate by overlap / transcript similarity, not hard spacing
@@ -2757,6 +2829,8 @@ Return ONLY compact JSON on ONE LINE:
               requestedClipCount: clipCount,
               shortlistClipCount: shortlistCount,
               aiReturnedClipCount: clips.length,
+              clipScorer: scorerUsed,
+              scorerComparison,
               duplicateClipsRemoved,
               deliveredClipCount: result.length,
               clipShortfallReason,
