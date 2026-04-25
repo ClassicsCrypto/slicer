@@ -6,8 +6,9 @@ import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
 import UsageTab from '@/components/dashboard/UsageTab'
+import AutoClipTab from '@/components/dashboard/AutoClipTab'
 
-type Tab = 'upload' | 'clips' | 'usage'
+type Tab = 'upload' | 'clips' | 'autoclip' | 'usage'
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>('upload')
@@ -15,7 +16,11 @@ export default function DashboardPage() {
   const [processingJobs, setProcessingJobs] = useState<Job[]>([])
 
   const handleJobCreated = useCallback((job: Job) => {
-    setProcessingJobs((prev) => [job, ...prev])
+    setProcessingJobs((prev) => [job, ...prev.filter((existing) => existing.id !== job.id)])
+    setGalleryKey((k) => k + 1)
+  }, [])
+
+  const openClipsTab = useCallback(() => {
     setActiveTab('clips')
     setGalleryKey((k) => k + 1)
   }, [])
@@ -34,14 +39,14 @@ export default function DashboardPage() {
         className="border-b border-white/5 sticky top-0 z-40 backdrop-blur-md"
         style={{ background: 'rgba(10,10,15,0.9)' }}
       >
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Image
-              src="/mcv-logo.jpg"
+              src="/mcv-logo-official.png"
               alt="Slicer"
-              width={32}
-              height={32}
-              className="drop-shadow-[0_0_8px_rgba(255,77,77,0.5)]"
+              width={36}
+              height={36}
+              className="object-contain drop-shadow-[0_0_8px_rgba(255,77,77,0.5)]"
             />
             <span className="font-black text-xl text-gradient-red tracking-tight">SLICER</span>
             <span className="text-white/20 text-sm ml-1">by MCV</span>
@@ -52,6 +57,7 @@ export default function DashboardPage() {
             {([
               { key: 'upload', label: '📤 Upload', },
               { key: 'clips', label: '🎬 Clips' },
+              { key: 'autoclip', label: '🤖 Auto-Clip' },
               { key: 'usage', label: '📊 Usage' },
             ] as const).map((tab) => (
               <button
@@ -74,13 +80,17 @@ export default function DashboardPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-6xl mx-auto px-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6">
         {activeTab === 'upload' && (
-          <UploadTab onJobCreated={handleJobCreated} />
+          <UploadTab onJobCreated={handleJobCreated} onViewClips={openClipsTab} />
         )}
 
         {activeTab === 'clips' && (
           <ClipsGallery key={galleryKey} initialJobs={processingJobs} />
+        )}
+
+        {activeTab === 'autoclip' && (
+          <AutoClipTab />
         )}
 
         {activeTab === 'usage' && (
