@@ -18,19 +18,34 @@ function SubtitleOverlay({
   isPlaying: boolean
   options: SubtitleOptions
 }) {
-  const fontSize = options.size === 'small' ? 'text-sm md:text-base' : options.size === 'large' ? 'text-xl md:text-2xl' : 'text-base md:text-lg'
-  const activeColor = options.color === 'custom' ? (options.customColor ?? '#FF4D4D') : options.color
-  const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
+  const fontSize = options.size === 'small' ? 'text-base md:text-lg' : options.size === 'large' ? 'text-2xl md:text-4xl' : 'text-xl md:text-3xl'
+  const baseColor = options.color === 'custom' ? (options.customColor ?? '#ffffff') : options.color
+  const activeColor = baseColor === '#ffffff' ? '#FFD84D' : baseColor
+  const inactiveColor = '#ffffff'
+  const positionClass = options.position === 'top' ? 'top-[18%]' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-[16%]'
   // Font family matching FFmpeg export
   const fontFamily = options.font === 'bebas' ? '"Bebas Neue", Impact, sans-serif'
     : options.font === 'montserrat' ? '"Montserrat", Arial, sans-serif'
     : 'Impact, Arial Black, sans-serif'
-  // Group words into lines of ~5 words
+  // TikTok-style grouping: short readable bursts, not full sentences.
   const lines = useMemo(() => {
     const result: SubtitleWord[][] = []
-    for (let i = 0; i < words.length; i += 5) {
-      result.push(words.slice(i, i + 5))
+    let current: SubtitleWord[] = []
+
+    for (const word of words) {
+      const previous = current[current.length - 1]
+      const pause = previous ? word.start - previous.end : 0
+      const lineDuration = current.length ? word.end - current[0].start : 0
+
+      if (current.length >= 5 || pause > 0.45 || lineDuration > 2.2) {
+        if (current.length) result.push(current)
+        current = []
+      }
+
+      current.push(word)
     }
+
+    if (current.length) result.push(current)
     return result
   }, [words])
 
@@ -73,20 +88,29 @@ function SubtitleOverlay({
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
-      <div className="max-w-[90%]">
-        <p className={`text-center ${fontSize} leading-relaxed`} style={{ fontFamily, fontWeight: 700, letterSpacing: '0.02em' }}>
-          {currentLine.words.map((word, i) => (
-            <span
-              key={`${currentLine.index}-${i}`}
-              style={{
-                color: activeColor,
-                textShadow: textStroke,
-                textTransform: textTransform as any,
-              }}
-            >
-              {word.text}{' '}
-            </span>
-          ))}
+      <div className={`max-w-[92%] rounded-2xl ${options.background === 'solid' ? 'bg-black/70 px-4 py-2' : options.background === 'blur' ? 'bg-black/35 backdrop-blur-md px-4 py-2' : ''}`}>
+        <p className={`text-center ${fontSize} leading-tight`} style={{ fontFamily, fontWeight: 900, letterSpacing: '0.015em' }}>
+          {currentLine.words.map((word, i) => {
+            const isActive = currentTime >= word.start - 0.04 && currentTime <= word.end + 0.08
+            const hasPassed = currentTime > word.end + 0.08
+
+            return (
+              <span
+                key={`${currentLine.index}-${i}`}
+                className="inline-block transition-all duration-100 ease-out"
+                style={{
+                  color: isActive ? activeColor : inactiveColor,
+                  opacity: hasPassed || isActive ? 1 : 0.72,
+                  transform: isActive ? 'translateY(-1px) scale(1.12)' : 'translateY(0) scale(1)',
+                  textShadow: textStroke,
+                  textTransform: textTransform as any,
+                  marginRight: '0.22em',
+                }}
+              >
+                {word.text}
+              </span>
+            )
+          })}
         </p>
       </div>
     </div>

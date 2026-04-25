@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { pollTranscription } from '@/lib/assemblyai'
 import { scoreTranscriptWithGroq } from '@/lib/groq'
+import { scoreTranscriptWithOpenRouter } from '@/lib/openrouter'
 import { Clip, SubtitleWord } from '@/types'
 import { AssemblyAIResult } from '@/lib/assemblyai'
 import { v4 as uuidv4 } from 'uuid'
@@ -141,8 +142,8 @@ export async function GET(
       return NextResponse.json({ status: 'processing', phase: 'transcribing' })
     }
 
-    // Transcript complete — score with Groq (AssemblyAI path)
-    console.log(`[poll] transcript complete! Calling Groq for scoring...`)
+    // Transcript complete — score with configured scorer (AssemblyAI path)
+    console.log(`[poll] transcript complete! Calling clip scorer...`)
     return await scoreAndCreateClips(supabase, job, jobId, transcript)
   } catch (err) {
     console.error('Poll route error:', err)
@@ -160,29 +161,65 @@ async function scoreAndCreateClips(supabase: any, job: any, jobId: string, trans
     const options = job.options
     console.log(`[poll] options: clipCount=${options.clipCount} clipLength=${options.clipLength} aiFocus=${JSON.stringify(options.aiFocus)}`)
     
-    let moments: Awaited<ReturnType<typeof scoreTranscriptWithGroq>> = []
+    const aiFocus = options.aiFocus ?? []
+    const clipCount = options.clipCount ?? 5
+    const clipLength = parseInt(options.clipLength ?? '30')
+    const scorerMode = process.env.CLIP_SCORER ?? 'groq'
+
+    let groqMoments: Awaited<ReturnType<typeof scoreTranscriptWithGroq>> = []
+    let openRouterMoments: Awaited<ReturnType<typeof scoreTranscriptWithOpenRouter>> = []
+
     try {
-      moments = await scoreTranscriptWithGroq(
-        transcript,
-        options.aiFocus ?? [],
-        options.clipCount ?? 5,
-        parseInt(options.clipLength ?? '30'),
-      )
-      console.log(`[poll] Groq returned ${moments.length} moments`)
+      groqMoments = await scoreTranscriptWithGroq(transcript, aiFocus, clipCount, clipLength)
+      console.log(`[poll] Groq returned ${groqMoments.length} moments`)
     } catch (groqErr) {
       console.error(`[poll] Groq scoring FAILED:`, groqErr)
-      moments = []
+    }
+
+    if (scorerMode === 'openrouter' || scorerMode === 'ab') {
+      try {
+        openRouterMoments = await scoreTranscriptWithOpenRouter(transcript, aiFocus, clipCount, clipLength)
+        console.log(`[poll] OpenRouter returned ${openRouterMoments.length} moments`)
+      } catch (openRouterErr) {
+        console.error(`[poll] OpenRouter scoring FAILED:`, openRouterErr)
+      }
+    }
+
+    let selectedScorer = 'groq'
+    let moments = groqMoments
+
+    if ((scorerMode === 'openrouter' || scorerMode === 'ab') && openRouterMoments.length > 0) {
+      selectedScorer = 'openrouter'
+      moments = openRouterMoments
+    }
+
+    const scorerComparison = scorerMode === 'ab'
+      ? {
+          selected: selectedScorer,
+          groq: groqMoments,
+          openrouter: openRouterMoments,
+        }
+      : undefined
+
+    if (scorerComparison) {
+      await supabase.from('jobs').update({
+        progress: {
+          ...job.progress,
+          phase: 'scoring',
+          scorerComparison,
+        },
+      }).eq('id', jobId)
     }
 
     // If no moments from AI, create sequential fallback clips
     if (moments.length === 0) {
       console.log(`[poll] no AI moments — using sequential fallback`)
-      const clipCount = job.options?.clipCount ?? 3
-      const clipLength = parseInt(job.options?.clipLength ?? '30')
-      for (let i = 0; i < clipCount; i++) {
+      const fallbackClipCount = job.options?.clipCount ?? 3
+      const fallbackClipLength = parseInt(job.options?.clipLength ?? '30')
+      for (let i = 0; i < fallbackClipCount; i++) {
         moments.push({
-          start_time: i * Math.ceil(clipLength / 2),
-          end_time: i * Math.ceil(clipLength / 2) + clipLength,
+          start_time: i * Math.ceil(fallbackClipLength / 2),
+          end_time: i * Math.ceil(fallbackClipLength / 2) + fallbackClipLength,
           virality_score: 5,
           matched_categories: job.options?.aiFocus?.slice(0, 1) ?? [],
           ai_reason: 'Sequential clip placement (no speech detected)',
@@ -224,6 +261,8 @@ async function scoreAndCreateClips(supabase: any, job: any, jobId: string, trans
         ...job.progress,
         phase: 'complete',
         completedClips: clips,
+        clipScorer: selectedScorer,
+        ...(scorerComparison ? { scorerComparison } : {}),
       },
     }).eq('id', jobId)
 
