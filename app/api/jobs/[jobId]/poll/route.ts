@@ -8,7 +8,9 @@ const STALE_JOB_MS = 2 * 60 * 60 * 1000
 
 function getActivityTimestamp(job: any): number {
   const progress = (job?.progress ?? {}) as JobProgress
-  const candidate = progress.completedAt || job?.updated_at || progress.processingStartedAt || job?.created_at
+  const candidate = job?.status === 'processing'
+    ? (progress.processingStartedAt || job?.updated_at || job?.created_at)
+    : (progress.completedAt || job?.updated_at || progress.processingStartedAt || job?.created_at)
   const ts = candidate ? new Date(candidate).getTime() : NaN
   return Number.isFinite(ts) ? ts : Date.now()
 }
