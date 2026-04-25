@@ -65,7 +65,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function AutoClipTab() {
-  const [platform, setPlatform] = useState<'twitch' | 'youtube'>('twitch')
+  const [platform, setPlatform] = useState<'twitch' | 'youtube' | 'x'>('twitch')
   const [handle, setHandle] = useState('')
   const [email, setEmail] = useState('')
   const [clipCount, setClipCount] = useState(10)
@@ -100,7 +100,7 @@ export default function AutoClipTab() {
 
   const createSubscription = async () => {
     if (!cleanedHandle) {
-      setError(`Enter a ${platform === 'youtube' ? 'YouTube channel' : 'Twitch handle'} first`)
+      setError(`Enter a ${platform === 'youtube' ? 'YouTube channel' : platform === 'x' ? 'X handle' : 'Twitch handle'} first`)
       return
     }
     setSubmitting(true)
@@ -120,13 +120,13 @@ export default function AutoClipTab() {
           platform,
           handle: cleanedHandle,
           ownerEmail: email.trim() || undefined,
-          title: `${platform === 'youtube' ? 'YouTube' : 'Twitch'} auto-clips: ${cleanedHandle}`,
+          title: `${platform === 'youtube' ? 'YouTube' : platform === 'x' ? 'X' : 'Twitch'} auto-clips: ${cleanedHandle}`,
           options,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create auto-clip signup')
-      setMessage(`Auto-clipping enabled for ${platform === 'youtube' ? 'YouTube' : 'twitch.tv'}/${cleanedHandle}`)
+      setMessage(`Auto-clipping enabled for ${platform === 'youtube' ? 'YouTube' : platform === 'x' ? 'X' : 'twitch.tv'}/${cleanedHandle}`)
       setHandle('')
       setEmail('')
       setPriorityHint('')
@@ -212,15 +212,16 @@ export default function AutoClipTab() {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6 space-y-5">
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Create auto-clip signup</h2>
-            <p className="text-sm text-white/35">Twitch and YouTube are available. X stays manual URL until paid/scraper access is chosen.</p>
+            <p className="text-sm text-white/35">Twitch, YouTube, and X are available. X uses backend API/scraper access when configured.</p>
           </div>
 
           <div>
             <span className="text-sm font-medium text-white/70 mb-2 block">Platform</span>
-            <div className="grid grid-cols-2 gap-2 max-w-md">
+            <div className="grid grid-cols-3 gap-2 max-w-2xl">
               {([
                 { value: 'twitch', label: 'Twitch', desc: 'Archive VODs' },
                 { value: 'youtube', label: 'YouTube', desc: 'Public uploads' },
+                { value: 'x', label: 'X', desc: 'Broadcast posts' },
               ] as const).map((item) => (
                 <button
                   key={item.value}
@@ -236,11 +237,11 @@ export default function AutoClipTab() {
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="block">
-              <span className="text-sm font-medium text-white/70 mb-2 block">{platform === 'youtube' ? 'YouTube channel / @handle' : 'Twitch handle'}</span>
+              <span className="text-sm font-medium text-white/70 mb-2 block">{platform === 'youtube' ? 'YouTube channel / @handle' : platform === 'x' ? 'X handle' : 'Twitch handle'}</span>
               <input
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
-                placeholder={platform === 'youtube' ? '@MarsCatsVoyage or youtube.com/@MarsCatsVoyage' : 'cryptosloth or twitch.tv/cryptosloth'}
+                placeholder={platform === 'youtube' ? '@MarsCatsVoyage or youtube.com/@MarsCatsVoyage' : platform === 'x' ? '@cryptosloth or x.com/cryptosloth' : 'cryptosloth or twitch.tv/cryptosloth'}
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-red-500 focus:outline-none"
               />
             </label>
@@ -292,6 +293,11 @@ export default function AutoClipTab() {
               YouTube auto-detect uses public channel RSS. It works for public uploads/archive posts; private, members-only, or unlisted videos will not appear.
             </div>
           )}
+          {platform === 'x' && (
+            <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-sky-100/75">
+              X auto-detect scans recent original posts for broadcast links and live/stream language. It needs backend X API/scraper credentials; manual X URLs still work in Upload.
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3 items-center">
             <Button onClick={createSubscription} disabled={submitting || !cleanedHandle}>
@@ -331,7 +337,7 @@ export default function AutoClipTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-white font-bold">{sub.platform === 'twitch' ? 'Twitch' : sub.platform === 'youtube' ? 'YouTube' : 'Video'} - {sub.handle || sub.channelUrl}</span>
+                        <span className="text-white font-bold">{sub.platform === 'twitch' ? 'Twitch' : sub.platform === 'youtube' ? 'YouTube' : sub.platform === 'x' ? 'X' : 'Video'} - {sub.handle || sub.channelUrl}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border ${sub.status === 'active' ? 'border-green-500/30 text-green-300 bg-green-500/10' : 'border-white/10 text-white/35 bg-white/5'}`}>{sub.status}</span>
                       </div>
                       <div className="text-xs text-white/30 space-y-1">
