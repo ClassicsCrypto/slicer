@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { listAutoclipSubscriptions, updateAutoclipSubscription } from '@/lib/autoclip-store'
 import { findLatestTwitchSource } from '@/lib/twitch'
+import { findLatestYouTubeSource } from '@/lib/youtube'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,13 +32,15 @@ export async function POST(request: NextRequest) {
   const results: any[] = []
 
   for (const subscription of subscriptions) {
-    if (subscription.platform !== 'twitch') {
+    if (subscription.platform !== 'twitch' && subscription.platform !== 'youtube') {
       results.push({ subscriptionId: subscription.id, platform: subscription.platform, status: 'skipped', reason: 'platform connector not implemented yet' })
       continue
     }
 
     try {
-      const source = await findLatestTwitchSource(subscription.handle || subscription.channelUrl || '', mode)
+      const source = subscription.platform === 'youtube'
+        ? await findLatestYouTubeSource(subscription.handle || subscription.channelUrl || '')
+        : await findLatestTwitchSource(subscription.handle || subscription.channelUrl || '', mode)
       if (!source) {
         updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt })
         results.push({ subscriptionId: subscription.id, status: 'no_source', mode })
@@ -69,3 +72,4 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ checkedAt: startedAt, mode, dryRun, results })
 }
+
