@@ -2155,6 +2155,7 @@ async function callOpenRouterText(apiKey, model, prompt, options = {}) {
           messages: [{ role: 'user', content: prompt }],
           temperature,
           max_tokens: maxOutputTokens,
+          response_format: { type: 'json_object' },
         }),
       })
     } catch (error) {
@@ -2698,8 +2699,14 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       console.log(`[score-clips] ${scorerUsed} raw response (${content.length} chars): "${content.substring(0, 200)}"`)
-      const jsonPayload = extractJsonObject(content)
-      if (!jsonPayload) throw new Error('No JSON found in Gemini response')
+      let jsonPayload = extractJsonObject(content)
+      if (!jsonPayload && scorerUsed === 'openrouter' && geminiContent) {
+        console.warn(`[score-clips] OpenRouter returned no JSON for ${jobId}; using Gemini fallback response`)
+        content = geminiContent
+        scorerUsed = 'gemini_fallback'
+        jsonPayload = extractJsonObject(content)
+      }
+      if (!jsonPayload) throw new Error(`No JSON found in ${scorerUsed} response`)
       // Fix common JSON issues: unescaped quotes in strings, truncated arrays
       let jsonStr = jsonPayload
       // Try parse — if fails, use a lenient approach
