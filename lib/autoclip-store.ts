@@ -220,10 +220,13 @@ export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: 
   const minDate = new Date((bucket - 1) * 3 * 60 * 60 * 1000).toISOString()
   const maxDate = new Date((bucket + 2) * 3 * 60 * 60 * 1000).toISOString()
   const row = getDb().prepare(`
-    SELECT * FROM autoclip_events
-    WHERE creator_key = @creator_key
-      AND (fingerprint = @fingerprint OR detected_at BETWEEN @minDate AND @maxDate)
-    ORDER BY created_at DESC
+    SELECT autoclip_events.*
+    FROM autoclip_events
+    LEFT JOIN jobs ON jobs.id = autoclip_events.job_id
+    WHERE autoclip_events.creator_key = @creator_key
+      AND (autoclip_events.fingerprint = @fingerprint OR autoclip_events.detected_at BETWEEN @minDate AND @maxDate)
+      AND (autoclip_events.job_id IS NULL OR jobs.id IS NULL OR jobs.status != 'failed')
+    ORDER BY autoclip_events.created_at DESC
     LIMIT 1
   `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, minDate, maxDate })
   return row || null
