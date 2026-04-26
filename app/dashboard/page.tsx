@@ -6,6 +6,7 @@ import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
 import AutoClipTab from '@/components/dashboard/AutoClipTab'
+import AccountMenu from '@/components/auth/AccountMenu'
 
 type Tab = 'upload' | 'clips' | 'autoclip'
 
@@ -73,7 +74,7 @@ export default function DashboardPage() {
             ))}
           </nav>
 
-          <div className="text-white/20 text-xs">Internal Tool</div>
+          <AccountMenu />
         </div>
       </header>
 

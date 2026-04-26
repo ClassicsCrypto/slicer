@@ -1,27 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const PROTECTED_PREFIXES = [
+  '/dashboard',
+  '/api/jobs',
+  '/api/process',
+  '/api/clips',
+  '/api/caption',
+  '/api/usage',
+  '/api/autoclip',
+]
+
+function authBypassed() {
+  return process.env.SKIP_AUTH === 'true' || process.env.NEXT_PUBLIC_SKIP_AUTH === 'true'
+}
+
+function isProtectedPath(pathname: string) {
+  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+}
+
 export function middleware(req: NextRequest) {
-  // Skip auth if SKIP_AUTH is set to 'true'
-  if (process.env.SKIP_AUTH === 'true') {
-    return NextResponse.next()
+  if (authBypassed()) return NextResponse.next()
+  if (!isProtectedPath(req.nextUrl.pathname)) return NextResponse.next()
+
+  const hasSession = req.cookies.has('slicer_session')
+  if (hasSession) return NextResponse.next()
+
+  if (req.nextUrl.pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  // Only protect /dashboard
-  if (req.nextUrl.pathname.startsWith('/dashboard')) {
-    // Check for session cookie (Supabase sets sb-access-token or similar)
-    const hasSession =
-      req.cookies.has('sb-access-token') ||
-      req.cookies.has('supabase-auth-token') ||
-      !!process.env.NEXT_PUBLIC_DEV_USER_ID
-
-    if (!hasSession) {
-      return NextResponse.redirect(new URL('/', req.url))
-    }
-  }
-
-  return NextResponse.next()
+  const loginUrl = new URL('/', req.url)
+  loginUrl.searchParams.set('next', req.nextUrl.pathname)
+  return NextResponse.redirect(loginUrl)
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/api/:path*'],
 }

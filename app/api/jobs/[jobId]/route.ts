@@ -3,6 +3,7 @@ import { deleteJobRecord, getJobRecord, updateJobRecord } from '@/lib/job-store/
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job } from '@/types'
+import { requireAuth } from '@/lib/auth'
 
 async function normalizeJob(job: any): Promise<Job> {
   const progress = job.progress ?? {}
@@ -18,7 +19,15 @@ async function normalizeJob(job: any): Promise<Job> {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: { jobId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
+  const existingJob = await getJobRecord(params.jobId, 'api/jobs/[jobId] DELETE fetch')
+  if (!existingJob || existingJob.user_id !== auth.user.id) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  }
+
   const { error: jobError } = await deleteJobRecord(params.jobId, 'api/jobs/[jobId] DELETE')
 
   if (jobError) {
@@ -28,12 +37,15 @@ export async function DELETE(_request: NextRequest, { params }: { params: { jobI
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { jobId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   try {
     const body = await request.json()
     const existingJob = await getJobRecord(params.jobId, 'api/jobs/[jobId] PATCH fetch')
     const fetchError = !existingJob ? new Error('Job not found') : null
 
-    if (fetchError || !existingJob) {
+    if (fetchError || !existingJob || existingJob.user_id !== auth.user.id) {
       return NextResponse.json({ error: fetchError?.message || 'Job not found' }, { status: 404 })
     }
 
@@ -69,10 +81,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { jobId:
 }
 
 export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   const job = await getJobRecord(params.jobId, 'api/jobs/[jobId] POST fetch')
   const fetchError = !job ? new Error('Job not found') : null
 
-  if (fetchError || !job) {
+  if (fetchError || !job || job.user_id !== auth.user.id) {
     return NextResponse.json({ error: fetchError?.message || 'Job not found' }, { status: 404 })
   }
 
@@ -112,7 +127,10 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
 
     const processResponse = await fetch(`${request.nextUrl.origin}/api/process`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: request.headers.get('cookie') || '',
+      },
       body: JSON.stringify(processPayload),
     })
 

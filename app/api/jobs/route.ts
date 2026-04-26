@@ -4,6 +4,7 @@ import { createJobRecord, listJobRecords, updateJobRecord } from '@/lib/job-stor
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job, JobProgress } from '@/types'
+import { requireAuth } from '@/lib/auth'
 
 const STALE_JOB_MS = 2 * 60 * 60 * 1000
 
@@ -71,7 +72,10 @@ async function recoverStaleJob(job: any) {
   }, 'api/jobs recoverStaleJob')) ?? { ...job, status: 'failed', progress }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   let jobsData: any[] = []
   try {
     jobsData = await listJobRecords(50, 'api/jobs GET')
@@ -79,12 +83,16 @@ export async function GET() {
     return NextResponse.json({ error: error?.message ?? 'Failed to list jobs' }, { status: 500 })
   }
 
-  const recoveredJobs = await Promise.all((jobsData ?? []).map((job) => recoverStaleJob(job)))
+  jobsData = (jobsData ?? []).filter((job) => job.user_id === auth.user.id)
+  const recoveredJobs = await Promise.all(jobsData.map((job) => recoverStaleJob(job)))
   const normalizedJobs = await Promise.all(recoveredJobs.map((job) => normalizeJob(job)))
   return NextResponse.json({ jobs: normalizedJobs })
 }
 
 export async function POST(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   const body = await request.json()
   const createdAt = new Date().toISOString()
 
@@ -99,7 +107,7 @@ export async function POST(request: NextRequest) {
   try {
     const data = await createJobRecord({
       id: body.jobId || uuidv4(),
-      user_id: '00000000-0000-0000-0000-000000000001',
+      user_id: auth.user.id,
       title: body.title || 'Untitled Video',
       source_url: sourceUrl,
       options: body.options || {},

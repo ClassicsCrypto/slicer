@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getClipStableId, normalizeClips } from '@/lib/clip-id'
 import { listJobRecords, updateJobRecord } from '@/lib/job-store/store'
 import { Clip } from '@/types'
+import { requireAuth } from '@/lib/auth'
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { clipId: string } },
 ) {
+  const auth = requireAuth(req)
+  if (auth instanceof NextResponse) return auth
+
   const { clipId } = params
 
   try {
@@ -18,7 +22,7 @@ export async function DELETE(
 
     // Find which job contains this clip
     let targetJob: Record<string, any> | null = null
-    for (const job of jobs) {
+    for (const job of jobs.filter((candidate) => candidate.user_id === auth.user.id)) {
       const completedClips = normalizeClips((job.progress?.completedClips || []) as Clip[])
       if (completedClips.some((c) => getClipStableId(c) === clipId)) {
         targetJob = job

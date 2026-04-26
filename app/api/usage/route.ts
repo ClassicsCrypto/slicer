@@ -1,8 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { getJobStoreKind, isSqliteJobStore, listJobRecords } from '@/lib/job-store/store'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,9 +17,12 @@ function getDirectorySizeBytes(targetPath: string): number {
   }, 0)
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   try {
-    const allJobs = await listJobRecords(1000, 'api/usage GET')
+    const allJobs = (await listJobRecords(1000, 'api/usage GET')).filter((job) => job.user_id === auth.user.id)
     const completedJobs = allJobs.filter((job) => job.status === 'complete')
 
     let totalClips = 0

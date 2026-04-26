@@ -1,5 +1,5 @@
-import Link from 'next/link'
 import Image from 'next/image'
+import LoginPanel from '@/components/auth/LoginPanel'
 
 export default function LandingPage() {
   return (
@@ -14,11 +14,11 @@ export default function LandingPage() {
         {/* Logo */}
         <div className="animate-float">
           <Image
-            src="/mcv-logo.jpg"
+            src="/mcv-logo-official.png"
             alt="Mars Cats Voyage"
-            width={120}
-            height={120}
-            className="rounded-full drop-shadow-[0_0_24px_rgba(255,77,77,0.5)]"
+            width={128}
+            height={128}
+            className="object-contain drop-shadow-[0_0_24px_rgba(255,77,77,0.5)]"
           />
         </div>
 
@@ -35,9 +35,9 @@ export default function LandingPage() {
         {/* Features */}
         <div className="grid grid-cols-3 gap-4 w-full mt-2">
           {[
-            { icon: '🤖', label: 'AI Analysis', desc: 'Groq Llama scores your best moments' },
-            { icon: '⚡', label: 'Instant Clips', desc: 'No rendering wait — clips in seconds' },
-            { icon: '🎯', label: 'Viral Focus', desc: 'Highlights kills, fails, hype & more' },
+            { icon: '🤖', label: 'AI Analysis', desc: 'Local Whisper + Gemini scout the strongest moments' },
+            { icon: '⚡', label: 'Fast Reruns', desc: 'Cached downloads and transcripts keep repeat passes quick' },
+            { icon: '🎯', label: 'Smarter Picks', desc: 'Action-first clip ranking, subtitles, and export-ready cuts' },
           ].map((f) => (
             <div
               key={f.label}
@@ -51,16 +51,10 @@ export default function LandingPage() {
           ))}
         </div>
 
-        {/* CTA */}
-        <Link
-          href="/dashboard"
-          className="mt-2 px-10 py-4 rounded-xl font-bold text-lg text-white transition-all hover:scale-105 glow-red"
-          style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
-        >
-          Get Started →
-        </Link>
+        {/* Auth */}
+        <LoginPanel />
 
-        <p className="text-white/30 text-sm">Internal tool — Mars Cats Voyage</p>
+        <p className="text-white/30 text-sm">Slicer accounts support Google, Discord, and wallet sign-in.</p>
       </div>
     </main>
   )
