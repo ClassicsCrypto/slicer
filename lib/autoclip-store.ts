@@ -62,6 +62,10 @@ function getDb() {
   `)
   ensureColumn(db, 'autoclip_subscriptions', 'user_id', 'TEXT')
   ensureColumn(db, 'autoclip_subscriptions', 'workspace_id', 'TEXT')
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_autoclip_workspace_status ON autoclip_subscriptions(workspace_id, status);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_user_status ON autoclip_subscriptions(user_id, status);
+  `)
   return db
 }
 
