@@ -2,6 +2,8 @@ export type AutoclipPlatform = 'twitch' | 'youtube' | 'x' | 'direct'
 export type AutoclipSubscriptionStatus = 'active' | 'paused'
 
 export interface AutoclipSubscriptionInput {
+  userId?: string | null
+  workspaceId?: string | null
   ownerName?: string
   ownerEmail?: string
   platform: AutoclipPlatform
@@ -13,6 +15,8 @@ export interface AutoclipSubscriptionInput {
 
 export interface AutoclipSubscription extends AutoclipSubscriptionInput {
   id: string
+  userId?: string | null
+  workspaceId?: string | null
   status: AutoclipSubscriptionStatus
   lastCheckedAt?: string | null
   lastSeenStreamId?: string | null

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { createJobRecord } from '@/lib/job-store/store'
 import { getAutoclipSubscription, updateAutoclipSubscription } from '@/lib/autoclip-store'
+import { requireAuth } from '@/lib/auth'
 import { ProcessingOptions } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -33,9 +34,12 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   try {
     const body = await request.json()
-    const subscription = getAutoclipSubscription(body.subscriptionId)
+    const subscription = getAutoclipSubscription(body.subscriptionId, { userId: auth.user.id, workspaceId: auth.workspace.id })
     if (!subscription) return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     if (subscription.status !== 'active') return NextResponse.json({ error: 'Subscription is paused' }, { status: 409 })
 
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     const job = await createJobRecord({
       id: jobId,
-      user_id: '00000000-0000-0000-0000-000000000001',
+      user_id: auth.user.id,
       title: body.title || subscription.title || `${subscription.platform}:${subscription.handle || subscription.channelUrl}`,
       source_url: undefined,
       options,
@@ -78,7 +82,10 @@ export async function POST(request: NextRequest) {
 
     const processResponse = await fetch(`${request.nextUrl.origin}/api/process`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: request.headers.get('cookie') || '',
+      },
       body: JSON.stringify({
         jobId,
         title: job.title,
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest) {
       lastCheckedAt: createdAt,
       lastSeenStreamId: body.streamId || rawInputUrl,
       lastJobId: jobId,
-    })
+    }, { userId: auth.user.id, workspaceId: auth.workspace.id })
 
     return NextResponse.json({ jobId, job }, { status: 202 })
   } catch (error: any) {

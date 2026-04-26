@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteAutoclipSubscription, getAutoclipSubscription, updateAutoclipSubscription } from '@/lib/autoclip-store'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_request: NextRequest, { params }: { params: { subscriptionId: string } }) {
-  const subscription = getAutoclipSubscription(params.subscriptionId)
+export async function GET(request: NextRequest, { params }: { params: { subscriptionId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
+  const subscription = getAutoclipSubscription(params.subscriptionId, { userId: auth.user.id, workspaceId: auth.workspace.id })
   if (!subscription) return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
   return NextResponse.json({ subscription })
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { subscriptionId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   try {
     const body = await request.json()
-    const subscription = updateAutoclipSubscription(params.subscriptionId, body)
+    const subscription = updateAutoclipSubscription(params.subscriptionId, body, { userId: auth.user.id, workspaceId: auth.workspace.id })
     if (!subscription) return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     return NextResponse.json({ subscription })
   } catch (error: any) {
@@ -20,8 +27,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { subscr
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: { subscriptionId: string } }) {
-  const deleted = deleteAutoclipSubscription(params.subscriptionId)
+export async function DELETE(request: NextRequest, { params }: { params: { subscriptionId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
+  const deleted = deleteAutoclipSubscription(params.subscriptionId, { userId: auth.user.id, workspaceId: auth.workspace.id })
   if (!deleted) return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
   return NextResponse.json({ ok: true })
 }
