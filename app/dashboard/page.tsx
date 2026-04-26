@@ -5,10 +5,9 @@ import Image from 'next/image'
 import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
-import UsageTab from '@/components/dashboard/UsageTab'
 import AutoClipTab from '@/components/dashboard/AutoClipTab'
 
-type Tab = 'upload' | 'clips' | 'autoclip' | 'usage'
+type Tab = 'upload' | 'clips' | 'autoclip'
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>('upload')
@@ -58,7 +57,6 @@ export default function DashboardPage() {
               { key: 'upload', label: '📤 Upload', },
               { key: 'clips', label: '🎬 Clips' },
               { key: 'autoclip', label: '🤖 Auto-Clip' },
-              { key: 'usage', label: '📊 Usage' },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
@@ -93,9 +91,6 @@ export default function DashboardPage() {
           <AutoClipTab />
         )}
 
-        {activeTab === 'usage' && (
-          <UsageTab />
-        )}
       </main>
     </div>
   )
