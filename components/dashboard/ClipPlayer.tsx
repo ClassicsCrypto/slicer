@@ -79,7 +79,12 @@ function SubtitleOverlay({
   const fontSize = options.size === 'small' ? 'text-sm md:text-base' : options.size === 'large' ? 'text-xl md:text-2xl' : 'text-base md:text-lg'
   const activeColor = options.color && options.color !== 'custom' ? options.color : (options.customColor ?? '#ffffff')
   const outlineColor = options.outlineColor && options.outlineColor !== 'custom' ? options.outlineColor : (options.customOutlineColor ?? '#000000')
-  const positionClass = options.position === 'top' ? 'top-4' : options.position === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-8'
+  const safeZone = options.safeZone || 'auto'
+  const positionClass = safeZone === 'upper_safe' || options.position === 'top'
+    ? 'top-[12%]'
+    : safeZone === 'center_safe' || options.position === 'center'
+      ? 'top-1/2 -translate-y-1/2'
+      : 'bottom-[18%]'
   const fontFamily = SUBTITLE_FONT_FAMILIES[options.font || 'impact'] || SUBTITLE_FONT_FAMILIES.impact
   const subtitleMode = options.mode || (options.style === 'karaoke' ? 'karaoke' : 'phrase')
   const animationPreset = options.animationPreset || 'pop'
@@ -124,6 +129,7 @@ function SubtitleOverlay({
   }
   if (options.shadow) shadowParts.push('2px 2px 4px rgba(0,0,0,0.7)')
   const textShadow = shadowParts.join(', ')
+  const highlightColor = options.highlightColor || '#ffeb3b'
   const dimColor = 'rgba(255,255,255,0.32)'
   const spokenColor = 'rgba(255,255,255,0.9)'
   const textTransform = options.textCase === 'upper' ? 'uppercase' : options.textCase === 'title' ? 'capitalize' : 'none'
@@ -169,6 +175,47 @@ function SubtitleOverlay({
     </div>
   )
 
+  const renderActiveWordMode = () => (
+    <div
+      key={cueKey}
+      className={`flex flex-wrap justify-center gap-x-2.5 gap-y-1.5 text-center ${fontSize}`}
+      style={{
+        fontFamily,
+        fontWeight: 800,
+        letterSpacing: '0.025em',
+        animation: cueAnimationStyle,
+      }}
+    >
+      {currentCue.words.map((word, index) => {
+        const isActive = index === currentWordIndex
+        const animatedStyle = getAnimatedStyle(isActive)
+        const pillActive = isActive && (options.activeWordStyle || 'pill') === 'pill'
+        return (
+          <span
+            key={`${currentCue.start}-${index}`}
+            style={{
+              color: isActive ? highlightColor : activeColor,
+              background: pillActive ? 'rgba(255, 235, 59, 0.22)' : 'transparent',
+              borderRadius: pillActive ? '0.42em' : 0,
+              padding: pillActive ? '0.02em 0.2em' : 0,
+              textDecoration: isActive && options.activeWordStyle === 'underline' ? `underline ${highlightColor} 0.12em` : 'none',
+              textShadow,
+              textTransform: textTransform as any,
+              opacity: isActive ? animatedStyle.opacity : 1,
+              transform: isActive ? animatedStyle.transform : 'scale(1)',
+              filter: isActive ? animatedStyle.filter : 'none',
+              transition: 'color 90ms ease, transform 120ms ease, background 120ms ease, filter 120ms ease',
+              display: 'inline-flex',
+              lineHeight: 1.1,
+            }}
+          >
+            {applyTextCase(word.text, options.textCase)}
+          </span>
+        )
+      })}
+    </div>
+  )
+
   const renderKaraokeMode = () => (
     <div
       key={cueKey}
@@ -188,7 +235,7 @@ function SubtitleOverlay({
           <span
             key={`${currentCue.start}-${index}`}
             style={{
-              color: isActive ? activeColor : isSpoken ? spokenColor : dimColor,
+              color: isActive ? highlightColor : isSpoken ? spokenColor : dimColor,
               textShadow,
               textTransform: textTransform as any,
               opacity: isActive ? animatedStyle.opacity : 1,
@@ -237,9 +284,11 @@ function SubtitleOverlay({
       <div className="max-w-[90%]">
         {subtitleMode === 'word_pop'
           ? renderWordPopMode()
-          : subtitleMode === 'karaoke'
-            ? renderKaraokeMode()
-            : renderPhraseMode()}
+          : subtitleMode === 'active_word'
+            ? renderActiveWordMode()
+            : subtitleMode === 'karaoke'
+              ? renderKaraokeMode()
+              : renderPhraseMode()}
       </div>
     </div>
   )
@@ -262,8 +311,12 @@ const DEFAULT_SUB_OPTS: SubtitleOptions = {
   style: 'bold',
   background: 'none',
   font: 'impact',
-  mode: 'phrase',
+  mode: 'active_word',
+  preset: 'auto',
   animationPreset: 'pop',
+  highlightColor: '#ffeb3b',
+  activeWordStyle: 'pill',
+  safeZone: 'bottom_safe',
   textCase: 'original',
   watermarkEnabled: true,
 }

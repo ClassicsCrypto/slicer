@@ -76,11 +76,14 @@ export interface Job {
 export type SubtitleSize = 'small' | 'medium' | 'large'
 export type SubtitleColor = string
 export type SubtitlePosition = 'bottom' | 'center' | 'top'
+export type SubtitleSafeZone = 'auto' | 'bottom_safe' | 'center_safe' | 'upper_safe' | 'custom'
 export type SubtitleStyle = 'bold' | 'outline' | 'shadow' | 'karaoke'
-export type SubtitleBackground = 'none' | 'blur' | 'solid'
+export type SubtitleBackground = 'none' | 'blur' | 'solid' | 'rounded_box' | 'active_word_pill'
 export type SubtitleFont = 'impact' | 'bebas' | 'montserrat' | 'sora' | 'arial_black' | 'trebuchet' | 'verdana' | 'georgia' | 'times_new_roman'
-export type SubtitleMode = 'phrase' | 'word_pop' | 'karaoke'
+export type SubtitleMode = 'phrase' | 'word_pop' | 'karaoke' | 'active_word'
 export type SubtitleAnimationPreset = 'none' | 'fade' | 'pop'
+export type SubtitlePreset = 'auto' | 'clean_tiktok' | 'gaming_pop' | 'hormozi_highlight' | 'mcv_branded' | 'meme_bold' | 'minimal_white'
+export type ActiveWordStyle = 'color' | 'scale' | 'pill' | 'underline'
 export type SubtitleOutlineThickness = 'none' | 'thin' | 'medium' | 'thick'
 export type SubtitleOutlineColor = string
 export type SubtitleCase = 'upper' | 'title' | 'original'
@@ -91,17 +94,23 @@ export interface SubtitleOptions {
   color: SubtitleColor
   customColor?: string
   position: SubtitlePosition
+  safeZone?: SubtitleSafeZone
   style: SubtitleStyle
   background: SubtitleBackground
   font?: SubtitleFont
   mode?: SubtitleMode
+  preset?: SubtitlePreset
   animationPreset?: SubtitleAnimationPreset
+  highlightColor?: string
+  activeWordStyle?: ActiveWordStyle
+  autoKeywords?: boolean
   outlineThickness?: SubtitleOutlineThickness
   outlineColor?: SubtitleOutlineColor
   customOutlineColor?: string
   shadow?: boolean
   textCase?: SubtitleCase
   watermarkEnabled?: boolean
+  brandKitName?: string
 }
 
 export interface ProcessingOptions {

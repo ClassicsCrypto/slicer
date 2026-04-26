@@ -10,7 +10,8 @@ import {
   SubtitleFont,
   SubtitleMode,
   SubtitleOptions,
-  SubtitlePosition,
+  SubtitlePreset,
+  SubtitleSafeZone,
   SubtitleSize,
   SubtitleWord,
 } from '@/types'
@@ -65,8 +66,9 @@ const DEFAULT_SELECTED_PLATFORMS: SocialPlatform[] = []
 
 const SUBTITLE_MODE_OPTIONS: { value: SubtitleMode; label: string; desc: string }[] = [
   { value: 'phrase', label: 'Phrase', desc: 'Classic chunked captions' },
+  { value: 'active_word', label: 'Active Word', desc: 'Full phrase with current word highlighted' },
   { value: 'word_pop', label: 'Word Pop', desc: 'One word at a time' },
-  { value: 'karaoke', label: 'Karaoke', desc: 'Active word lights up' },
+  { value: 'karaoke', label: 'Karaoke', desc: 'Sweep timing highlight' },
 ]
 
 const ANIMATION_PRESET_OPTIONS: { value: SubtitleAnimationPreset; label: string; desc: string }[] = [
@@ -93,6 +95,25 @@ const MIN_SEGMENT_DURATION = 0.35
 const MIN_SEGMENT_GAP = 0.05
 const DEFAULT_TEXT_COLOR = '#ffffff'
 const DEFAULT_OUTLINE_COLOR = '#000000'
+const DEFAULT_HIGHLIGHT_COLOR = '#ffeb3b'
+const BRAND_KIT_STORAGE_KEY = 'slicer.subtitleBrandKit.v1'
+
+const SUBTITLE_PRESETS: { value: SubtitlePreset; label: string; desc: string; options: Partial<SubtitleOptions> }[] = [
+  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'original' } },
+  { value: 'clean_tiktok', label: 'Clean TikTok', desc: 'Native-looking white text with strong outline', options: { mode: 'phrase', safeZone: 'bottom_safe', font: 'montserrat', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'medium', outlineColor: '#000000', shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
+  { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'upper' } },
+  { value: 'hormozi_highlight', label: 'Hormozi Highlight', desc: 'Phrase captions with active keyword emphasis', options: { mode: 'active_word', safeZone: 'center_safe', font: 'arial_black', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'color', textCase: 'original' } },
+  { value: 'mcv_branded', label: 'MCV Branded', desc: 'Mars Cats red highlight and watermark-ready', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'sora', size: 'medium', color: '#ffffff', highlightColor: '#ff4d4d', outlineThickness: 'thick', outlineColor: '#050505', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'original', watermarkEnabled: true } },
+  { value: 'meme_bold', label: 'Meme Bold', desc: 'Loud all-caps punchline style', options: { mode: 'word_pop', safeZone: 'center_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#00e5ff', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'scale', textCase: 'upper' } },
+  { value: 'minimal_white', label: 'Minimal White', desc: 'Small clean captions for dialogue-heavy clips', options: { mode: 'phrase', safeZone: 'upper_safe', font: 'montserrat', size: 'small', color: '#ffffff', highlightColor: '#ffffff', outlineThickness: 'thin', outlineColor: '#000000', shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
+]
+
+const SAFE_ZONE_OPTIONS: { value: SubtitleSafeZone; label: string; desc: string }[] = [
+  { value: 'bottom_safe', label: 'Bottom Safe', desc: 'Above app UI and captions' },
+  { value: 'center_safe', label: 'Center', desc: 'Middle creator-caption style' },
+  { value: 'upper_safe', label: 'Upper Safe', desc: 'Keeps gameplay HUD clear' },
+  { value: 'auto', label: 'Auto', desc: 'Use preset default' },
+]
 
 const PLATFORM_EXPORT_FORMAT: Record<SocialPlatform, ExportAspectRatio> = {
   x: 'twitter',
@@ -161,6 +182,68 @@ const PLATFORM_PUBLISH_GUIDE: Record<SocialPlatform, {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+function applySubtitlePreset(current: SubtitleOptions, preset: SubtitlePreset): SubtitleOptions {
+  const selected = SUBTITLE_PRESETS.find((entry) => entry.value === preset) || SUBTITLE_PRESETS[0]
+  return {
+    ...current,
+    ...selected.options,
+    preset,
+    enabled: current.enabled,
+  }
+}
+
+function getAutomatedSubtitlePreset(clip: Clip): SubtitlePreset {
+  const categories = clip.matched_categories || []
+  if (categories.some((category) => ['kill_streaks', 'intense_action', 'big_plays', 'hype_moments'].includes(category))) return 'gaming_pop'
+  if (categories.some((category) => ['funny_moments', 'fails', 'reactions'].includes(category))) return 'meme_bold'
+  if (categories.some((category) => ['key_dialogue'].includes(category))) return 'clean_tiktok'
+  if ((clip.virality_score || 0) >= 8) return 'hormozi_highlight'
+  return 'mcv_branded'
+}
+
+function tuneCaptionsForClip(current: SubtitleOptions, clip: Clip): SubtitleOptions {
+  const preset = getAutomatedSubtitlePreset(clip)
+  return {
+    ...applySubtitlePreset(current, preset),
+    autoKeywords: true,
+    safeZone: preset === 'meme_bold' ? 'center_safe' : 'bottom_safe',
+  }
+}
+
+function loadBrandKit(): Partial<SubtitleOptions> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(BRAND_KIT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveBrandKit(options: SubtitleOptions) {
+  if (typeof window === 'undefined') return
+  const kit: Partial<SubtitleOptions> = {
+    brandKitName: 'Saved Brand Kit',
+    preset: options.preset,
+    mode: options.mode,
+    safeZone: options.safeZone,
+    font: options.font,
+    size: options.size,
+    color: options.color,
+    highlightColor: options.highlightColor,
+    outlineColor: options.outlineColor,
+    outlineThickness: options.outlineThickness,
+    shadow: options.shadow,
+    animationPreset: options.animationPreset,
+    activeWordStyle: options.activeWordStyle,
+    textCase: options.textCase,
+    watermarkEnabled: options.watermarkEnabled,
+  }
+  window.localStorage.setItem(BRAND_KIT_STORAGE_KEY, JSON.stringify(kit))
 }
 
 function formatTimestamp(seconds: number, showTenths = false) {
@@ -404,6 +487,8 @@ export default function ClipPreviewEditor({
   const [segmentDraft, setSegmentDraft] = useState('')
   const [playheadTime, setPlayheadTime] = useState(0)
   const [externalSeekTime, setExternalSeekTime] = useState<number | null>(0)
+  const [brandKitAvailable, setBrandKitAvailable] = useState(false)
+  const [brandKitSaved, setBrandKitSaved] = useState(false)
   const [segmentBoundsDraft, setSegmentBoundsDraftState] = useState<{ start: number; end: number } | null>(null)
   const segmentBoundsDraftRef = useRef<{ start: number; end: number } | null>(null)
   const timelineViewportRef = useRef<HTMLDivElement>(null)
@@ -476,6 +561,10 @@ export default function ClipPreviewEditor({
   const selectedSegmentLastWord = selectedSegment ? orderedSubtitles[selectedSegment.wordEndIndex] : null
   const canMergeNextSegment = Boolean(selectedSegmentLastWord?.breakAfter)
   const canSplitSelectedSegment = Boolean(selectedSegment && selectedSegment.wordCount > 1)
+
+  useEffect(() => {
+    setBrandKitAvailable(Boolean(loadBrandKit()))
+  }, [])
 
   useEffect(() => {
     setSelectedSegmentIndex(null)
@@ -700,12 +789,26 @@ export default function ClipPreviewEditor({
     setSegmentBoundsDraft(null)
   }
 
+  const handleSaveBrandKit = () => {
+    saveBrandKit(subtitleOptions)
+    setBrandKitAvailable(true)
+    setBrandKitSaved(true)
+    setTimeout(() => setBrandKitSaved(false), 1800)
+  }
+
+  const handleApplyBrandKit = () => {
+    const kit = loadBrandKit()
+    if (!kit) return
+    onSubtitleOptionsChange({ ...subtitleOptions, ...kit })
+  }
+
   const subtitleTextColor = subtitleOptions.color && subtitleOptions.color !== 'custom'
     ? subtitleOptions.color
     : (subtitleOptions.customColor ?? DEFAULT_TEXT_COLOR)
   const subtitleOutlineColor = subtitleOptions.outlineColor && subtitleOptions.outlineColor !== 'custom'
     ? subtitleOptions.outlineColor
     : (subtitleOptions.customOutlineColor ?? DEFAULT_OUTLINE_COLOR)
+  const subtitleHighlightColor = subtitleOptions.highlightColor || DEFAULT_HIGHLIGHT_COLOR
   const outlineEnabled = (subtitleOptions.outlineThickness || 'medium') !== 'none'
   const sharedChoiceButtonClass = (active: boolean, extra = '') => (
     `rounded-lg border transition-all ${active ? 'border-red-500/30 bg-red-500/10 text-white' : 'border-white/10 bg-black/20 text-white/70 hover:border-white/20 hover:text-white/90'} ${extra}`
@@ -733,6 +836,39 @@ export default function ClipPreviewEditor({
       {!subtitleOptions.enabled && (
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/45">
           This clip will export without subtitles unless you turn them back on.
+        </div>
+      )}
+
+      {subtitleOptions.enabled && (
+        <div className="rounded-xl border border-red-500/15 bg-red-500/[0.06] p-4 space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h5 className="text-sm font-semibold text-white">Automation-first presets</h5>
+              <p className="mt-1 text-xs leading-5 text-white/38">Let Slicer pick a caption style by clip type, or save/apply a reusable brand kit. Manual controls stay available below.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" onClick={() => onSubtitleOptionsChange(tuneCaptionsForClip(subtitleOptions, clip))}>Auto Tune This Clip</Button>
+              <Button variant="ghost" onClick={handleSaveBrandKit}>{brandKitSaved ? 'Saved' : 'Save Brand Kit'}</Button>
+              <Button variant="secondary" onClick={handleApplyBrandKit} disabled={!brandKitAvailable}>Apply Brand Kit</Button>
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {SUBTITLE_PRESETS.map((preset) => {
+              const active = (subtitleOptions.preset || 'auto') === preset.value
+              return (
+                <button
+                  key={preset.value}
+                  onClick={() => onSubtitleOptionsChange(applySubtitlePreset(subtitleOptions, preset.value))}
+                  className={`rounded-lg border px-3 py-2.5 text-left transition-all ${active ? 'border-red-500/40 bg-red-500/15 text-white' : 'border-white/10 bg-black/20 text-white/60 hover:border-white/25 hover:text-white'}`}
+                  title={preset.desc}
+                >
+                  <div className="text-sm font-semibold">{preset.label}</div>
+                  <div className="mt-1 text-[11px] leading-4 text-white/35">{preset.desc}</div>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -815,15 +951,20 @@ export default function ClipPreviewEditor({
 
               <div className="space-y-6 min-w-0">
                 <div className="space-y-3">
-                  <label className={`block ${sharedSectionLabelClass}`}>Position</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {(['bottom', 'center', 'top'] as SubtitlePosition[]).map((value) => (
+                  <label className={`block ${sharedSectionLabelClass}`}>Safe Zone</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {SAFE_ZONE_OPTIONS.map((option) => (
                       <button
-                        key={value}
-                        onClick={() => onSubtitleOptionsChange({ ...subtitleOptions, position: value })}
-                        className={compactButtonClass((subtitleOptions.position || 'bottom') === value, 'min-w-0')}
+                        key={option.value}
+                        onClick={() => onSubtitleOptionsChange({
+                          ...subtitleOptions,
+                          safeZone: option.value,
+                          position: option.value === 'upper_safe' ? 'top' : option.value === 'center_safe' ? 'center' : 'bottom',
+                        })}
+                        className={compactButtonClass((subtitleOptions.safeZone || 'bottom_safe') === option.value, 'min-w-0 text-left')}
+                        title={option.desc}
                       >
-                        {value[0].toUpperCase() + value.slice(1)}
+                        {option.label}
                       </button>
                     ))}
                   </div>
@@ -881,6 +1022,22 @@ export default function ClipPreviewEditor({
                 <div>
                   <div className="text-base font-semibold text-white">{subtitleTextColor.toUpperCase()}</div>
                   <div className="text-sm leading-5 text-white/40">Pick any text color</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Active Word Color</label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="color"
+                  value={subtitleHighlightColor}
+                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, highlightColor: e.target.value })}
+                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
+                />
+                <div>
+                  <div className="text-base font-semibold text-white">{subtitleHighlightColor.toUpperCase()}</div>
+                  <div className="text-sm leading-5 text-white/40">Highlight active spoken words</div>
                 </div>
               </div>
             </div>

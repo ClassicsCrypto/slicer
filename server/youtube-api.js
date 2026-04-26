@@ -660,8 +660,12 @@ async function handleClip(req, res) {
       const fontSize = opts.size === 'small' ? 22 : opts.size === 'large' ? 40 : 30
       const hexColor = (opts.color || '#ffffff').replace('#', '')
       const r = hexColor.slice(0, 2), g = hexColor.slice(2, 4), b = hexColor.slice(4, 6)
-      const primaryColour = `&H00${b}${g}${r}`
-      const secondaryColour = subtitleMode === 'karaoke' ? '&H00999999' : primaryColour
+      const basePrimaryColour = `&H00${b}${g}${r}`
+      const highlightHex = (opts.highlightColor || '#ffeb3b').replace('#', '')
+      const hR = highlightHex.slice(0, 2), hG = highlightHex.slice(2, 4), hB = highlightHex.slice(4, 6)
+      const highlightColour = `&H00${hB}${hG}${hR}`
+      const primaryColour = subtitleMode === 'karaoke' || subtitleMode === 'active_word' ? highlightColour : basePrimaryColour
+      const secondaryColour = subtitleMode === 'karaoke' ? basePrimaryColour : primaryColour
       const fontsDir = path.join(__dirname, 'fonts')
       const fontNameMap = {
         'impact': 'Impact',
@@ -682,8 +686,9 @@ async function handleClip(req, res) {
       const outlineColour = `&H00${oB}${oG}${oR}`
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
-      const alignment = opts.position === 'top' ? 8 : opts.position === 'center' ? 5 : 2
-      const marginV = opts.position === 'top' ? 50 : opts.position === 'center' ? 0 : 30
+      const safeZone = opts.safeZone || 'auto'
+      const alignment = safeZone === 'upper_safe' || opts.position === 'top' ? 8 : safeZone === 'center_safe' || opts.position === 'center' ? 5 : 2
+      const marginV = safeZone === 'upper_safe' || opts.position === 'top' ? 86 : safeZone === 'center_safe' || opts.position === 'center' ? 0 : 120
 
       // Generate proper ASS file (reliable alignment vs SRT+force_style)
       const assFile = srtFile.replace('.srt', '.ass')
@@ -691,6 +696,9 @@ async function handleClip(req, res) {
         textCase,
         mode: subtitleMode,
         animationPreset,
+        baseColour: basePrimaryColour,
+        highlightColour,
+        activeWordStyle: opts.activeWordStyle || 'pill',
       })
       const assEvents = assEventLines.join('\n')
       const assContent = `[Script Info]
@@ -917,9 +925,17 @@ function buildAssAnimationTag(animationPreset = 'pop') {
   return '{\\fscx72\\fscy72\\t(0,170,\\fscx100\\fscy100)}'
 }
 
-function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'pop' } = {}) {
+function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'pop', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill' } = {}) {
   const animationTag = buildAssAnimationTag(animationPreset)
   const orderedWords = normalizeSubtitleWords(words)
+  const highlightTag = activeWordStyle === 'underline'
+    ? `{\\c${highlightColour}\\u1}`
+    : activeWordStyle === 'scale'
+      ? `{\\c${highlightColour}\\fscx116\\fscy116}`
+      : activeWordStyle === 'color'
+        ? `{\\c${highlightColour}}`
+        : `{\\c${highlightColour}\\3c&H00333333&\\bord4\\fscx112\\fscy112}`
+  const resetTag = `{\\rDefault\\c${baseColour}}`
 
   if (mode === 'word_pop') {
     return orderedWords.map((word, index) => {
@@ -932,6 +948,24 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
   }
 
   const groupedWords = groupSubtitleWords(orderedWords)
+
+  if (mode === 'active_word') {
+    const lines = []
+    for (const group of groupedWords) {
+      for (let index = 0; index < group.length; index += 1) {
+        const word = group[index]
+        const nextWord = group[index + 1]
+        const start = word.start
+        const end = nextWord ? Math.max(word.end, nextWord.start - 0.02) : word.end + 0.18
+        const text = group.map((entry, entryIndex) => {
+          const escaped = escapeAssText(applySubtitleTextCase(entry.text || '', textCase))
+          return entryIndex === index ? `${highlightTag}${escaped}${resetTag}` : escaped
+        }).join(' ')
+        lines.push(`Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`)
+      }
+    }
+    return lines
+  }
 
   if (mode === 'karaoke') {
     return groupedWords.map((group) => {
