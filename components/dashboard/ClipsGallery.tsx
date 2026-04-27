@@ -374,7 +374,8 @@ function ClipCard({
 
 type StillShot = {
   id: string
-  url: string
+  thumbUrl: string
+  hqUrl: string
   fileName: string
   clipLabel: string
   frameLabel: string
@@ -387,6 +388,7 @@ type StillFormat = 'jpg' | 'png'
 type StillCrop = 'original' | 'square' | 'portrait'
 
 function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
+  const [apiBase, setApiBase] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -394,8 +396,23 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
   const [stillCrop, setStillCrop] = useState<StillCrop>('original')
   const [currentStillIndex, setCurrentStillIndex] = useState(0)
 
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const nextApiBase = (await getApiUrl()).replace(/\/$/, '')
+        if (!cancelled) setApiBase(nextApiBase)
+      } catch {
+        if (!cancelled) setApiBase(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const stills = useMemo<StillShot[]>(() => {
-    if (!job.source_url) return []
+    if (!apiBase || !job.source_url) return []
     const jobSlug = slugifyFilePart(job.title || job.id)
 
     return clips.flatMap((clip, clipIndex) => {
@@ -407,17 +424,21 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
       return proofFrames.map((frame, frameIndex) => {
         const frameLabel = frame.label || `still-${frameIndex + 1}`
         const timestamp = Math.max(0, Number(frame.timestamp || 0))
-        const params = new URLSearchParams()
-        params.set('sourceUrl', job.source_url)
-        params.set('timestamp', timestamp.toFixed(2))
-        params.set('format', stillFormat)
-        params.set('crop', stillCrop)
-        params.set('qualitySearch', 'true')
-        params.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
+        const thumbParams = new URLSearchParams()
+        thumbParams.set('sourceUrl', job.source_url)
+        thumbParams.set('timestamp', timestamp.toFixed(2))
+        thumbParams.set('clipId', `${clipId}-${frameLabel}`)
+        const hqParams = new URLSearchParams(thumbParams)
+        hqParams.delete('clipId')
+        hqParams.set('format', stillFormat)
+        hqParams.set('crop', stillCrop)
+        hqParams.set('qualitySearch', 'true')
+        hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         return {
           id: `${clipId}-${frameLabel}-${frameIndex}`,
-          url: `/api/stills/export?${params.toString()}`,
+          thumbUrl: `${apiBase}/thumbnail?${thumbParams.toString()}`,
+          hqUrl: `/api/stills/export?${hqParams.toString()}`,
           fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${stillCrop}-${Math.round(timestamp)}s.${stillFormat}`,
           clipLabel: `Clip ${clipIndex + 1}`,
           frameLabel: frameLabel === 'best' ? 'Best Still' : frameLabel,
@@ -427,7 +448,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         }
       })
     })
-  }, [clips, job.id, job.source_url, job.title, stillCrop, stillFormat])
+  }, [apiBase, clips, job.id, job.source_url, job.title, stillCrop, stillFormat])
 
   useEffect(() => {
     setCurrentStillIndex(0)
@@ -451,7 +472,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
       for (const still of stills) {
         // Keep it serialized so browsers do not block the whole batch.
         // eslint-disable-next-line no-await-in-loop
-        await downloadImageUrl(still.url, still.fileName)
+        await downloadImageUrl(still.hqUrl, still.fileName)
       }
     } finally {
       setDownloading(false)
@@ -584,7 +605,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                         >
                           {Math.abs(offset) <= 1 ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={still.url} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                            <img src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
                           ) : (
                             <div className="h-full w-full bg-white/[0.03]" />
                           )}
@@ -620,7 +641,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => downloadImageUrl(currentStill.url, currentStill.fileName)}
+                      onClick={() => downloadImageUrl(currentStill.hqUrl, currentStill.fileName)}
                       className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition-all hover:bg-red-500/15"
                     >
                       Download this still
@@ -636,7 +657,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
           {previewStill && (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/70">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewStill.url} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[72vh] w-full object-contain" />
+              <img src={previewStill.hqUrl} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[72vh] w-full object-contain" />
             </div>
           )}
         </div>
