@@ -913,6 +913,19 @@ function escapeAssText(text = '') {
     .replace(/\}/g, '\\}')
 }
 
+function containsEmoji(text = '') {
+  return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(String(text))
+}
+
+function formatAssWordText(text = '', textCase = 'original') {
+  const formatted = escapeAssText(applySubtitleTextCase(text || '', textCase))
+  // Browser preview uses the system emoji font. Without this override, libass tries
+  // to render emoji through the selected subtitle font, which can produce a
+  // different-looking glyph in exported clips.
+  if (containsEmoji(formatted)) return `{\\fnSegoe UI Emoji}${formatted}{\\rDefault}`
+  return formatted
+}
+
 function toAssTime(sec) {
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
@@ -1020,7 +1033,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
       const nextWord = orderedWords[index + 1]
       const start = word.start
       const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
-      const text = escapeAssText(applySubtitleTextCase(word.text || '', textCase))
+      const text = formatAssWordText(word.text || '', textCase)
       return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
     })
   }
@@ -1036,7 +1049,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
         const start = word.start
         const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
         const text = group.map((entry, entryIndex) => {
-          const escaped = escapeAssText(applySubtitleTextCase(entry.text || '', textCase))
+          const escaped = formatAssWordText(entry.text || '', textCase)
           return entryIndex === index ? `${highlightTag}${escaped}${resetTag}` : escaped
         }).join(' ')
         lines.push(`Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`)
@@ -1051,7 +1064,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
       const end = group[group.length - 1].end
       const text = group.map((word) => {
         const durationCs = Math.max(1, Math.round(Math.max(0.08, word.end - word.start) * 100))
-        return `{\\k${durationCs}}${escapeAssText(applySubtitleTextCase(word.text || '', textCase))}`
+        return `{\\k${durationCs}}${formatAssWordText(word.text || '', textCase)}`
       }).join(' ')
       return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
     })
@@ -1060,7 +1073,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
   return groupedWords.map((group) => {
     const start = group[0].start
     const end = group[group.length - 1].end
-    const text = escapeAssText(group.map((word) => applySubtitleTextCase(word.text || '', textCase)).join(' '))
+    const text = group.map((word) => formatAssWordText(word.text || '', textCase)).join(' ')
     return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
   })
 }
