@@ -6,9 +6,10 @@ import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
 import AutoClipTab from '@/components/dashboard/AutoClipTab'
+import DeveloperTab from '@/components/dashboard/DeveloperTab'
 import AccountMenu from '@/components/auth/AccountMenu'
 
-type Tab = 'upload' | 'clips' | 'autoclip'
+type Tab = 'upload' | 'clips' | 'autoclip' | 'developer'
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>('upload')
@@ -58,6 +59,7 @@ export default function DashboardPage() {
               { key: 'upload', label: '📤 Upload', },
               { key: 'clips', label: '🎬 Clips' },
               { key: 'autoclip', label: '🤖 Auto-Clip' },
+              { key: 'developer', label: '🔌 API' },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
@@ -90,6 +92,10 @@ export default function DashboardPage() {
 
         {activeTab === 'autoclip' && (
           <AutoClipTab />
+        )}
+
+        {activeTab === 'developer' && (
+          <DeveloperTab />
         )}
 
       </main>
