@@ -387,30 +387,15 @@ type StillFormat = 'jpg' | 'png'
 type StillCrop = 'original' | 'square' | 'portrait'
 
 function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
-  const [apiBase, setApiBase] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [stillFormat, setStillFormat] = useState<StillFormat>('jpg')
   const [stillCrop, setStillCrop] = useState<StillCrop>('original')
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const nextApiBase = (await getApiUrl()).replace(/\/$/, '')
-        if (!cancelled) setApiBase(nextApiBase)
-      } catch {
-        if (!cancelled) setApiBase(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const [currentStillIndex, setCurrentStillIndex] = useState(0)
 
   const stills = useMemo<StillShot[]>(() => {
-    if (!apiBase || !job.source_url) return []
+    if (!job.source_url) return []
     const jobSlug = slugifyFilePart(job.title || job.id)
 
     return clips.flatMap((clip, clipIndex) => {
@@ -422,17 +407,17 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
       return proofFrames.map((frame, frameIndex) => {
         const frameLabel = frame.label || `still-${frameIndex + 1}`
         const timestamp = Math.max(0, Number(frame.timestamp || 0))
-        const url = new URL(`${apiBase}/still`)
-        url.searchParams.set('sourceUrl', job.source_url)
-        url.searchParams.set('timestamp', timestamp.toFixed(2))
-        url.searchParams.set('format', stillFormat)
-        url.searchParams.set('crop', stillCrop)
-        url.searchParams.set('qualitySearch', 'true')
-        url.searchParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
+        const params = new URLSearchParams()
+        params.set('sourceUrl', job.source_url)
+        params.set('timestamp', timestamp.toFixed(2))
+        params.set('format', stillFormat)
+        params.set('crop', stillCrop)
+        params.set('qualitySearch', 'true')
+        params.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         return {
           id: `${clipId}-${frameLabel}-${frameIndex}`,
-          url: url.toString(),
+          url: `/api/stills/export?${params.toString()}`,
           fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${stillCrop}-${Math.round(timestamp)}s.${stillFormat}`,
           clipLabel: `Clip ${clipIndex + 1}`,
           frameLabel: frameLabel === 'best' ? 'Best Still' : frameLabel,
@@ -442,7 +427,20 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         }
       })
     })
-  }, [apiBase, clips, job.id, job.source_url, job.title, stillCrop, stillFormat])
+  }, [clips, job.id, job.source_url, job.title, stillCrop, stillFormat])
+
+  useEffect(() => {
+    setCurrentStillIndex(0)
+    setPreviewStill(null)
+  }, [stillCrop, stillFormat, open])
+
+  const currentStill = stills[currentStillIndex] || null
+
+  const moveCarousel = (delta: number) => {
+    if (!stills.length) return
+    setPreviewStill(null)
+    setCurrentStillIndex((prev) => (prev + delta + stills.length) % stills.length)
+  }
 
   if (!clips.length) return null
 
@@ -546,50 +544,101 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             </div>
           </div>
 
-          {previewStill && (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewStill.url} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[62vh] w-full object-contain" />
-              <div className="flex flex-col gap-2 border-t border-white/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-white">{previewStill.clipLabel} · {previewStill.frameLabel}</div>
-                  <div className="text-xs text-white/45">{Math.round(previewStill.timestamp)}s target · {stillCrop} · {stillFormat.toUpperCase()}{previewStill.score ? ` · score ${previewStill.score}/10` : ''}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => downloadImageUrl(previewStill.url, previewStill.fileName)}
-                  className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition-all hover:bg-red-500/15"
-                >
-                  Download this still
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-            {stills.map((still) => (
-              <div key={still.id} className="overflow-hidden rounded-xl border border-white/10 bg-black/25">
-                <button type="button" onClick={() => setPreviewStill(still)} className={`group relative block w-full overflow-hidden bg-black/40 ${stillCrop === 'portrait' ? 'aspect-[9/16]' : stillCrop === 'square' ? 'aspect-square' : 'aspect-video'}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={still.url} alt={`${still.clipLabel} ${still.frameLabel}`} className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
-                  <span className={`absolute bottom-2 left-2 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/80' : 'bg-black/70'}`}>{still.frameLabel}</span>
-                </button>
-                <div className="space-y-2 p-2">
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-white/55">
-                    <span>{still.clipLabel}</span>
-                    <span>{Math.round(still.timestamp)}s</span>
-                  </div>
+          <div className="rounded-3xl border border-white/10 bg-black/30 p-4 md:p-6">
+            {currentStill ? (
+              <div className="space-y-5">
+                <div className="relative flex min-h-[360px] items-center justify-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_58%)] [perspective:1200px]">
                   <button
                     type="button"
-                    onClick={() => downloadImageUrl(still.url, still.fileName)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-semibold text-white/70 transition-all hover:border-white/20 hover:text-white"
+                    onClick={() => moveCarousel(-1)}
+                    className="absolute left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                    aria-label="Previous still"
                   >
-                    Download {stillFormat.toUpperCase()}
+                    ‹
+                  </button>
+
+                  <div className="relative flex h-[360px] w-full max-w-5xl items-center justify-center">
+                    {[-2, -1, 0, 1, 2].map((offset) => {
+                      const index = (currentStillIndex + offset + stills.length) % stills.length
+                      const still = stills[index]
+                      const active = offset === 0
+                      const hidden = !still || stills.length <= Math.abs(offset)
+                      if (!still || hidden) return null
+                      const translate = offset * 42
+                      const rotate = offset * -18
+                      const scale = active ? 1 : Math.max(0.58, 0.82 - Math.abs(offset) * 0.1)
+                      const opacity = active ? 1 : Math.max(0.18, 0.48 - Math.abs(offset) * 0.12)
+
+                      return (
+                        <button
+                          key={`${still.id}-${offset}`}
+                          type="button"
+                          onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
+                          className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
+                          style={{
+                            width: stillCrop === 'portrait' ? '210px' : stillCrop === 'square' ? '320px' : '520px',
+                            height: stillCrop === 'portrait' ? '340px' : stillCrop === 'square' ? '320px' : '292px',
+                            transform: `translateX(${translate}%) rotateY(${rotate}deg) scale(${scale})`,
+                            opacity,
+                          }}
+                        >
+                          {Math.abs(offset) <= 1 ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={still.url} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full bg-white/[0.03]" />
+                          )}
+                          <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
+                          {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">Click to full preview</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => moveCarousel(1)}
+                    className="absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                    aria-label="Next still"
+                  >
+                    ›
                   </button>
                 </div>
+
+                <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{currentStill.clipLabel} · {currentStill.frameLabel}</div>
+                    <div className="text-xs text-white/45">{currentStillIndex + 1}/{stills.length} · {Math.round(currentStill.timestamp)}s target · {stillCrop} · {stillFormat.toUpperCase()}{currentStill.score ? ` · score ${currentStill.score}/10` : ''}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewStill(currentStill)}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/75 transition-all hover:border-white/20 hover:text-white"
+                    >
+                      Full preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadImageUrl(currentStill.url, currentStill.fileName)}
+                      className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition-all hover:bg-red-500/15"
+                    >
+                      Download this still
+                    </button>
+                  </div>
+                </div>
               </div>
-            ))}
+            ) : (
+              <div className="flex min-h-[320px] items-center justify-center text-sm text-white/45">No stills found for this job.</div>
+            )}
           </div>
+
+          {previewStill && (
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/70">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewStill.url} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[72vh] w-full object-contain" />
+            </div>
+          )}
         </div>
       </Modal>
     </>
