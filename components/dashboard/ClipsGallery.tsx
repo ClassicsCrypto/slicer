@@ -397,7 +397,10 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         hqParams.delete('clipId')
         hqParams.set('format', stillFormat)
         hqParams.set('crop', stillCrop)
-        hqParams.set('qualitySearch', 'true')
+        // Download/preview must match the exact carousel frame the user selected.
+        // Earlier qualitySearch=true could jump to a nearby sharper frame, which made the
+        // saved still differ from the visible selected still.
+        hqParams.set('qualitySearch', 'false')
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         return {
@@ -481,7 +484,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <div className="text-sm font-semibold text-white">Post-ready still exports</div>
-                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Exports search ±2s for the sharpest usable frame before saving.</div>
+                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Preview/download now saves the exact selected frame.</div>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div>
