@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
       const creatorKey = getAutoclipCreatorKey(subscription)
       const fingerprint = buildAutoclipFingerprint({ creatorKey, title: source.title, publishedAt: (source as any).publishedAt || (source as any).startedAt })
-      const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, publishedAt: (source as any).publishedAt || (source as any).startedAt })
+      const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, publishedAt: (source as any).publishedAt || (source as any).startedAt }, scope)
       if (duplicate) {
         updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt, lastSeenStreamId: source.id }, scope)
         results.push({ subscriptionId: subscription.id, status: 'duplicate_stream', source, duplicate })
@@ -81,6 +81,9 @@ export async function POST(request: NextRequest) {
 
       const run = await triggerRun(request.nextUrl.origin, subscription.id, source, request.headers.get('cookie'))
       recordAutoclipEvent({
+        userId: auth.user.id,
+        workspaceId: auth.workspace.id,
+        subscriptionId: subscription.id,
         creatorKey,
         fingerprint,
         platform: subscription.platform,
@@ -103,4 +106,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ checkedAt: startedAt, mode, dryRun, results })
 }
-

@@ -47,6 +47,9 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_autoclip_platform_handle ON autoclip_subscriptions(platform, handle);
     CREATE TABLE IF NOT EXISTS autoclip_events (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
+      workspace_id TEXT,
+      subscription_id TEXT,
       creator_key TEXT NOT NULL,
       fingerprint TEXT NOT NULL,
       platform TEXT NOT NULL,
@@ -58,13 +61,20 @@ function getDb() {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_autoclip_events_fingerprint ON autoclip_events(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_workspace_fingerprint ON autoclip_events(workspace_id, fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_subscription_detected ON autoclip_events(subscription_id, detected_at DESC);
     CREATE INDEX IF NOT EXISTS idx_autoclip_events_creator_detected ON autoclip_events(creator_key, detected_at DESC);
   `)
   ensureColumn(db, 'autoclip_subscriptions', 'user_id', 'TEXT')
   ensureColumn(db, 'autoclip_subscriptions', 'workspace_id', 'TEXT')
+  ensureColumn(db, 'autoclip_events', 'user_id', 'TEXT')
+  ensureColumn(db, 'autoclip_events', 'workspace_id', 'TEXT')
+  ensureColumn(db, 'autoclip_events', 'subscription_id', 'TEXT')
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_autoclip_workspace_status ON autoclip_subscriptions(workspace_id, status);
     CREATE INDEX IF NOT EXISTS idx_autoclip_user_status ON autoclip_subscriptions(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_workspace_fingerprint ON autoclip_events(workspace_id, fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_autoclip_events_subscription_detected ON autoclip_events(subscription_id, detected_at DESC);
   `)
   return db
 }
@@ -254,24 +264,35 @@ export function buildAutoclipFingerprint(input: { creatorKey: string; title?: st
   return `${input.creatorKey}:${getTimeBucket(input.publishedAt)}:${normalizeTitleForFingerprint(input.title || '')}`
 }
 
-export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: string; publishedAt?: string | null }) {
+function eventScopeWhere(scope?: AutoclipScope) {
+  if (scope?.workspaceId) return { clause: 'autoclip_events.workspace_id = @workspace_id', params: { workspace_id: scope.workspaceId } }
+  if (scope?.userId) return { clause: 'autoclip_events.user_id = @user_id', params: { user_id: scope.userId } }
+  return { clause: '1 = 1', params: {} }
+}
+
+export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: string; publishedAt?: string | null }, scope?: AutoclipScope) {
   const bucket = getTimeBucket(input.publishedAt)
   const minDate = new Date((bucket - 1) * 3 * 60 * 60 * 1000).toISOString()
   const maxDate = new Date((bucket + 2) * 3 * 60 * 60 * 1000).toISOString()
+  const scoped = eventScopeWhere(scope)
   const row = getDb().prepare(`
     SELECT autoclip_events.*
     FROM autoclip_events
     LEFT JOIN jobs ON jobs.id = autoclip_events.job_id
     WHERE autoclip_events.creator_key = @creator_key
+      AND ${scoped.clause}
       AND (autoclip_events.fingerprint = @fingerprint OR autoclip_events.detected_at BETWEEN @minDate AND @maxDate)
       AND (autoclip_events.job_id IS NULL OR jobs.id IS NULL OR jobs.status != 'failed')
     ORDER BY autoclip_events.created_at DESC
     LIMIT 1
-  `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, minDate, maxDate })
+  `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, minDate, maxDate, ...scoped.params })
   return row || null
 }
 
 export function recordAutoclipEvent(input: {
+  userId?: string
+  workspaceId?: string
+  subscriptionId?: string
   creatorKey: string
   fingerprint: string
   platform: string
@@ -284,6 +305,9 @@ export function recordAutoclipEvent(input: {
   const now = new Date().toISOString()
   const row = {
     id: uuidv4(),
+    user_id: input.userId || null,
+    workspace_id: input.workspaceId || null,
+    subscription_id: input.subscriptionId || null,
     creator_key: input.creatorKey,
     fingerprint: input.fingerprint,
     platform: input.platform,
@@ -295,8 +319,13 @@ export function recordAutoclipEvent(input: {
     created_at: now,
   }
   getDb().prepare(`
-    INSERT INTO autoclip_events (id, creator_key, fingerprint, platform, source_id, source_url, title, job_id, detected_at, created_at)
-    VALUES (@id, @creator_key, @fingerprint, @platform, @source_id, @source_url, @title, @job_id, @detected_at, @created_at)
+    INSERT INTO autoclip_events (
+      id, user_id, workspace_id, subscription_id, creator_key, fingerprint, platform,
+      source_id, source_url, title, job_id, detected_at, created_at
+    ) VALUES (
+      @id, @user_id, @workspace_id, @subscription_id, @creator_key, @fingerprint, @platform,
+      @source_id, @source_url, @title, @job_id, @detected_at, @created_at
+    )
   `).run(row)
   return row
 }
