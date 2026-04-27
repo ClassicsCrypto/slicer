@@ -688,7 +688,7 @@ async function handleClip(req, res) {
       const animationPreset = opts.animationPreset || 'pop'
 
       // Filter words that fall within the trimmed window and shift their timestamps
-      const trimmedSubs = subtitles
+      const trimmedSubs = (opts.profanityFilter ? censorSubtitleWords(subtitles) : subtitles)
         .map(w => ({ ...w, start: w.start - trimOffset, end: w.end - trimOffset }))
         .filter(w => w.end > 0 && w.start < clipDuration)
       
@@ -925,6 +925,36 @@ function normalizeSubtitleWords(words = []) {
   return [...words]
     .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
     .sort((a, b) => (a.start - b.start) || (a.end - b.end))
+}
+
+const CURSE_EMOJIS = ['🤬', '😼', '💥', '🙀']
+const PROFANITY_PATTERNS = [
+  /^f+u*c+k+(?:er|ers|ed|ing)?$/i,
+  /^s+h+i+t+(?:ty|ting|ted)?$/i,
+  /^b+i+t+c+h+(?:es|ing)?$/i,
+  /^a+s+s+(?:hole|holes)?$/i,
+  /^d+a+m+n+(?:ed|ing)?$/i,
+  /^c+r+a+p+$/i,
+  /^b+a+s+t+a+r+d+s?$/i,
+  /^d+i+c+k+s?$/i,
+  /^p+i+s+s+(?:ed|ing)?$/i,
+  /^c+u+n+t+s?$/i,
+  /^m+o+t+h+e+r+f+u*c+k+e*r*s?$/i,
+]
+
+function isProfaneSubtitleToken(text = '') {
+  const normalized = String(text).toLowerCase().replace(/[^a-z0-9]/g, '')
+  return Boolean(normalized) && PROFANITY_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+function censorSubtitleWords(words = []) {
+  let hitIndex = 0
+  return words.map((word) => {
+    if (!isProfaneSubtitleToken(word.text || '')) return word
+    const text = CURSE_EMOJIS[hitIndex % CURSE_EMOJIS.length]
+    hitIndex += 1
+    return { ...word, text }
+  })
 }
 
 function groupSubtitleWords(words) {

@@ -118,6 +118,7 @@ export interface SubtitleOptions {
   shadow?: boolean
   textCase?: SubtitleCase
   watermarkEnabled?: boolean
+  profanityFilter?: boolean
   brandKitName?: string
 }
 

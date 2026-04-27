@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clip, SubtitleWord, SubtitleOptions } from '@/types'
+import { censorSubtitleWords } from '@/lib/subtitle-censor'
 
 interface SubtitleCue {
   start: number
@@ -330,6 +331,10 @@ export default function ClipPlayer({
   externalSeekTime,
 }: ClipPlayerProps) {
   const subOpts = subtitleOptions ?? DEFAULT_SUB_OPTS
+  const displaySubtitles = useMemo(
+    () => subOpts.profanityFilter ? censorSubtitleWords(clip.subtitles || []) : (clip.subtitles || []),
+    [clip.subtitles, subOpts.profanityFilter],
+  )
   const videoRef = useRef<HTMLVideoElement>(null)
   const scrubRef = useRef<HTMLDivElement>(null)
   const [currentTime, setCurrentTime] = useState(0)
@@ -501,9 +506,9 @@ export default function ClipPlayer({
           />
         )}
 
-        {subOpts.enabled && clip.subtitles && clip.subtitles.length > 0 && (
+        {subOpts.enabled && displaySubtitles.length > 0 && (
           <SubtitleOverlay
-            words={clip.subtitles.filter((word) => word.end > trimStart && word.start < trimEnd)}
+            words={displaySubtitles.filter((word) => word.end > trimStart && word.start < trimEnd)}
             currentTime={currentTime}
             isPlaying={isPlaying}
             options={subOpts}

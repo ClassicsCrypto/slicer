@@ -242,6 +242,7 @@ function saveBrandKit(options: SubtitleOptions) {
     activeWordStyle: options.activeWordStyle,
     textCase: options.textCase,
     watermarkEnabled: options.watermarkEnabled,
+    profanityFilter: options.profanityFilter,
   }
   window.localStorage.setItem(BRAND_KIT_STORAGE_KEY, JSON.stringify(kit))
 }
@@ -289,6 +290,7 @@ function getSubtitleSetupSummary(subtitleOptions: SubtitleOptions) {
     `${subtitleOptions.mode || 'phrase'} mode`,
     `${subtitleOptions.animationPreset || 'pop'} anim`,
     subtitleOptions.watermarkEnabled ? 'watermark on' : 'watermark off',
+    subtitleOptions.profanityFilter ? 'emoji censor on' : 'emoji censor off',
   ].join(' · ')
 }
 
@@ -847,6 +849,14 @@ export default function ClipPreviewEditor({
               <p className="mt-1 text-xs leading-5 text-white/38">Let Slicer pick a caption style by clip type, or save/apply a reusable brand kit. Manual controls stay available below.</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onSubtitleOptionsChange({ ...subtitleOptions, profanityFilter: !subtitleOptions.profanityFilter })}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${subtitleOptions.profanityFilter ? 'border-yellow-300/35 bg-yellow-300/12 text-yellow-100' : 'border-white/10 bg-black/20 text-white/60 hover:border-white/20 hover:text-white'}`}
+                title="Replace detected curse words with emojis in subtitle preview/export."
+              >
+                {subtitleOptions.profanityFilter ? '🤬→😼 Emoji Censor On' : '🤬 Emoji Censor Off'}
+              </button>
               <Button variant="primary" onClick={() => onSubtitleOptionsChange(tuneCaptionsForClip(subtitleOptions, clip))}>Auto Tune This Clip</Button>
               <Button variant="ghost" onClick={handleSaveBrandKit}>{brandKitSaved ? 'Saved' : 'Save Brand Kit'}</Button>
               <Button variant="secondary" onClick={handleApplyBrandKit} disabled={!brandKitAvailable}>Apply Brand Kit</Button>
