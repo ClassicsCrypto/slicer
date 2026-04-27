@@ -35,7 +35,15 @@ export interface Clip {
   ai_reason: string
   virality_score?: number
   subtitles?: SubtitleWord[]
+  proof_frames?: ProofFrame[]
   created_at: string
+}
+
+export interface ProofFrame {
+  label: 'best' | 'action' | 'clean'
+  timestamp: number
+  score: number
+  reason: string
 }
 
 export interface JobProgress {

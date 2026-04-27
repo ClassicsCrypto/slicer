@@ -2103,6 +2103,42 @@ function mapCandidateScoreToVirality(score) {
   return 5
 }
 
+function clampProofFrameTimestamp(startSec, endSec, ratio) {
+  const duration = Math.max(1, endSec - startSec)
+  return parseFloat(Math.max(0, startSec + (duration * ratio)).toFixed(2))
+}
+
+function buildProofFramesForClip(startSec, endSec, viralityScore, aiReason, clipText, detectionMode) {
+  const duration = Math.max(1, endSec - startSec)
+  const scoreBase = Math.max(5, Math.min(10, Number(viralityScore) || 7))
+  const lowered = `${aiReason || ''} ${clipText || ''}`.toLowerCase()
+  const hasActionCue = /(clutch|kill|headshot|wipe|won|victory|goal|flag|raid|no way|wtf|haha|lmao|bruh)/.test(lowered)
+  const cleanRatio = duration <= 16 ? 0.3 : 0.22
+  const bestRatio = hasActionCue || detectionMode === 'gaming' ? 0.55 : 0.48
+  const actionRatio = hasActionCue || detectionMode === 'gaming' ? 0.68 : 0.62
+
+  return [
+    {
+      label: 'best',
+      timestamp: clampProofFrameTimestamp(startSec, endSec, bestRatio),
+      score: Math.min(10, scoreBase + 1),
+      reason: hasActionCue ? 'Best payoff frame near the scored moment.' : 'Best representative frame from the selected clip.',
+    },
+    {
+      label: 'action',
+      timestamp: clampProofFrameTimestamp(startSec, endSec, actionRatio),
+      score: Math.min(10, scoreBase),
+      reason: 'Alternate action/reaction frame for social options.',
+    },
+    {
+      label: 'clean',
+      timestamp: clampProofFrameTimestamp(startSec, endSec, cleanRatio),
+      score: Math.max(5, scoreBase - 1),
+      reason: 'Cleaner thumbnail candidate before the peak moment.',
+    },
+  ]
+}
+
 function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, words, detectionMode) {
   const safeStartSec = Math.max(0, Number(startSec) || 0)
   const safeEndSec = Math.max(safeStartSec + 1, Number(endSec) || safeStartSec + 1)
@@ -2133,6 +2169,7 @@ function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, wo
       virality_score: viralityScore,
       ai_reason: (aiReason || buildClipReasonFromWindow(clipText, detectionMode)).slice(0, 120),
       matched_categories: [],
+      proof_frames: buildProofFramesForClip(safeStartSec, safeEndSec, viralityScore, aiReason, clipText, detectionMode),
       subtitles,
     },
   }

@@ -1,8 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useState, useEffect, useCallback } from 'react'
-import { Job, Clip, SubtitleOptions } from '@/types'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Job, Clip, SubtitleOptions, ProofFrame } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import { getClipStableId } from '@/lib/clip-id'
 import Badge from '@/components/ui/Badge'
@@ -207,8 +207,10 @@ function ClipCard({
   onDelete: (clipId: string) => void
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [proofFrameUrls, setProofFrameUrls] = useState<Array<{ label: string; url: string; score?: number; reason?: string }>>([])
   const [deleting, setDeleting] = useState(false)
   const clipDuration = Number.isFinite(clip.duration) ? clip.duration : Math.max(0, clip.end_time - clip.start_time)
+  const proofFrameKey = useMemo(() => JSON.stringify(clip.proof_frames || []), [clip.proof_frames])
 
   useEffect(() => {
     let cancelled = false
@@ -216,21 +218,36 @@ function ClipCard({
     ;(async () => {
       try {
         const apiBase = (await getApiUrl()).replace(/\/$/, '')
-        const midTime = Math.max(0, clip.start_time + (clipDuration / 2))
+        const proofFrames = JSON.parse(proofFrameKey || '[]') as ProofFrame[]
+        const primaryFrame = proofFrames.find((frame) => frame.label === 'best') || proofFrames[0]
+        const midTime = Math.max(0, primaryFrame?.timestamp ?? (clip.start_time + (clipDuration / 2)))
         const url = new URL(`${apiBase}/thumbnail`)
         url.searchParams.set('sourceUrl', sourceUrl)
         url.searchParams.set('timestamp', midTime.toFixed(2))
         url.searchParams.set('clipId', clip.id)
-        if (!cancelled) setThumbUrl(url.toString())
+        const proofUrls = proofFrames.slice(0, 3).map((frame) => {
+          const frameUrl = new URL(`${apiBase}/thumbnail`)
+          frameUrl.searchParams.set('sourceUrl', sourceUrl)
+          frameUrl.searchParams.set('timestamp', Number(frame.timestamp || 0).toFixed(2))
+          frameUrl.searchParams.set('clipId', `${clip.id}-${frame.label}`)
+          return { label: frame.label, url: frameUrl.toString(), score: frame.score, reason: frame.reason }
+        })
+        if (!cancelled) {
+          setThumbUrl(url.toString())
+          setProofFrameUrls(proofUrls)
+        }
       } catch {
-        if (!cancelled) setThumbUrl(null)
+        if (!cancelled) {
+          setThumbUrl(null)
+          setProofFrameUrls([])
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [sourceUrl, clip.start_time, clip.end_time, clipDuration, clip.id])
+  }, [sourceUrl, clip.start_time, clip.end_time, clipDuration, clip.id, proofFrameKey])
 
   return (
     <div
@@ -278,6 +295,31 @@ function ClipCard({
           </div>
         )}
         <p className="text-xs text-white/40 mb-2 line-clamp-2">{cleanClipReason(clip.ai_reason)}</p>
+        {proofFrameUrls.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/30">Proof frames</span>
+              <span className="text-[10px] text-white/20">best / action / clean</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {proofFrameUrls.map((frame) => (
+                <button
+                  key={frame.label}
+                  type="button"
+                  onClick={() => setThumbUrl(frame.url)}
+                  title={frame.reason || frame.label}
+                  className="group/frame relative aspect-video overflow-hidden rounded-md border border-white/10 bg-black/40 transition-all hover:border-red-400/60"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={frame.url} alt={`${frame.label} proof frame`} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5 text-[9px] font-semibold uppercase text-white/75">
+                    {frame.label}{frame.score ? ` ${frame.score}/10` : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
           {clip.matched_categories.slice(0, 3).map((cat) => (
             <Badge key={cat} variant="dark">{formatCategory(cat)}</Badge>
