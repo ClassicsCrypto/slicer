@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
 const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
 const KEY_PREFIX = 'sk_slicer_'
-const DEFAULT_SCOPES = ['jobs:read', 'clips:read']
+const DEFAULT_SCOPES = ['jobs:read', 'clips:read', 'clips:export']
 
 export type ApiKeyRecord = {
   id: string
@@ -137,7 +137,7 @@ export function requireSlicerApiAuth(request: NextRequest, requiredScope: string
   if (!row) return NextResponse.json({ error: 'Invalid Slicer API key' }, { status: 401 })
 
   const scopes = JSON.parse(row.scopes_json || '[]') as string[]
-  if (!scopes.includes(requiredScope)) {
+  if (!scopes.includes(requiredScope) && !(requiredScope === 'clips:export' && scopes.includes('clips:read'))) {
     return NextResponse.json({ error: `API key missing scope: ${requiredScope}` }, { status: 403 })
   }
 

@@ -46,7 +46,7 @@ export default function DeveloperTab() {
       const res = await fetch('/api/developer/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, scopes: ['jobs:read', 'clips:read'] }),
+        body: JSON.stringify({ name, scopes: ['jobs:read', 'clips:read', 'clips:export'] }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create API key')
@@ -97,7 +97,7 @@ export default function DeveloperTab() {
             />
           </label>
           <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs leading-5 text-white/45">
-            Scopes: <span className="text-white/70">jobs:read</span>, <span className="text-white/70">clips:read</span>
+            Scopes: <span className="text-white/70">jobs:read</span>, <span className="text-white/70">clips:read</span>, <span className="text-white/70">clips:export</span>
           </div>
           <Button onClick={createKey} disabled={saving}>{saving ? 'Creating…' : 'Create Key'}</Button>
           {newKey && (
@@ -154,6 +154,10 @@ export default function DeveloperTab() {
 
 curl -H "Authorization: Bearer $SLICER_API_KEY" \\
   https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/clips
+
+curl -L -H "Authorization: Bearer $SLICER_API_KEY" \\
+  "https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/clips/<clip_id>/download?format=tiktok" \\
+  -o slicer-clip.mp4
 
 curl -H "Authorization: Bearer $SLICER_API_KEY" \\
   https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/jobs/<job_id>`}</pre>

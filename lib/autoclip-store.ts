@@ -46,8 +46,6 @@ function getDb() {
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_autoclip_status ON autoclip_subscriptions(status);
-    CREATE INDEX IF NOT EXISTS idx_autoclip_workspace_status ON autoclip_subscriptions(workspace_id, status);
-    CREATE INDEX IF NOT EXISTS idx_autoclip_user_status ON autoclip_subscriptions(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_autoclip_platform_handle ON autoclip_subscriptions(platform, handle);
     CREATE TABLE IF NOT EXISTS autoclip_events (
       id TEXT PRIMARY KEY,
@@ -65,8 +63,6 @@ function getDb() {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_autoclip_events_fingerprint ON autoclip_events(fingerprint);
-    CREATE INDEX IF NOT EXISTS idx_autoclip_events_workspace_fingerprint ON autoclip_events(workspace_id, fingerprint);
-    CREATE INDEX IF NOT EXISTS idx_autoclip_events_subscription_detected ON autoclip_events(subscription_id, detected_at DESC);
     CREATE INDEX IF NOT EXISTS idx_autoclip_events_creator_detected ON autoclip_events(creator_key, detected_at DESC);
   `)
   ensureColumn(db, 'autoclip_subscriptions', 'user_id', 'TEXT')
