@@ -9,6 +9,8 @@ type AuthPayload = {
     email: string | null
     avatarUrl: string | null
     primaryProvider: string
+    walletAddress?: string | null
+    ensName?: string | null
   }
   workspace: {
     name: string
@@ -41,9 +43,9 @@ export default function AccountMenu() {
   return (
     <div className="flex items-center gap-3 text-right">
       <div>
-        <div className="text-xs font-semibold text-white">{auth.user.displayName}</div>
+        <div className="text-xs font-semibold text-white">{auth.user.ensName || auth.user.displayName}</div>
         <div className="text-[11px] text-white/35">
-          {auth.workspace.name} · {auth.workspace.role}{auth.isDevBypass ? ' · dev mode' : ''}
+          {auth.workspace.name} · {auth.workspace.role}{auth.user.ensName && auth.user.walletAddress ? ` · ${auth.user.walletAddress.slice(0, 6)}…${auth.user.walletAddress.slice(-4)}` : ''}{auth.isDevBypass ? ' · dev mode' : ''}
         </div>
       </div>
       <button

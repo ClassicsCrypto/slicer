@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAddress, verifyMessage } from 'viem'
 import { attachSessionCookie, consumeWalletNonce, createSession, getWalletNonce, upsertOAuthUser } from '@/lib/auth'
+import { resolveEnsNameForAddress, shortWalletAddress } from '@/lib/ens'
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as { walletAddress?: string; signature?: `0x${string}` }
@@ -16,12 +17,13 @@ export async function POST(request: NextRequest) {
   if (!valid) return NextResponse.json({ error: 'Invalid wallet signature' }, { status: 401 })
 
   consumeWalletNonce(walletAddress)
-  const shortWallet = `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
+  const ensName = await resolveEnsNameForAddress(walletAddress)
+  const displayName = ensName || shortWalletAddress(walletAddress)
   const { userId, workspaceId } = upsertOAuthUser({
     provider: 'wallet',
     providerAccountId: walletAddress.toLowerCase(),
     email: null,
-    displayName: shortWallet,
+    displayName,
     avatarUrl: null,
   })
   const { token, expiresAt } = createSession(userId, workspaceId)

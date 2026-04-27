@@ -320,9 +320,11 @@ export default function AutoClipTab() {
           {message && <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-100/80">{message}</div>}
           {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-100/80">{error}</div>}
           {pollResult && (
-            <pre className="max-h-56 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-xs text-white/45">
-              {JSON.stringify(pollResult, null, 2)}
-            </pre>
+            <div className="max-w-full overflow-x-auto overflow-y-hidden rounded-lg border border-white/10 bg-black/40">
+              <pre className="max-h-56 min-w-max overflow-y-auto p-3 text-xs leading-5 text-white/45">
+                {JSON.stringify(pollResult, null, 2)}
+              </pre>
+            </div>
           )}
         </div>
 
