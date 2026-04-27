@@ -921,6 +921,18 @@ function toAssTime(sec) {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
 }
 
+function getAssCueEnd(start, fallbackEnd, nextStart = null) {
+  const minDuration = 0.05
+  if (Number.isFinite(nextStart)) {
+    const endBeforeNextCue = nextStart - 0.02
+    if (endBeforeNextCue > start) return Math.max(start + minDuration, endBeforeNextCue)
+    return start + minDuration
+  }
+
+  const end = Number.isFinite(fallbackEnd) ? fallbackEnd : start + 0.18
+  return Math.max(start + minDuration, end)
+}
+
 function normalizeSubtitleWords(words = []) {
   return [...words]
     .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
@@ -1007,7 +1019,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
     return orderedWords.map((word, index) => {
       const nextWord = orderedWords[index + 1]
       const start = word.start
-      const end = nextWord ? Math.max(word.end, nextWord.start - 0.02) : word.end + 0.18
+      const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
       const text = escapeAssText(applySubtitleTextCase(word.text || '', textCase))
       return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
     })
@@ -1022,7 +1034,7 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
         const word = group[index]
         const nextWord = group[index + 1]
         const start = word.start
-        const end = nextWord ? Math.max(word.end, nextWord.start - 0.02) : word.end + 0.18
+        const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
         const text = group.map((entry, entryIndex) => {
           const escaped = escapeAssText(applySubtitleTextCase(entry.text || '', textCase))
           return entryIndex === index ? `${highlightTag}${escaped}${resetTag}` : escaped
