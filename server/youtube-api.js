@@ -47,12 +47,14 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const TEMP_DIR = path.join(__dirname, 'temp')
 const THUMB_CACHE_DIR = path.join(TEMP_DIR, 'thumb-cache')
+const STILL_CACHE_DIR = path.join(TEMP_DIR, 'still-cache')
 const MAX_DURATION_SEC = 3 * 60 * 60 // 3 hours
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2GB
 
 // Ensure temp dir exists
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 if (!fs.existsSync(THUMB_CACHE_DIR)) fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true })
+if (!fs.existsSync(STILL_CACHE_DIR)) fs.mkdirSync(STILL_CACHE_DIR, { recursive: true })
 
 // Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
 const videoCache = new Map()
@@ -2137,6 +2139,10 @@ function mapCandidateScoreToVirality(score) {
   return 5
 }
 
+function shellQuote(value) {
+  return `"${String(value).replace(/"/g, '\\"')}"`
+}
+
 function clampProofFrameTimestamp(startSec, endSec, ratio) {
   const duration = Math.max(1, endSec - startSec)
   return parseFloat(Math.max(0, startSec + (duration * ratio)).toFixed(2))
@@ -3682,6 +3688,99 @@ async function handleThumbnail(req, res) {
   }
 }
 
+function normalizeStillFormat(value) {
+  return value === 'png' ? 'png' : 'jpg'
+}
+
+function normalizeStillCrop(value) {
+  if (value === 'square' || value === 'portrait') return value
+  return 'original'
+}
+
+function buildStillOutputArgs({ crop, format, outputFile }) {
+  const output = shellQuote(outputFile)
+  const imageCodecArgs = format === 'png'
+    ? `-frames:v 1 -compression_level 2 -y ${output}`
+    : `-frames:v 1 -q:v 1 -y ${output}`
+
+  if (crop === 'portrait') {
+    return `-filter_complex "[0:v]split=2[base][fg];[base]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2,eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+  }
+
+  if (crop === 'square') {
+    return `-vf "scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+  }
+
+  return `-vf "format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+}
+
+function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
+  const baseOffsets = windowSec > 0 ? [-2, -1.25, -0.5, 0, 0.5, 1.25, 2] : [0]
+  const candidates = baseOffsets
+    .map((offset) => Math.max(0, Math.min(totalSec || Number.MAX_SAFE_INTEGER, targetTimestamp + Math.max(-windowSec, Math.min(windowSec, offset)))))
+    .filter((value, index, arr) => Number.isFinite(value) && arr.findIndex((other) => Math.abs(other - value) < 0.04) === index)
+    .map((timestamp) => {
+      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+      const distancePenalty = Math.abs(timestamp - targetTimestamp) * 0.35
+      return { timestamp, visual, rank: (visual.score || 0) - distancePenalty }
+    })
+
+  const usable = candidates.filter((candidate) => candidate.visual.usable)
+  const ranked = (usable.length ? usable : candidates).sort((a, b) => b.rank - a.rank)
+  return ranked[0] || { timestamp: targetTimestamp, visual: { usable: true, score: 0, reason: 'No alternatives sampled.' }, rank: 0 }
+}
+
+async function handleStillExport(req, res) {
+  try {
+    const url = new URL(req.url, `http://localhost:${PORT}`)
+    const sourceUrl = url.searchParams.get('sourceUrl')
+    const requestedTimestamp = Math.max(0, parseFloat(url.searchParams.get('timestamp') || '0') || 0)
+    const format = normalizeStillFormat(url.searchParams.get('format'))
+    const crop = normalizeStillCrop(url.searchParams.get('crop'))
+    const qualitySearch = url.searchParams.get('qualitySearch') !== 'false'
+    const download = url.searchParams.get('download') === 'true'
+    const fileBase = (url.searchParams.get('fileName') || 'slicer-still').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 90) || 'slicer-still'
+
+    if (!sourceUrl) return sendJson(res, 400, { error: 'sourceUrl required' })
+
+    const inputPath = resolveServedInputPath(sourceUrl)
+    if (!inputPath || !fs.existsSync(inputPath)) return sendJson(res, 404, { error: 'Source file not found for still export' })
+
+    const totalSec = getMediaDuration(inputPath)
+    const best = chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualitySearch ? 2 : 0)
+    const selectedTimestamp = Math.max(0, best.timestamp)
+    const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}`).digest('hex').slice(0, 24)
+    const outputFile = path.join(STILL_CACHE_DIR, `still-${cacheHash}.${format === 'png' ? 'png' : 'jpg'}`)
+
+    if (!fs.existsSync(outputFile)) {
+      const args = buildStillOutputArgs({ crop, format, outputFile })
+      const cmd = `ffmpeg -hide_banner -ss ${selectedTimestamp.toFixed(2)} -i ${shellQuote(inputPath)} ${args}`
+      console.log(`[still] exporting ${crop}/${format} at ${selectedTimestamp.toFixed(2)}s (requested ${requestedTimestamp.toFixed(2)}s)`)
+      execSync(cmd, { timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] })
+    }
+
+    if (!fs.existsSync(outputFile)) return sendJson(res, 500, { error: 'Still file not created' })
+
+    const stat = fs.statSync(outputFile)
+    const contentType = format === 'png' ? 'image/png' : 'image/jpeg'
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${fileBase}.${format === 'png' ? 'png' : 'jpg'}"`,
+      'X-Slicer-Requested-Timestamp': requestedTimestamp.toFixed(2),
+      'X-Slicer-Selected-Timestamp': selectedTimestamp.toFixed(2),
+      'X-Slicer-Still-Score': String(best.visual?.score ?? 0),
+      'X-Slicer-Still-Reason': String(best.visual?.reason || ''),
+    })
+    fs.createReadStream(outputFile).pipe(res)
+  } catch (err) {
+    console.error('[still] Error:', err.message)
+    sendJson(res, 500, { error: 'Still export failed' })
+  }
+}
+
 // ─── Serve endpoint: stream video files from temp directory ───
 function handleServe(req, res) {
   const fileName = decodeURIComponent(req.url.replace('/serve/', ''))
@@ -3781,6 +3880,8 @@ async function handleInfo(req, res) {
     handleClip(req, res)
   } else if ((req.method === 'POST' || req.method === 'GET') && req.url?.startsWith('/thumbnail')) {
     handleThumbnail(req, res)
+  } else if (req.method === 'GET' && req.url?.startsWith('/still')) {
+    handleStillExport(req, res)
   } else if (req.method === 'POST' && req.url === '/transcribe-local') {
     handleTranscribeLocal(req, res)
   } else if (req.method === 'POST' && req.url === '/score-clips') {

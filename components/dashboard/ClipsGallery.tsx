@@ -383,11 +383,16 @@ type StillShot = {
   reason?: string
 }
 
+type StillFormat = 'jpg' | 'png'
+type StillCrop = 'original' | 'square' | 'portrait'
+
 function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
   const [apiBase, setApiBase] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [stillFormat, setStillFormat] = useState<StillFormat>('jpg')
+  const [stillCrop, setStillCrop] = useState<StillCrop>('original')
 
   useEffect(() => {
     let cancelled = false
@@ -417,24 +422,27 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
       return proofFrames.map((frame, frameIndex) => {
         const frameLabel = frame.label || `still-${frameIndex + 1}`
         const timestamp = Math.max(0, Number(frame.timestamp || 0))
-        const url = new URL(`${apiBase}/thumbnail`)
+        const url = new URL(`${apiBase}/still`)
         url.searchParams.set('sourceUrl', job.source_url)
         url.searchParams.set('timestamp', timestamp.toFixed(2))
-        url.searchParams.set('clipId', `${clipId}-${frameLabel}`)
+        url.searchParams.set('format', stillFormat)
+        url.searchParams.set('crop', stillCrop)
+        url.searchParams.set('qualitySearch', 'true')
+        url.searchParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         return {
           id: `${clipId}-${frameLabel}-${frameIndex}`,
           url: url.toString(),
-          fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s.jpg`,
+          fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${stillCrop}-${Math.round(timestamp)}s.${stillFormat}`,
           clipLabel: `Clip ${clipIndex + 1}`,
-          frameLabel,
+          frameLabel: frameLabel === 'best' ? 'Best Still' : frameLabel,
           timestamp,
           score: frame.score,
           reason: frame.reason || clip.ai_reason,
         }
       })
     })
-  }, [apiBase, clips, job.id, job.source_url, job.title])
+  }, [apiBase, clips, job.id, job.source_url, job.title, stillCrop, stillFormat])
 
   if (!clips.length) return null
 
@@ -464,7 +472,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-300/10 text-2xl">📁</div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-white group-hover:text-yellow-100">Still shots folder</div>
-              <div className="text-xs text-white/45">{stills.length || clips.length} post-ready frame{(stills.length || clips.length) === 1 ? '' : 's'} from this job · click to preview</div>
+              <div className="text-xs text-white/45">{stills.length || clips.length} high-quality frame{(stills.length || clips.length) === 1 ? '' : 's'} · {stillCrop} · {stillFormat.toUpperCase()} · click to preview</div>
             </div>
           </button>
           <button
@@ -485,16 +493,57 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         maxWidth="max-w-6xl"
       >
         <div className="space-y-4">
-          <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between">
-            <span>{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Click any frame to preview it full-size.</span>
-            <button
-              type="button"
-              onClick={handleDownloadAll}
-              disabled={!stills.length || downloading}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-semibold text-white/75 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
-            >
-              {downloading ? 'Downloading...' : 'Download all'}
-            </button>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-white">Post-ready still exports</div>
+                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Exports search ±2s for the sharpest usable frame before saving.</div>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Crop</label>
+                  <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/25 p-1">
+                    {[
+                      { value: 'original', label: '16:9' },
+                      { value: 'square', label: '1:1' },
+                      { value: 'portrait', label: '9:16' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { setStillCrop(opt.value as StillCrop); setPreviewStill(null) }}
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all ${stillCrop === opt.value ? 'bg-red-500/20 text-red-200' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Format</label>
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">
+                    {(['jpg', 'png'] as StillFormat[]).map((format) => (
+                      <button
+                        key={format}
+                        type="button"
+                        onClick={() => { setStillFormat(format); setPreviewStill(null) }}
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase transition-all ${stillFormat === format ? 'bg-red-500/20 text-red-200' : 'text-white/45 hover:bg-white/5 hover:text-white/75'}`}
+                      >
+                        {format}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadAll}
+                  disabled={!stills.length || downloading}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/75 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
+                >
+                  {downloading ? 'Downloading...' : `Download all ${stillFormat.toUpperCase()}`}
+                </button>
+              </div>
+            </div>
           </div>
 
           {previewStill && (
@@ -504,7 +553,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
               <div className="flex flex-col gap-2 border-t border-white/10 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-sm font-semibold text-white">{previewStill.clipLabel} · {previewStill.frameLabel}</div>
-                  <div className="text-xs text-white/45">{Math.round(previewStill.timestamp)}s{previewStill.score ? ` · score ${previewStill.score}/10` : ''}</div>
+                  <div className="text-xs text-white/45">{Math.round(previewStill.timestamp)}s target · {stillCrop} · {stillFormat.toUpperCase()}{previewStill.score ? ` · score ${previewStill.score}/10` : ''}</div>
                 </div>
                 <button
                   type="button"
@@ -520,10 +569,10 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
             {stills.map((still) => (
               <div key={still.id} className="overflow-hidden rounded-xl border border-white/10 bg-black/25">
-                <button type="button" onClick={() => setPreviewStill(still)} className="group relative block aspect-video w-full overflow-hidden bg-black/40">
+                <button type="button" onClick={() => setPreviewStill(still)} className={`group relative block w-full overflow-hidden bg-black/40 ${stillCrop === 'portrait' ? 'aspect-[9/16]' : stillCrop === 'square' ? 'aspect-square' : 'aspect-video'}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={still.url} alt={`${still.clipLabel} ${still.frameLabel}`} className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
-                  <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase text-white/80">{still.frameLabel}</span>
+                  <span className={`absolute bottom-2 left-2 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/80' : 'bg-black/70'}`}>{still.frameLabel}</span>
                 </button>
                 <div className="space-y-2 p-2">
                   <div className="flex items-center justify-between gap-2 text-[11px] text-white/55">
@@ -535,7 +584,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                     onClick={() => downloadImageUrl(still.url, still.fileName)}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-semibold text-white/70 transition-all hover:border-white/20 hover:text-white"
                   >
-                    Download JPG
+                    Download {stillFormat.toUpperCase()}
                   </button>
                 </div>
               </div>
