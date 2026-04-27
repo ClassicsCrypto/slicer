@@ -170,6 +170,28 @@ function cleanClipReason(reason?: string): string {
   return cleaned[0].toUpperCase() + cleaned.slice(1)
 }
 
+function slugifyFilePart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72) || 'slicer'
+}
+
+async function downloadImageUrl(url: string, fileName: string) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Still download failed')
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 function formatClipShortfallReason(requested: number, delivered: number, raw?: string): string | null {
   if (requested <= delivered) return null
 
@@ -350,6 +372,181 @@ function ClipCard({
   )
 }
 
+type StillShot = {
+  id: string
+  url: string
+  fileName: string
+  clipLabel: string
+  frameLabel: string
+  timestamp: number
+  score?: number
+  reason?: string
+}
+
+function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
+  const [apiBase, setApiBase] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
+  const [downloading, setDownloading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const nextApiBase = (await getApiUrl()).replace(/\/$/, '')
+        if (!cancelled) setApiBase(nextApiBase)
+      } catch {
+        if (!cancelled) setApiBase(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const stills = useMemo<StillShot[]>(() => {
+    if (!apiBase || !job.source_url) return []
+    const jobSlug = slugifyFilePart(job.title || job.id)
+
+    return clips.flatMap((clip, clipIndex) => {
+      const clipId = getClipStableId(clip)
+      const proofFrames = clip.proof_frames?.length
+        ? clip.proof_frames
+        : [{ label: 'mid', timestamp: clip.start_time + Math.max(0, (clip.end_time - clip.start_time) / 2), score: clip.virality_score, reason: clip.ai_reason }]
+
+      return proofFrames.map((frame, frameIndex) => {
+        const frameLabel = frame.label || `still-${frameIndex + 1}`
+        const timestamp = Math.max(0, Number(frame.timestamp || 0))
+        const url = new URL(`${apiBase}/thumbnail`)
+        url.searchParams.set('sourceUrl', job.source_url)
+        url.searchParams.set('timestamp', timestamp.toFixed(2))
+        url.searchParams.set('clipId', `${clipId}-${frameLabel}`)
+
+        return {
+          id: `${clipId}-${frameLabel}-${frameIndex}`,
+          url: url.toString(),
+          fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s.jpg`,
+          clipLabel: `Clip ${clipIndex + 1}`,
+          frameLabel,
+          timestamp,
+          score: frame.score,
+          reason: frame.reason || clip.ai_reason,
+        }
+      })
+    })
+  }, [apiBase, clips, job.id, job.source_url, job.title])
+
+  if (!clips.length) return null
+
+  const handleDownloadAll = async () => {
+    if (!stills.length) return
+    setDownloading(true)
+    try {
+      for (const still of stills) {
+        // Keep it serialized so browsers do not block the whole batch.
+        // eslint-disable-next-line no-await-in-loop
+        await downloadImageUrl(still.url, still.fileName)
+      }
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="mb-4 rounded-2xl border border-yellow-400/15 bg-yellow-400/[0.04] p-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="group flex flex-1 items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-left transition-all hover:border-yellow-300/40 hover:bg-yellow-300/5"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-300/10 text-2xl">📁</div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white group-hover:text-yellow-100">Still shots folder</div>
+              <div className="text-xs text-white/45">{stills.length || clips.length} post-ready frame{(stills.length || clips.length) === 1 ? '' : 's'} from this job · click to preview</div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadAll}
+            disabled={!stills.length || downloading}
+            className="rounded-xl border border-yellow-300/25 bg-yellow-300/10 px-4 py-3 text-xs font-semibold text-yellow-100 transition-all hover:bg-yellow-300/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {downloading ? 'Downloading stills...' : 'Download all stills'}
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        open={open}
+        onClose={() => { setOpen(false); setPreviewStill(null) }}
+        title={`Still shots — ${job.title}`}
+        maxWidth="max-w-6xl"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between">
+            <span>{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Click any frame to preview it full-size.</span>
+            <button
+              type="button"
+              onClick={handleDownloadAll}
+              disabled={!stills.length || downloading}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-semibold text-white/75 transition-all hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              {downloading ? 'Downloading...' : 'Download all'}
+            </button>
+          </div>
+
+          {previewStill && (
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewStill.url} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[62vh] w-full object-contain" />
+              <div className="flex flex-col gap-2 border-t border-white/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-white">{previewStill.clipLabel} · {previewStill.frameLabel}</div>
+                  <div className="text-xs text-white/45">{Math.round(previewStill.timestamp)}s{previewStill.score ? ` · score ${previewStill.score}/10` : ''}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => downloadImageUrl(previewStill.url, previewStill.fileName)}
+                  className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition-all hover:bg-red-500/15"
+                >
+                  Download this still
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+            {stills.map((still) => (
+              <div key={still.id} className="overflow-hidden rounded-xl border border-white/10 bg-black/25">
+                <button type="button" onClick={() => setPreviewStill(still)} className="group relative block aspect-video w-full overflow-hidden bg-black/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={still.url} alt={`${still.clipLabel} ${still.frameLabel}`} className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+                  <span className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase text-white/80">{still.frameLabel}</span>
+                </button>
+                <div className="space-y-2 p-2">
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-white/55">
+                    <span>{still.clipLabel}</span>
+                    <span>{Math.round(still.timestamp)}s</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => downloadImageUrl(still.url, still.fileName)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-semibold text-white/70 transition-all hover:border-white/20 hover:text-white"
+                  >
+                    Download JPG
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}
+
 function JobCard({
   job,
   onDelete,
@@ -520,17 +717,20 @@ function JobCard({
         {isProcessing ? (
           <ProcessingView job={job} onComplete={onJobComplete} />
         ) : clips.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {clips.map((clip) => (
-              <ClipCard
-                key={getClipStableId(clip)}
-                clip={clip}
-                sourceUrl={job.source_url}
-                onPreview={setPreviewClip}
-                onDelete={handleClipDelete}
-              />
-            ))}
-          </div>
+          <>
+            <JobStillShotsFolder job={job} clips={clips} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {clips.map((clip) => (
+                <ClipCard
+                  key={getClipStableId(clip)}
+                  clip={clip}
+                  sourceUrl={job.source_url}
+                  onPreview={setPreviewClip}
+                  onDelete={handleClipDelete}
+                />
+              ))}
+            </div>
+          </>
         ) : (
           <div className="flex items-center justify-center py-6">
             <div className="relative flex min-h-[180px] w-full items-center justify-center overflow-hidden rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-6 py-8">
