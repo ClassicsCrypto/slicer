@@ -223,6 +223,25 @@ function looksLikeDirectMediaUrl(rawUrl) {
   }
 }
 
+function isXBroadcastUrl(rawUrl) {
+  return /(?:x\.com|twitter\.com)\/i\/broadcasts\/[a-zA-Z0-9_-]+/i.test(String(rawUrl || ''))
+}
+
+function canonicalizeSourceInputUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl)
+    const xBroadcastMatch = parsed.pathname.match(/\/i\/broadcasts\/([a-zA-Z0-9_-]+)/)
+    if (xBroadcastMatch && /(?:^|\.)x\.com$|(?:^|\.)twitter\.com$/i.test(parsed.hostname)) {
+      return `${parsed.protocol}//${parsed.hostname}/i/broadcasts/${xBroadcastMatch[1]}`
+    }
+    parsed.searchParams.delete('s')
+    parsed.searchParams.delete('t')
+    return parsed.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
 function getDirectMediaMeta(rawUrl) {
   try {
     const parsed = new URL(rawUrl)
@@ -276,6 +295,7 @@ async function downloadDirectMedia(rawUrl, outputPath) {
 }
 
 async function ensureDownloadedSource(rawUrl) {
+  rawUrl = canonicalizeSourceInputUrl(rawUrl)
   if (looksLikeDirectMediaUrl(rawUrl)) {
     const directMeta = getDirectMediaMeta(rawUrl)
     const fileId = getCacheKey(rawUrl).replace(/[^a-z0-9_-]/gi, '').slice(0, 12) || crypto.randomUUID().slice(0, 12)
@@ -438,7 +458,10 @@ function getVideoInfo(url) {
 function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
-    const cmd = `yt-dlp -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4 -o "${outputPath}" "${url}"`
+    const format = isXBroadcastUrl(url)
+      ? 'bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b[height<=720]'
+      : 'bv*[height<=720]+ba/b[height<=720]'
+    const cmd = `yt-dlp --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
 
     exec(cmd, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
