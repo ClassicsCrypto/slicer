@@ -11,6 +11,10 @@ export type AutoclipScope = {
   workspaceId?: string
 }
 
+export type AutoclipSubscriptionWithSharing = AutoclipSubscription & {
+  sharedClipperCount: number
+}
+
 function ensureColumn(database: Database.Database, table: string, column: string, definition: string) {
   const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
   if (!columns.some((entry) => entry.name === column)) {
@@ -111,7 +115,7 @@ function cleanInput(input: AutoclipSubscriptionInput) {
   if (!['twitch', 'youtube', 'x', 'direct'].includes(platform)) {
     throw new Error('Unsupported platform')
   }
-  const handle = input.handle?.trim().replace(/^@/, '') || undefined
+  const handle = input.handle?.trim().replace(/^@/, '').toLowerCase() || undefined
   const channelUrl = input.channelUrl?.trim() || undefined
   if (!handle && !channelUrl) throw new Error('handle or channelUrl is required')
 
@@ -139,6 +143,46 @@ export function getAutoclipSubscription(id: string, scope?: AutoclipScope) {
   const scoped = scopeWhere(scope)
   const row = getDb().prepare(`SELECT * FROM autoclip_subscriptions WHERE id = @id AND ${scoped.clause}`).get({ id, ...scoped.params })
   return row ? normalizeRow(row) : null
+}
+
+export function countOtherAutoclippers(subscription: Pick<AutoclipSubscription, 'id' | 'platform' | 'handle' | 'channelUrl'>, scope?: AutoclipScope) {
+  const handle = subscription.handle?.trim().replace(/^@/, '').toLowerCase() || null
+  const channelUrl = subscription.channelUrl?.trim().toLowerCase() || null
+  const workspaceId = scope?.workspaceId || null
+  const userId = scope?.userId || null
+
+  const row = getDb().prepare(`
+    SELECT COUNT(DISTINCT COALESCE(workspace_id, user_id, id)) AS count
+    FROM autoclip_subscriptions
+    WHERE status = 'active'
+      AND id != @id
+      AND platform = @platform
+      AND (
+        (@handle IS NOT NULL AND lower(COALESCE(handle, '')) = @handle)
+        OR (@channel_url IS NOT NULL AND lower(COALESCE(channel_url, '')) = @channel_url)
+      )
+      AND (
+        (@workspace_id IS NOT NULL AND COALESCE(workspace_id, '') != @workspace_id)
+        OR (@workspace_id IS NULL AND @user_id IS NOT NULL AND COALESCE(user_id, '') != @user_id)
+        OR (@workspace_id IS NULL AND @user_id IS NULL)
+      )
+  `).get({
+    id: subscription.id,
+    platform: subscription.platform,
+    handle,
+    channel_url: channelUrl,
+    workspace_id: workspaceId,
+    user_id: userId,
+  }) as { count?: number } | undefined
+
+  return Number(row?.count || 0)
+}
+
+export function withAutoclipSharing(subscription: AutoclipSubscription, scope?: AutoclipScope): AutoclipSubscriptionWithSharing {
+  return {
+    ...subscription,
+    sharedClipperCount: countOtherAutoclippers(subscription, scope),
+  }
 }
 
 export function createAutoclipSubscription(input: AutoclipSubscriptionInput, scope?: AutoclipScope) {

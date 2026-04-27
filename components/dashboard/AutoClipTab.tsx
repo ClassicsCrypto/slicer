@@ -18,6 +18,7 @@ type Subscription = {
   lastSeenStreamId?: string | null
   lastJobId?: string | null
   createdAt: string
+  sharedClipperCount?: number
 }
 
 const DEFAULT_AUTOCUT_OPTIONS: Partial<ProcessingOptions> = {
@@ -130,7 +131,11 @@ export default function AutoClipTab() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create auto-clip signup')
-      setMessage(`Auto-clipping enabled for ${platform === 'youtube' ? 'YouTube' : platform === 'x' ? 'X' : 'twitch.tv'}/${cleanedHandle}`)
+      const sharedCount = Number(data.subscription?.sharedClipperCount || 0)
+      const sharedNote = sharedCount > 0
+        ? ` Note: ${sharedCount === 1 ? 'another user is' : `${sharedCount} other users are`} also auto-clipping this account, but your clips/settings stay separate.`
+        : ''
+      setMessage(`Auto-clipping enabled for ${platform === 'youtube' ? 'YouTube' : platform === 'x' ? 'X' : 'twitch.tv'}/${cleanedHandle}.${sharedNote}`)
       setHandle('')
       setEmail('')
       setPriorityHint('')
@@ -349,6 +354,11 @@ export default function AutoClipTab() {
                         <div>Last checked: {formatDate(sub.lastCheckedAt)}</div>
                         <div>Last seen: {sub.lastSeenStreamId || 'None yet'}</div>
                       </div>
+                      {!!sub.sharedClipperCount && sub.sharedClipperCount > 0 && (
+                        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100/75">
+                          Heads up: {sub.sharedClipperCount === 1 ? 'another user is' : `${sub.sharedClipperCount} other users are`} also auto-clipping this account. Your saved settings and generated clips stay separate.
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <Button variant="secondary" size="sm" onClick={() => updateStatus(sub.id, sub.status === 'active' ? 'paused' : 'active')}>
