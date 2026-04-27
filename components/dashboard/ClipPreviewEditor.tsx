@@ -282,18 +282,6 @@ function cleanClipReason(reason?: string) {
   return cleaned[0].toUpperCase() + cleaned.slice(1)
 }
 
-function getSubtitleSetupSummary(subtitleOptions: SubtitleOptions) {
-  if (!subtitleOptions.enabled) return 'Subtitles off'
-
-  return [
-    'Subtitles on',
-    `${subtitleOptions.mode || 'phrase'} mode`,
-    `${subtitleOptions.animationPreset || 'pop'} anim`,
-    subtitleOptions.watermarkEnabled ? 'watermark on' : 'watermark off',
-    subtitleOptions.profanityFilter ? 'emoji censor on' : 'emoji censor off',
-  ].join(' · ')
-}
-
 function getClipTranscriptText(clip: Clip) {
   return normalizeSubtitleWords(clip.subtitles ?? [])
     .map((word) => word.text)
@@ -558,8 +546,6 @@ export default function ClipPreviewEditor({
     96,
     (TIMELINE_TRACK_PADDING_Y * 2) + (timelineLaneCount * TIMELINE_SEGMENT_HEIGHT) + (Math.max(0, timelineLaneCount - 1) * TIMELINE_SEGMENT_ROW_GAP),
   )
-  const activePublishGuide = selectedPublishPlatform ? PLATFORM_PUBLISH_GUIDE[selectedPublishPlatform] : null
-  const activePublishDraft = selectedPublishPlatform ? postDrafts[selectedPublishPlatform] : ''
   const selectedSegmentLastWord = selectedSegment ? orderedSubtitles[selectedSegment.wordEndIndex] : null
   const canMergeNextSegment = Boolean(selectedSegmentLastWord?.breakAfter)
   const canSplitSelectedSegment = Boolean(selectedSegment && selectedSegment.wordCount > 1)
@@ -1102,49 +1088,51 @@ export default function ClipPreviewEditor({
       />
 
       <div className="order-4 rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2 lg:max-w-[60%]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+          <div className="min-w-0 space-y-3 rounded-lg border border-white/10 bg-black/15 p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getScoreClass(clip.virality_score)}`}>
                 {clip.virality_score ?? '–'}/10 · {getScoreLabel(clip.virality_score)}
               </span>
               <span className="text-xs text-white/35">{Math.round(clip.duration)}s clip</span>
+              {exportAspectRatio && (
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/35">
+                  Auto {exportAspectRatio === 'twitter' ? '16:9' : exportAspectRatio === 'tiktok' ? '9:16' : exportAspectRatio === 'youtube_shorts' ? '1:1' : 'original'}
+                </span>
+              )}
             </div>
-            <p className="text-sm leading-6 text-white/85">{cleanClipReason(clip.ai_reason)}</p>
+            <p className="max-w-3xl text-sm leading-6 text-white/85">{cleanClipReason(clip.ai_reason)}</p>
           </div>
 
-          <div className="w-full lg:max-w-md space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-white/35">Target Platforms</span>
-                <span className="text-[11px] text-white/30">{orderedSelectedPlatforms.length} selected{exportAspectRatio ? ` • auto ${exportAspectRatio === 'twitter' ? '16:9' : exportAspectRatio === 'tiktok' ? '9:16' : exportAspectRatio === 'youtube_shorts' ? '1:1' : 'original'}` : ''}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {PLATFORM_OPTIONS.map((option) => {
-                  const active = orderedSelectedPlatforms.includes(option.value)
-                  return (
-                    <button
-                      key={option.value}
-                      onClick={() => togglePlatform(option.value)}
-                      className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-all ${active ? 'border-red-500/30 bg-red-500/10 text-white' : 'border-white/10 bg-black/20 text-white/55 hover:border-white/20'}`}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="text-[11px] leading-5 text-white/32">Export format auto-follows the last platform you tap. Reels, TikTok, and Shorts all snap to vertical.</p>
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/15 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-white/35">Target Platforms</span>
+              <span className="text-[11px] text-white/30">{orderedSelectedPlatforms.length} selected</span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              {PLATFORM_OPTIONS.map((option) => {
+                const active = orderedSelectedPlatforms.includes(option.value)
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => togglePlatform(option.value)}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-all ${active ? 'border-red-500/30 bg-red-500/10 text-white' : 'border-white/10 bg-black/20 text-white/55 hover:border-white/20'}`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button variant="primary" onClick={handlePreparePost} disabled={postLoading || orderedSelectedPlatforms.length === 0}>
                 {postLoading ? `Preparing ${orderedSelectedPlatforms.length > 1 ? 'Captions' : 'Caption'}...` : `Prepare ${orderedSelectedPlatforms.length > 1 ? 'Captions' : 'Caption'}`}
               </Button>
 
               {orderedSelectedPlatforms.length > 1 && orderedSelectedPlatforms.some((platform) => postDrafts[platform]) && (
                 <Button variant="ghost" onClick={() => handleCopyPost('all')}>
-                  {copiedDraftKey === 'all' ? 'Copied All' : 'Copy All Captions'}
+                  {copiedDraftKey === 'all' ? 'Copied All' : 'Copy All'}
                 </Button>
               )}
             </div>
@@ -1152,128 +1140,61 @@ export default function ClipPreviewEditor({
             {orderedSelectedPlatforms.length === 0 && (
               <p className="text-xs text-white/35">Pick at least one platform to generate drafts.</p>
             )}
+          </div>
+        </div>
 
-            {orderedSelectedPlatforms.length > 0 && (
-              <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">Publish flow</div>
-                    <div className="text-[11px] leading-5 text-white/30">Framework only for now. At public launch, each button will open the real platform upload flow in a new tab, attach the clip, inject the caption, and stop at final approval.</div>
-                  </div>
-                  <span className="inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-200/80">
-                    Premium • Public launch
-                  </span>
-                </div>
+        {orderedSelectedPlatforms.length > 0 && (
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-white">Caption drafts</div>
+                <div className="text-[11px] leading-5 text-white/30">Compact launch prep. Real platform upload buttons stay placeholder-only until public launch.</div>
+              </div>
+              <span className="inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-200/80">
+                Premium · Public launch
+              </span>
+            </div>
 
-                <div className="grid gap-3">
-                  {orderedSelectedPlatforms.map((platform) => {
-                    const guide = PLATFORM_PUBLISH_GUIDE[platform]
-                    const draft = postDrafts[platform]
-                    return (
-                      <div key={`publish-${platform}`} className={`rounded-lg border bg-white/[0.03] p-3 space-y-3 transition-all ${selectedPublishPlatform === platform ? 'border-red-500/30 shadow-[0_0_0_1px_rgba(255,77,77,0.15)]' : 'border-white/10'}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-white">{guide.label}</div>
-                            <div className="text-[11px] text-white/30">{guide.exportLabel} · {guide.composerLabel} · {draft ? 'Caption ready' : 'Caption pending'}</div>
-                          </div>
-                          <span className="inline-flex rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/45">
-                            Placeholder
-                          </span>
-                        </div>
-
-                        <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs leading-5 text-white/55">
-                          {guide.futureFlow}
-                        </div>
-
-                        <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs leading-5 text-white/50">
-                          {guide.launchNote}
-                        </div>
-
-                        <ul className="space-y-1 text-xs text-white/45">
-                          {guide.checklist.map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="text-red-300/70">•</span>
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="secondary" onClick={() => handleOpenPublishPlaceholder(platform)}>
-                            Open {guide.label} Draft
-                          </Button>
-
-                          {draft && (
-                            <Button variant="ghost" onClick={() => handleCopyPost(platform)}>
-                              {copiedDraftKey === platform ? 'Copied Caption' : 'Copy Caption'}
-                            </Button>
-                          )}
-                        </div>
-
-                        <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs leading-5 text-white/50">
-                          {draft ? draft : 'Prepare captions first so this future launcher has copy ready to inject.'}
-                        </div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {orderedSelectedPlatforms.map((platform) => {
+                const guide = PLATFORM_PUBLISH_GUIDE[platform]
+                const draft = postDrafts[platform]
+                return (
+                  <div key={`draft-${platform}`} className={`rounded-lg border bg-white/[0.03] p-3 space-y-3 transition-all ${selectedPublishPlatform === platform ? 'border-red-500/30 shadow-[0_0_0_1px_rgba(255,77,77,0.15)]' : 'border-white/10'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-white">{guide.label}</div>
+                        <div className="truncate text-[11px] text-white/30">{guide.exportLabel} · {draft ? 'Caption ready' : 'Caption pending'}</div>
                       </div>
-                    )
-                  })}
-                </div>
-
-                {activePublishGuide && selectedPublishPlatform && (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{activePublishGuide.label} draft launcher placeholder</div>
-                        <div className="text-[11px] text-white/35">Held for the premium public rollout. This is the future one-click path, not a live publish action yet.</div>
-                      </div>
-                      <span className="inline-flex rounded-full border border-red-500/20 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-200/80">
-                        Not live yet
+                      <span className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/40">
+                        Future
                       </span>
                     </div>
 
-                    <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs leading-5 text-white/55">
-                      Future action: open {activePublishGuide.composerLabel}, attach this rendered clip, inject the prepared caption, and stop on the final human approval click.
-                    </div>
-
-                    <div className="grid gap-2 text-xs text-white/45 sm:grid-cols-2">
-                      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">Clip: {formatTimestamp(clip.start_time)} - {formatTimestamp(clip.end_time)} · {Math.round(clip.duration)}s</div>
-                      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">Export: {activePublishGuide.exportLabel} · {getSubtitleSetupSummary(subtitleOptions)}</div>
-                    </div>
-
-                    <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs leading-5 text-white/50">
-                      {activePublishDraft ? activePublishDraft : 'No caption prepared yet. Use Prepare Captions first so the future launcher has copy ready.'}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {orderedSelectedPlatforms.some((platform) => postDrafts[platform]) && (
-              <div className="space-y-3">
-                {orderedSelectedPlatforms.filter((platform) => postDrafts[platform]).map((platform) => (
-                  <div key={platform} className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{PLATFORM_OPTIONS.find((option) => option.value === platform)?.label || platform}</div>
-                        <div className="text-[11px] text-white/30">Editable draft for this clip</div>
-                      </div>
-                      <Button variant="ghost" onClick={() => handleCopyPost(platform)}>
-                        {copiedDraftKey === platform ? 'Copied' : 'Copy'}
-                      </Button>
-                    </div>
-
                     <textarea
-                      value={postDrafts[platform] ?? ''}
+                      value={draft ?? ''}
                       onChange={(e) => setPostDrafts((current) => ({ ...current, [platform]: e.target.value }))}
-                      className="h-28 w-full resize-none rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-white/85 focus:border-red-500 focus:outline-none"
+                      placeholder="Prepare captions first so this draft is ready."
+                      className="h-24 w-full resize-none rounded-lg border border-white/10 bg-black/25 p-3 text-sm leading-5 text-white/85 placeholder:text-white/25 focus:border-red-500 focus:outline-none"
                     />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" onClick={() => handleOpenPublishPlaceholder(platform)}>
+                        Open {guide.label} Draft
+                      </Button>
+                      {draft && (
+                        <Button variant="ghost" onClick={() => handleCopyPost(platform)}>
+                          {copiedDraftKey === platform ? 'Copied' : 'Copy'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="order-3">{subtitleStylingPanel}</div>
 
       <div className="order-2 rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
