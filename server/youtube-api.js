@@ -18,7 +18,7 @@
  */
 
 const http = require('http')
-const { execSync, exec, spawn } = require('child_process')
+const { execSync, exec, spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -200,6 +200,17 @@ function getServeBaseUrl() {
 
 function getServeUrl(fileName) {
   return `${getServeBaseUrl()}/serve/${fileName}`
+}
+
+function resolveServedInputPath(inputUrl) {
+  if (inputUrl && inputUrl.includes('/serve/')) {
+    const fileName = inputUrl.split('/serve/').pop()?.split(/[?#]/)[0]
+    if (fileName) {
+      const localPath = path.join(TEMP_DIR, decodeURIComponent(fileName))
+      if (fs.existsSync(localPath)) return localPath
+    }
+  }
+  return inputUrl
 }
 
 const DIRECT_MEDIA_EXT_RE = /\.(mp4|mov|m4v|webm|mkv|mp3|m4a|wav|aac)(?:$|[?#])/i
@@ -2139,6 +2150,119 @@ function buildProofFramesForClip(startSec, endSec, viralityScore, aiReason, clip
   ]
 }
 
+function parseSignalStats(output) {
+  const metrics = {}
+  for (const match of String(output || '').matchAll(/lavfi\.signalstats\.([A-Z]+)=(-?\d+(?:\.\d+)?)/g)) {
+    metrics[match[1]] = Number(match[2])
+  }
+  return metrics
+}
+
+function visualRejectReason(metrics, timestamp, totalSec) {
+  const yAvg = metrics.YAVG ?? 0
+  const yMin = metrics.YMIN ?? 0
+  const yMax = metrics.YMAX ?? 0
+  const satAvg = metrics.SATAVG ?? 0
+  const contrast = yMax - yMin
+
+  if (timestamp < 8) return 'opening seconds'
+  if (totalSec && timestamp > totalSec - 8) return 'closing seconds'
+  if (yAvg < 14 || (yAvg < 24 && contrast < 38)) return 'black/dark frame'
+  if (yAvg > 238 && satAvg < 10) return 'white/blank frame'
+  if (contrast < 24) return 'solid/low-detail frame'
+  if (satAvg < 3 && contrast < 45) return 'flat grayscale frame'
+  return null
+}
+
+function scoreVisualMetrics(metrics, timestamp, totalSec) {
+  const yAvg = metrics.YAVG ?? 0
+  const yMin = metrics.YMIN ?? 0
+  const yMax = metrics.YMAX ?? 0
+  const satAvg = metrics.SATAVG ?? 0
+  const contrast = yMax - yMin
+  const brightnessScore = yAvg >= 45 && yAvg <= 205 ? 2 : yAvg >= 28 && yAvg <= 225 ? 1 : -3
+  const contrastScore = contrast >= 115 ? 3 : contrast >= 70 ? 2 : contrast >= 42 ? 1 : -3
+  const saturationScore = satAvg >= 18 ? 2 : satAvg >= 8 ? 1 : satAvg < 3 ? -2 : 0
+  const edgePenalty = (timestamp < 15 || (totalSec && timestamp > totalSec - 15)) ? -4 : 0
+  return brightnessScore + contrastScore + saturationScore + edgePenalty
+}
+
+function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
+  const inputPath = resolveServedInputPath(sourceUrl)
+  if (!inputPath) return { usable: true, score: 0, reason: 'No source available for visual scoring.' }
+
+  try {
+    const result = spawnSync('ffmpeg', [
+      '-hide_banner',
+      '-ss', String(Math.max(0, timestamp)),
+      '-i', inputPath,
+      '-an',
+      '-frames:v', '1',
+      '-vf', 'scale=160:-1,signalstats,metadata=print',
+      '-f', 'null',
+      '-',
+    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    const metrics = parseSignalStats(output)
+    if (!Object.keys(metrics).length) return { usable: true, score: 0, reason: 'Visual metrics unavailable.' }
+    const reject = visualRejectReason(metrics, timestamp, totalSec)
+    const visualScore = scoreVisualMetrics(metrics, timestamp, totalSec)
+    return {
+      usable: !reject,
+      score: visualScore,
+      reason: reject ? `Rejected: ${reject}.` : `Visual pass: brightness/contrast/detail look usable.`,
+      metrics,
+    }
+  } catch (error) {
+    return { usable: true, score: 0, reason: `Visual scoring skipped: ${error.message}` }
+  }
+}
+
+function candidateProofFrameTimestamps(clip) {
+  const start = Math.max(0, Number(clip.start_time) || 0)
+  const end = Math.max(start + 1, Number(clip.end_time) || start + 1)
+  const duration = end - start
+  const ratios = [0.18, 0.3, 0.42, 0.55, 0.68, 0.82]
+  const seeded = Array.isArray(clip.proof_frames) ? clip.proof_frames.map((frame) => Number(frame.timestamp)) : []
+  return [...new Set([...seeded, ...ratios.map((ratio) => start + duration * ratio)]
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Math.max(start, Math.min(end - 0.25, value)).toFixed(2)))]
+    .map(Number)
+}
+
+async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
+  if (!sourceUrl || !clips?.length) return clips
+
+  return clips.map((clip) => {
+    const baseScore = Number(clip.virality_score || 7)
+    const candidates = candidateProofFrameTimestamps(clip).map((timestamp) => {
+      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+      const peakBias = 2 - Math.abs(timestamp - (clip.start_time + ((clip.end_time - clip.start_time) * 0.58))) / Math.max(4, clip.duration || 30)
+      return {
+        timestamp,
+        visual,
+        score: baseScore + visual.score + peakBias,
+      }
+    })
+
+    const usable = candidates.filter((candidate) => candidate.visual.usable)
+    const ranked = (usable.length ? usable : candidates)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+
+    const labels = ['best', 'action', 'clean']
+    return {
+      ...clip,
+      proof_frames: ranked.map((candidate, index) => ({
+        label: labels[index],
+        timestamp: parseFloat(candidate.timestamp.toFixed(2)),
+        score: Math.max(1, Math.min(10, Math.round(candidate.score))),
+        reason: `${candidate.visual.reason}${usable.length ? '' : ' Fallback used because all sampled frames looked weak.'}`,
+      })),
+    }
+  })
+}
+
 function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, words, detectionMode) {
   const safeStartSec = Math.max(0, Number(startSec) || 0)
   const safeEndSec = Math.max(safeStartSec + 1, Number(endSec) || safeStartSec + 1)
@@ -2651,7 +2775,7 @@ async function handleScoreClips(req, res) {
   let parsed
   try { parsed = JSON.parse(raw) } catch { return sendJson(res, 400, { error: 'Invalid JSON' }) }
 
-  const { words, clipCount, clipLength, detectionMode, customGame, volumeSpikes, jobId, priorityHint } = parsed
+  const { words, clipCount, clipLength, detectionMode, customGame, volumeSpikes, jobId, priorityHint, sourceUrl } = parsed
   if (!words || !jobId) return sendJson(res, 400, { error: 'words and jobId required' })
 
   // Prevent duplicate scoring for same job
@@ -3131,13 +3255,14 @@ Return ONLY compact JSON on ONE LINE:
         if (currentJob?.status === 'complete') {
           console.log(`[score-clips] Job ${jobId} already complete — skipping push`)
         } else {
+          const visualProofClips = await enrichClipsWithVisualProofFrames(result, sourceUrl, totalSec)
           await updateJob(jobId, {
             status: 'complete',
             progress: {
               ...(currentJob?.progress || {}),
               phase: 'complete',
-              progress: result.length ? 'Clip selection complete.' : 'No strong clips matched the request.',
-              completedClips: result,
+              progress: visualProofClips.length ? 'Clip selection complete.' : 'No strong clips matched the request.',
+              completedClips: visualProofClips,
               streamContext: `${detectedGame} (${detectedPackLabel})`,
               requestedClipCount: clipCount,
               shortlistClipCount: shortlistCount,
@@ -3145,12 +3270,12 @@ Return ONLY compact JSON on ONE LINE:
               clipScorer: scorerUsed,
               scorerComparison,
               duplicateClipsRemoved,
-              deliveredClipCount: result.length,
+              deliveredClipCount: visualProofClips.length,
               clipShortfallReason,
               completedAt: new Date().toISOString(),
             },
           })
-          console.log(`[score-clips] Pushed ${result.length} clips to ${getJobStoreKind()} job ${jobId}`)
+          console.log(`[score-clips] Pushed ${visualProofClips.length} clips to ${getJobStoreKind()} job ${jobId}`)
         }
       }
     } catch (err) {
@@ -3285,6 +3410,7 @@ async function handleJobStart(req, res) {
           priorityHint: options.priorityHint,
           volumeSpikes: transcriptionEntry.volumeSpikes || [],
           jobId,
+          sourceUrl: finalSourceUrl,
         }),
       })
       if (!scoreRes.ok) throw new Error(await scoreRes.text())
@@ -3474,17 +3600,6 @@ async function handleUpload(req, res) {
 // ─── Thumbnail endpoint: extract frame from video ───
 async function handleThumbnail(req, res) {
   try {
-    const resolveThumbInputPath = (inputUrl) => {
-      if (inputUrl && inputUrl.includes('/serve/')) {
-        const fileName = inputUrl.split('/serve/').pop()?.split(/[?#]/)[0]
-        if (fileName) {
-          const localPath = path.join(TEMP_DIR, decodeURIComponent(fileName))
-          if (fs.existsSync(localPath)) return localPath
-        }
-      }
-      return inputUrl
-    }
-
     const readThumbnailPayload = async () => {
       if (req.method === 'GET') {
         const url = new URL(req.url, `http://localhost:${PORT}`)
@@ -3525,7 +3640,7 @@ async function handleThumbnail(req, res) {
 
     const tempThumbFile = path.join(THUMB_CACHE_DIR, `thumb-${thumbHash}-${crypto.randomBytes(4).toString('hex')}.tmp.jpg`)
 
-    const inputPath = resolveThumbInputPath(sourceUrl)
+    const inputPath = resolveServedInputPath(sourceUrl)
 
     const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -q:v 2 -y "${tempThumbFile}"`
     console.log(`[thumb] extracting frame at ${ts}s`)
