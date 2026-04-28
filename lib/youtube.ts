@@ -3,6 +3,8 @@ export interface YouTubeVideoSource {
   url: string
   title: string
   publishedAt?: string
+  durationSec?: number
+  liveStatus?: string
 }
 
 function normalizeYouTubeInput(handleOrUrl: string) {
@@ -70,6 +72,32 @@ function parseFirstFeedEntry(xml: string): YouTubeVideoSource | null {
   }
 }
 
+function isReadyYouTubeLiveStatus(status?: string) {
+  const liveStatus = String(status || '').toLowerCase()
+  return liveStatus !== 'is_upcoming' && liveStatus !== 'is_live'
+}
+
+function isReadyYouTubeEntry(entry: any) {
+  if (!entry?.id) return false
+  if (!isReadyYouTubeLiveStatus(entry.live_status)) return false
+  const duration = Number(entry.duration || 0)
+  return Number.isFinite(duration) && duration > 0
+}
+
+function parseYtDlpInfoLine(stdout: string) {
+  const line = stdout.trim().split(/\r?\n/).find((item) => item.includes('|||')) || ''
+  const [durationRaw, title, id, liveStatus, timestampRaw, releaseTimestampRaw, uploadDate] = line.split('|||')
+  const durationSec = Number(durationRaw || 0)
+  if (!id || !Number.isFinite(durationSec) || durationSec <= 0 || !isReadyYouTubeLiveStatus(liveStatus)) return null
+  const timestamp = Number(timestampRaw || releaseTimestampRaw || 0)
+  const publishedAt = Number.isFinite(timestamp) && timestamp > 0
+    ? new Date(timestamp * 1000).toISOString()
+    : /^\d{8}$/.test(uploadDate || '')
+      ? `${uploadDate!.slice(0, 4)}-${uploadDate!.slice(4, 6)}-${uploadDate!.slice(6, 8)}T00:00:00.000Z`
+      : undefined
+  return { durationSec, title: title || 'YouTube video', id, liveStatus, publishedAt }
+}
+
 async function findLatestYouTubeSourceWithYtDlp(channelId: string, handleOrUrl: string): Promise<YouTubeVideoSource | null> {
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
@@ -82,15 +110,29 @@ async function findLatestYouTubeSourceWithYtDlp(channelId: string, handleOrUrl: 
 
   for (const target of targets) {
     try {
-      const { stdout } = await execFileAsync('yt-dlp', ['--dump-single-json', '--flat-playlist', target], { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 })
+      const { stdout } = await execFileAsync('yt-dlp', ['--js-runtimes', 'node', '--remote-components', 'ejs:github', '--dump-single-json', '--flat-playlist', target], { timeout: 45_000, maxBuffer: 10 * 1024 * 1024 })
       const parsed = JSON.parse(stdout)
-      const entry = parsed.entries?.find((item: any) => item?.id && item?.url?.includes('watch?v=')) || parsed.entries?.find((item: any) => item?.id)
-      if (!entry?.id) continue
-      return {
-        id: `youtube:${entry.id}`,
-        url: entry.url || `https://www.youtube.com/watch?v=${entry.id}`,
-        title: entry.title || 'YouTube video',
-        publishedAt: entry.timestamp ? new Date(entry.timestamp * 1000).toISOString() : undefined,
+      const entries = Array.isArray(parsed.entries) ? parsed.entries : []
+      const candidates = entries
+        .filter((item: any) => item?.id && Number(item.duration || 0) > 0)
+        .sort((a: any, b: any) => (isReadyYouTubeEntry(b) ? 1 : 0) - (isReadyYouTubeEntry(a) ? 1 : 0))
+      for (const entry of candidates) {
+        const url = entry.url || `https://www.youtube.com/watch?v=${entry.id}`
+        try {
+          const info = await execFileAsync('yt-dlp', ['--js-runtimes', 'node', '--remote-components', 'ejs:github', '--no-download', '--print', '%(duration)s|||%(title)s|||%(id)s|||%(live_status)s|||%(timestamp)s|||%(release_timestamp)s|||%(upload_date)s', url], { timeout: 30_000, maxBuffer: 1024 * 1024 })
+          const verified = parseYtDlpInfoLine(info.stdout)
+          if (!verified) continue
+          return {
+            id: `youtube:${verified.id}`,
+            url,
+            title: verified.title || entry.title || 'YouTube video',
+            publishedAt: verified.publishedAt || (entry.timestamp ? new Date(entry.timestamp * 1000).toISOString() : undefined),
+            durationSec: verified.durationSec,
+            liveStatus: verified.liveStatus,
+          }
+        } catch {
+          // Recently-ended and scheduled lives often fail single-video extraction; skip them.
+        }
       }
     } catch {
       // Try the next shape. YouTube tabs are inconsistent across channels.
@@ -102,13 +144,15 @@ async function findLatestYouTubeSourceWithYtDlp(channelId: string, handleOrUrl: 
 
 export async function findLatestYouTubeSource(handleOrUrl: string): Promise<YouTubeVideoSource | null> {
   const channelId = await resolveChannelId(handleOrUrl)
+
+  // For stream/VOD autoclip we need a finished, downloadable video. YouTube RSS can expose
+  // scheduled live events before yt-dlp can read/download them, which creates doomed jobs.
+  const fallback = await findLatestYouTubeSourceWithYtDlp(channelId, handleOrUrl)
+  if (fallback) return fallback
+
   const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`
   const response = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0 SlicerBot/1.0' } })
-  if (!response.ok) {
-    const fallback = await findLatestYouTubeSourceWithYtDlp(channelId, handleOrUrl)
-    if (fallback) return fallback
-    throw new Error(`YouTube RSS failed: ${response.status}`)
-  }
+  if (!response.ok) throw new Error(`YouTube RSS failed: ${response.status}`)
   const xml = await response.text()
   return parseFirstFeedEntry(xml)
 }

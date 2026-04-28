@@ -444,7 +444,7 @@ function getVideoInfo(url) {
 
   try {
     const raw = execSync(
-      `yt-dlp --no-download --print "%(duration)s|||%(title)s|||%(id)s" "${url}"`,
+      `yt-dlp --js-runtimes node --remote-components ejs:github --no-download --print "%(duration)s|||%(title)s|||%(id)s" "${url}"`,
       { timeout: 15000, encoding: 'utf8' }
     ).trim()
     const [duration, title, id] = raw.split('|||')
@@ -462,8 +462,8 @@ function downloadAudio(url, outputPath) {
     // Download best video+audio merged (mp4 preferred)
     const format = isXBroadcastUrl(url)
       ? 'bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b[height<=720]'
-      : 'bv*[height<=720]+ba/b[height<=720]'
-    const cmd = `yt-dlp --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
+      : 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]'
+    const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
 
     exec(cmd, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -1278,7 +1278,7 @@ const GENRE_SIGNAL_PACKS = {
 }
 
 const KNOWN_GAME_HINTS = [
-  { game: 'Nifty Island', genrePack: 'social_sandbox', signatures: ['nifty island', 'cave fins', 'pirates', 'raid complete', 'wave cleared', 'wave survived', 'high five'] },
+  { game: 'Nifty Island', genrePack: 'general_gaming', signatures: ['nifty island', 'cave fins', 'pirates', 'raid complete', 'wave cleared', 'wave survived', 'high five'] },
   { game: 'Pixels', genrePack: 'social_sandbox', signatures: ['pixels', 'farm land', 'berry', 'task board', 'grinding pixels'] },
   { game: 'ARC Raiders', genrePack: 'extraction_shooter', signatures: ['arc raiders', 'raider', 'extract', 'exfil', 'wild zone'] },
   { game: 'Valorant', genrePack: 'shooter', signatures: ['valorant', 'spike planted', 'ace', 'site take', 'clutched the round'] },
@@ -2497,19 +2497,35 @@ function buildAudioActionChunks(volumeSpikes, words, introSkipSec, totalSec, cli
 
 
 async function callGeminiText(apiKey, model, prompt, options = {}) {
-  const { temperature = 0.2, maxOutputTokens = 2048, retries = 4 } = options
+  const { temperature = 0.2, maxOutputTokens = 2048, retries = 4, timeoutMs = 90000 } = options
 
   let lastError = null
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens },
-      }),
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let response
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature, maxOutputTokens },
+        }),
+      })
+    } catch (error) {
+      clearTimeout(timer)
+      lastError = error
+      if (attempt === retries) break
+      const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1))
+      console.warn(`[gemini] ${model} attempt ${attempt}/${retries} failed: ${error.message}. Retrying in ${backoffMs}ms`)
+      await sleep(backoffMs)
+      continue
+    } finally {
+      clearTimeout(timer)
+    }
 
     if (response.ok) {
       const geminiData = await response.json()
@@ -2925,6 +2941,9 @@ async function handleScoreClips(req, res) {
       }
 
       try {
+        if (customGame?.trim() || signatureHit) {
+          throw new Error('Genre already locked by user/signature hint')
+        }
         const genrePrompt = `You are classifying a gaming stream from transcript excerpts.
 Choose exactly one genrePack from this list only:
 - shooter
@@ -2996,7 +3015,7 @@ TRANSCRIPT EXCERPTS:\n${transcriptText}`
         })
 
       let scoutCandidatesAdded = 0
-      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
+      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY && !priorityHintText) {
         try {
           const scoutTranscript = buildWholeTranscriptForScout(segments)
           const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
@@ -3058,10 +3077,11 @@ ${scoutTranscript}`
         if (rankDelta !== 0) return rankDelta
         return a.startSec - b.startSec
       })
+      const promptCandidates = topCandidates.slice(0, Math.min(topCandidates.length, 48))
       const shortlistCount = gameplayStrict
         ? Math.min(96, Math.max(clipCount * 9, 40))
         : Math.min(90, Math.max(clipCount * 8, 36))
-      console.log(`[score-clips] ${detectedGame} → ${detectedPackLabel}; ${chunkSource.length} chunks scored, ${topCandidates.length} candidates sent to Gemini`)
+      console.log(`[score-clips] ${detectedGame} → ${detectedPackLabel}; ${chunkSource.length} chunks scored, ${topCandidates.length} candidates pooled, ${promptCandidates.length} sent to Gemini`)
 
       if (topCandidates.length === 0) {
         throw new Error('No viable candidates after chunk scoring')
@@ -3071,7 +3091,7 @@ ${scoutTranscript}`
         ? `\nAUDIO PEAKS: ${volumeSpikes.slice(0, 20).map((spike) => `[${formatClock(spike.startSec)}]`).join(', ')}`
         : ''
 
-      const candidatesText = topCandidates.map(formatCandidateLine).join('\n')
+      const candidatesText = promptCandidates.map(formatCandidateLine).join('\n')
       const scoringRubric = `
 Use the score scale strictly:
 - 10 = best-in-stream, undeniable gameplay payoff + strong reaction. Extremely rare.
@@ -3113,13 +3133,13 @@ ${priorityStrictnessBlock}
 ${spikeContext}
 - Candidates tagged GUN came from dense loud audio sections that may indicate shots/fights/explosions even when transcript is quiet. Treat them as important action candidates and inspect nearby transcript carefully.
 
-CANDIDATES (${topCandidates.length}):
+CANDIDATES (${promptCandidates.length}):
 ${candidatesText}
 
 Return ONLY compact JSON on ONE LINE:
 {"clips":[{"s":1978,"v":7,"r":"fair exchange kill"},{"s":2656,"v":8,"r":"flag secured payoff"}]}`
 
-      console.log(`[score-clips] Calling clip scorer (${CLIP_SCORER}) for job ${jobId} (${topCandidates.length} candidates, ${chunkSource.length} chunks, ${words.length} words)`)
+      console.log(`[score-clips] Calling clip scorer (${CLIP_SCORER}) for job ${jobId} (${promptCandidates.length} candidates, ${chunkSource.length} chunks, ${words.length} words)`)
 
       let content = ''
       let scorerUsed = 'gemini'
@@ -3147,8 +3167,14 @@ Return ONLY compact JSON on ONE LINE:
         }
       } else {
         if (!GEMINI_API_KEY) throw new Error('Gemini scorer requested but GEMINI_API_KEY is missing')
-        geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
-        content = geminiContent
+        try {
+          geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000, retries: 1, timeoutMs: 30000 })
+          content = geminiContent
+        } catch (geminiError) {
+          console.warn(`[score-clips] Gemini scorer timed out/failed for ${jobId}; falling back to local candidate scoring: ${geminiError.message}`)
+          content = '{"clips":[]}'
+          scorerUsed = 'local_fallback'
+        }
       }
 
       if (CLIP_SCORER === 'ab') {
@@ -3200,7 +3226,7 @@ Return ONLY compact JSON on ONE LINE:
       let duplicateClipsRemoved = 0
       let backfilledClipsAdded = 0
       for (const c of clips.slice(0, shortlistCount * 2)) {
-        const startSec = normalizeModelClipStartSec(c.s ?? c.start_sec ?? 0, topCandidates, introSkipSec, totalSec)
+        const startSec = normalizeModelClipStartSec(c.s ?? c.start_sec ?? 0, promptCandidates, introSkipSec, totalSec)
         const score = c.v ?? c.virality_score ?? 7
         if (startSec === 0 && result.length > 0) continue
         if (score < 5) continue
@@ -3321,6 +3347,33 @@ Return ONLY compact JSON on ONE LINE:
           result.splice(index, 1)
           selectedClips.splice(index, 1)
           explicitActionDrops += 1
+        }
+      }
+
+      if (result.length < clipCount) {
+        const coverageCandidates = topCandidates
+          .filter((candidate) => candidate.startSec >= introSkipSec)
+          .sort((a, b) => {
+            const scoreDelta = (b.score || 0) - (a.score || 0)
+            if (scoreDelta !== 0) return scoreDelta
+            return a.startSec - b.startSec
+          })
+        for (const candidate of coverageCandidates) {
+          if (result.length >= clipCount) break
+          const payload = buildPriorityAwareClipPayload(
+            Math.max(0, Math.round(candidate.startSec)),
+            Math.max(5, mapCandidateScoreToVirality(candidate.score || 5)),
+            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, detectionMode),
+            words,
+            clipLength,
+            detectionMode,
+            priorityProfile,
+          )
+          if (!payload) continue
+          if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
+          selectedClips.push(payload.selectedWindow)
+          result.push(payload.clip)
+          backfilledClipsAdded += 1
         }
       }
 

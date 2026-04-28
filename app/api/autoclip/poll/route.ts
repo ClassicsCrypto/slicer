@@ -5,6 +5,7 @@ import { findLatestYouTubeSource } from '@/lib/youtube'
 import { findLatestXSource } from '@/lib/x'
 import { requireAuth } from '@/lib/auth'
 import { getInternalRequestHeaders, isTrustedInternalRequest } from '@/lib/internal-request'
+import { getJobRecord } from '@/lib/job-store/store'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -63,15 +64,24 @@ export async function POST(request: NextRequest) {
       }
 
       if (source.id === subscription.lastSeenStreamId) {
-        updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt }, scope)
-        results.push({ subscriptionId: subscription.id, status: 'already_seen', source })
-        continue
+        const lastJob = subscription.lastJobId ? await getJobRecord(subscription.lastJobId, 'autoclip/poll last-seen check') : null
+        const lastJobUrl = String(lastJob?.raw_input_url || lastJob?.source_url || '')
+        const canRetrySource = lastJob?.status === 'failed' || (lastJobUrl && lastJobUrl !== source.url)
+        if (!canRetrySource) {
+          updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt }, scope)
+          results.push({ subscriptionId: subscription.id, status: 'already_seen', source })
+          continue
+        }
       }
 
       const creatorKey = getAutoclipCreatorKey(subscription)
       const fingerprint = buildAutoclipFingerprint({ creatorKey, title: source.title, publishedAt: (source as any).publishedAt || (source as any).startedAt })
       const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, publishedAt: (source as any).publishedAt || (source as any).startedAt }, scope)
-      if (duplicate) {
+      const duplicateEvent = duplicate as any
+      const samePlatformDifferentSource = duplicateEvent
+        && duplicateEvent.platform === subscription.platform
+        && duplicateEvent.source_id !== source.id
+      if (duplicate && !samePlatformDifferentSource) {
         updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt, lastSeenStreamId: source.id }, scope)
         results.push({ subscriptionId: subscription.id, status: 'duplicate_stream', source, duplicate })
         continue
