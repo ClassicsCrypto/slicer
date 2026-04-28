@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
       const creatorKey = getAutoclipCreatorKey(subscription)
       const fingerprint = buildAutoclipFingerprint({ creatorKey, title: source.title, publishedAt: (source as any).publishedAt || (source as any).startedAt })
-      const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, publishedAt: (source as any).publishedAt || (source as any).startedAt }, scope)
+      const duplicate = findAutoclipDuplicate({ creatorKey, fingerprint, sourceId: source.id, publishedAt: (source as any).publishedAt || (source as any).startedAt }, scope)
       const duplicateEvent = duplicate as any
       const samePlatformDifferentSource = duplicateEvent
         && duplicateEvent.platform === subscription.platform

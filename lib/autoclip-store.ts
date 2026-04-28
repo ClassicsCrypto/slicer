@@ -310,7 +310,7 @@ function eventScopeWhere(scope?: AutoclipScope) {
   return { clause: '1 = 1', params: {} }
 }
 
-export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: string; publishedAt?: string | null }, scope?: AutoclipScope) {
+export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: string; sourceId?: string; publishedAt?: string | null }, scope?: AutoclipScope) {
   const bucket = getTimeBucket(input.publishedAt)
   const minDate = new Date((bucket - 1) * 3 * 60 * 60 * 1000).toISOString()
   const maxDate = new Date((bucket + 2) * 3 * 60 * 60 * 1000).toISOString()
@@ -321,11 +321,17 @@ export function findAutoclipDuplicate(input: { creatorKey: string; fingerprint: 
     LEFT JOIN jobs ON jobs.id = autoclip_events.job_id
     WHERE autoclip_events.creator_key = @creator_key
       AND ${scoped.clause}
-      AND (autoclip_events.fingerprint = @fingerprint OR autoclip_events.detected_at BETWEEN @minDate AND @maxDate)
+      AND (
+        autoclip_events.fingerprint = @fingerprint
+        OR (@source_id IS NOT NULL AND autoclip_events.source_id = @source_id)
+        OR autoclip_events.detected_at BETWEEN @minDate AND @maxDate
+      )
       AND (autoclip_events.job_id IS NULL OR jobs.id IS NULL OR jobs.status != 'failed')
-    ORDER BY autoclip_events.created_at DESC
+    ORDER BY
+      CASE WHEN @source_id IS NOT NULL AND autoclip_events.source_id = @source_id THEN 0 ELSE 1 END,
+      autoclip_events.created_at DESC
     LIMIT 1
-  `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, minDate, maxDate, ...scoped.params })
+  `).get({ creator_key: input.creatorKey, fingerprint: input.fingerprint, source_id: input.sourceId || null, minDate, maxDate, ...scoped.params })
   return row || null
 }
 
