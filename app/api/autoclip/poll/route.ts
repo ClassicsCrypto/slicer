@@ -4,16 +4,18 @@ import { findLatestTwitchSource } from '@/lib/twitch'
 import { findLatestYouTubeSource } from '@/lib/youtube'
 import { findLatestXSource } from '@/lib/x'
 import { requireAuth } from '@/lib/auth'
+import { getInternalRequestHeaders, isTrustedInternalRequest } from '@/lib/internal-request'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-async function triggerRun(origin: string, subscriptionId: string, source: { id: string; url: string; title: string }, cookie?: string | null) {
+async function triggerRun(origin: string, subscriptionId: string, source: { id: string; url: string; title: string }, cookie?: string | null, internalRequest = false) {
   const response = await fetch(`${origin}/api/autoclip/run`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       cookie: cookie || '',
+      ...(internalRequest ? getInternalRequestHeaders() : {}),
     },
     body: JSON.stringify({
       subscriptionId,
@@ -29,7 +31,8 @@ async function triggerRun(origin: string, subscriptionId: string, source: { id: 
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request)
+  const internalRequest = isTrustedInternalRequest(request)
+  const auth = internalRequest ? null : requireAuth(request)
   if (auth instanceof NextResponse) return auth
 
   const startedAt = new Date().toISOString()
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
   const mode = body.mode === 'live' ? 'live' : 'vod'
   const dryRun = Boolean(body.dryRun)
   const platformPriority: Record<string, number> = { twitch: 0, youtube: 1, x: 2, direct: 3 }
-  const scope = { userId: auth.user.id, workspaceId: auth.workspace.id }
+  const scope = internalRequest ? undefined : { userId: auth!.user.id, workspaceId: auth!.workspace.id }
   const subscriptions = listAutoclipSubscriptions('active', scope).sort((a, b) => (platformPriority[a.platform] ?? 9) - (platformPriority[b.platform] ?? 9))
   const results: any[] = []
 
@@ -75,14 +78,15 @@ export async function POST(request: NextRequest) {
       }
 
       if (dryRun) {
+        updateAutoclipSubscription(subscription.id, { lastCheckedAt: startedAt }, scope)
         results.push({ subscriptionId: subscription.id, status: 'would_queue', source, fingerprint })
         continue
       }
 
-      const run = await triggerRun(request.nextUrl.origin, subscription.id, source, request.headers.get('cookie'))
+      const run = await triggerRun(request.nextUrl.origin, subscription.id, source, request.headers.get('cookie'), internalRequest)
       recordAutoclipEvent({
-        userId: auth.user.id,
-        workspaceId: auth.workspace.id,
+        userId: internalRequest ? (subscription.userId ?? undefined) : auth!.user.id,
+        workspaceId: internalRequest ? (subscription.workspaceId ?? undefined) : auth!.workspace.id,
         subscriptionId: subscription.id,
         creatorKey,
         fingerprint,

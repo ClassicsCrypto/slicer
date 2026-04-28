@@ -69,6 +69,81 @@ function formatDate(value?: string | null) {
   return date.toLocaleString()
 }
 
+function platformLabel(platform?: string) {
+  if (platform === 'youtube') return 'YouTube'
+  if (platform === 'x') return 'X'
+  if (platform === 'twitch') return 'Twitch'
+  return 'Auto-Clip'
+}
+
+function statusCopy(status: string) {
+  switch (status) {
+    case 'would_queue': return { label: 'New VOD found', tone: 'green', detail: 'Ready to queue when auto-clipping runs.' }
+    case 'queued': return { label: 'Queued', tone: 'green', detail: 'A clipping job was started.' }
+    case 'already_seen': return { label: 'Already checked', tone: 'slate', detail: 'No new VOD since the last check.' }
+    case 'duplicate_stream': return { label: 'Duplicate skipped', tone: 'amber', detail: 'This stream matched an existing job.' }
+    case 'no_source': return { label: 'Nothing found', tone: 'slate', detail: 'No public VOD/upload/broadcast was detected.' }
+    case 'error': return { label: 'Check failed', tone: 'red', detail: 'Slicer could not check this signup.' }
+    default: return { label: status.replace(/_/g, ' '), tone: 'slate', detail: '' }
+  }
+}
+
+function PollNotification({ result, subscriptions }: { result: any; subscriptions: Subscription[] }) {
+  const rows = Array.isArray(result?.results) ? result.results : []
+  const counts = rows.reduce((acc: Record<string, number>, row: any) => {
+    acc[row.status] = (acc[row.status] || 0) + 1
+    return acc
+  }, {})
+  const checkedAt = formatDate(result?.checkedAt)
+  const found = (counts.would_queue || 0) + (counts.queued || 0)
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <div className="text-sm font-bold text-white">Check complete</div>
+          <div className="text-xs text-white/40">Checked {checkedAt} · {result?.dryRun ? 'Dry run' : 'Auto-clipping'} · {result?.mode?.toUpperCase?.() || 'VOD'}</div>
+        </div>
+        <div className={`rounded-full px-3 py-1 text-xs font-bold ${found > 0 ? 'bg-green-500/15 text-green-200 border border-green-500/25' : 'bg-white/5 text-white/45 border border-white/10'}`}>
+          {found > 0 ? `${found} new VOD${found === 1 ? '' : 's'} found` : 'No new VODs'}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((row: any) => {
+          const copy = statusCopy(row.status)
+          const source = row.source || {}
+          const subscription = subscriptions.find((sub) => sub.id === row.subscriptionId)
+          const tone = copy.tone === 'green'
+            ? 'border-green-500/20 bg-green-500/10 text-green-100/85'
+            : copy.tone === 'amber'
+              ? 'border-amber-500/20 bg-amber-500/10 text-amber-100/85'
+              : copy.tone === 'red'
+                ? 'border-red-500/20 bg-red-500/10 text-red-100/85'
+                : 'border-white/10 bg-white/[0.03] text-white/60'
+          return (
+            <div key={`${row.subscriptionId}-${row.status}-${source.id || row.error || ''}`} className={`rounded-lg border px-3 py-2 ${tone}`}>
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-bold">{copy.label}</span>
+                  <span className="text-white/35">·</span>
+                  <span>{platformLabel(subscription?.platform)} {subscription?.handle || subscription?.channelUrl || ''}</span>
+                </div>
+                <div className="text-xs leading-5 text-white/45">
+                  {source.title ? source.title : row.error || copy.detail}
+                </div>
+                {source.url && (
+                  <a href={source.url} target="_blank" rel="noreferrer" className="text-xs text-sky-300/80 hover:text-sky-200 break-all">{source.url}</a>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function AutoClipTab() {
   const [platform, setPlatform] = useState<'twitch' | 'youtube' | 'x'>('twitch')
   const [handle, setHandle] = useState('')
@@ -319,13 +394,7 @@ export default function AutoClipTab() {
 
           {message && <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-100/80">{message}</div>}
           {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-100/80">{error}</div>}
-          {pollResult && (
-            <div className="max-w-full overflow-x-auto overflow-y-hidden rounded-lg border border-white/10 bg-black/40">
-              <pre className="max-h-56 min-w-max overflow-y-auto p-3 text-xs leading-5 text-white/45">
-                {JSON.stringify(pollResult, null, 2)}
-              </pre>
-            </div>
-          )}
+          {pollResult && <PollNotification result={pollResult} subscriptions={subscriptions} />}
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6">

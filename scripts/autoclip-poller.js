@@ -16,13 +16,17 @@ if (fs.existsSync(envPath)) {
 
 const baseUrl = process.env.SLICER_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
 const mode = process.env.AUTOCLIP_POLL_MODE || 'vod'
+const secret = process.env.AUTOCLIP_POLL_SECRET || process.env.SLICER_INTERNAL_TOKEN || process.env.CRON_SECRET || ''
 
 async function poll() {
   const startedAt = new Date().toISOString()
   try {
     const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/autoclip/poll`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(secret ? { Authorization: `Bearer ${secret}` } : { 'x-slicer-local-poller': '1' }),
+      },
       body: JSON.stringify({ mode, dryRun: false }),
     })
     const text = await res.text()

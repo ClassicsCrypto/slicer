@@ -18,9 +18,19 @@ function isProtectedPath(pathname: string) {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
+function isTrustedInternalRequest(req: NextRequest) {
+  const secret = process.env.AUTOCLIP_POLL_SECRET || process.env.SLICER_INTERNAL_TOKEN || process.env.CRON_SECRET || ''
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) return true
+
+  const host = req.nextUrl.hostname.toLowerCase()
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  return isLocalHost && req.headers.get('x-slicer-local-poller') === '1'
+}
+
 export function middleware(req: NextRequest) {
   if (authBypassed()) return NextResponse.next()
   if (!isProtectedPath(req.nextUrl.pathname)) return NextResponse.next()
+  if (isTrustedInternalRequest(req)) return NextResponse.next()
 
   const hasSession = req.cookies.has('slicer_session')
   if (hasSession) return NextResponse.next()

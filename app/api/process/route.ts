@@ -3,6 +3,7 @@ import { getJobRecord, updateJobRecord } from '@/lib/job-store/store'
 import { getServerApiUrl } from '@/lib/api-url-server'
 import { Job, JobInputKind, JobProgress, ProcessingOptions } from '@/types'
 import { requireAuth } from '@/lib/auth'
+import { isTrustedInternalRequest } from '@/lib/internal-request'
 
 function normalizeJob(job: any): Job {
   const progress = (job?.progress ?? {}) as JobProgress
@@ -71,7 +72,8 @@ function buildProgressUpdate(params: {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req)
+  const internalRequest = isTrustedInternalRequest(req)
+  const auth = internalRequest ? null : requireAuth(req)
   if (auth instanceof NextResponse) return auth
 
   try {
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest) {
     const existingJob = await getJobRecord(jobId, 'api/process POST fetch')
     const existingJobError = !existingJob ? new Error('Job not found') : null
 
-    if (existingJobError || !existingJob || existingJob.user_id !== auth.user.id) {
+    if (existingJobError || !existingJob || (!internalRequest && existingJob.user_id !== auth!.user.id)) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
