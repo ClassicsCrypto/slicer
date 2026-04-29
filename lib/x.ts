@@ -53,13 +53,12 @@ export async function findLatestXSource(handleOrUrl: string): Promise<XVideoSour
   const tweets = await xFetch(`/users/${encodeURIComponent(userId)}/tweets?max_results=20&exclude=retweets,replies&tweet.fields=created_at,entities`)
   for (const tweet of tweets.data || []) {
     const text = tweet.text || ''
-    if (!qualifiesAsStreamPost(text)) continue
     const expandedUrls = (tweet.entities?.urls || []).map((u: any) => u.expanded_url || u.unwound_url || u.url).filter(Boolean)
     const broadcastUrl = expandedUrls.find((url: string) => /\/i\/broadcasts\//.test(url)) || extractBroadcastUrl(text)
-    const sourceUrl = broadcastUrl || `https://x.com/${username}/status/${tweet.id}`
+    if (!broadcastUrl || !qualifiesAsStreamPost(text)) continue
     return {
       id: `x:${tweet.id}`,
-      url: sourceUrl,
+      url: broadcastUrl,
       title: text.slice(0, 120) || `${username} X stream`,
       publishedAt: tweet.created_at,
     }
