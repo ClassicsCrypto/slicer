@@ -229,6 +229,27 @@ function isXBroadcastUrl(rawUrl) {
   return /(?:x\.com|twitter\.com)\/i\/broadcasts\/[a-zA-Z0-9_-]+/i.test(String(rawUrl || ''))
 }
 
+function isTwitchUrl(rawUrl) {
+  try {
+    const hostname = new URL(rawUrl).hostname.toLowerCase()
+    return hostname === 'twitch.tv' || hostname.endsWith('.twitch.tv')
+  } catch {
+    return /(?:^|\.)twitch\.tv\//i.test(String(rawUrl || ''))
+  }
+}
+
+function getDownloadFormat(rawUrl) {
+  if (isXBroadcastUrl(rawUrl)) {
+    return 'bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b[height<=720]/best'
+  }
+
+  if (isTwitchUrl(rawUrl)) {
+    return 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/b[height<=720]/bv*[height<=720]+ba/best[ext=mp4]/best'
+  }
+
+  return 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/best'
+}
+
 function canonicalizeSourceInputUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl)
@@ -460,9 +481,7 @@ function getVideoInfo(url) {
 function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
-    const format = isXBroadcastUrl(url)
-      ? 'bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b[height<=720]'
-      : 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]'
+    const format = getDownloadFormat(url)
     const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
     console.log(`[yt-dlp] downloading: ${cmd}`)
 
