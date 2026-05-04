@@ -23,7 +23,6 @@ function authUrl(provider: Provider, request: NextRequest, state: string) {
       response_type: 'code',
       scope: 'identify email',
       state,
-      prompt: 'none',
     })
     return `https://discord.com/api/oauth2/authorize?${params}`
   }
