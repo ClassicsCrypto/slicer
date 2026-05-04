@@ -1297,9 +1297,10 @@ const GENRE_SIGNAL_PACKS = {
 }
 
 const KNOWN_GAME_HINTS = [
-  { game: 'Nifty Island', genrePack: 'general_gaming', signatures: ['nifty island', 'cave fins', 'pirates', 'raid complete', 'wave cleared', 'wave survived', 'high five'] },
+  { game: 'Nifty Island', genrePack: 'general_gaming', signatures: ['nifty island', 'island raiders', 'cave fins', 'pirates', 'raid complete', 'wave cleared', 'wave survived', 'high five', 'checkpoint', 'checkpoints', 'palm logo', 'glove box', 'no friends'] },
   { game: 'Pixels', genrePack: 'social_sandbox', signatures: ['pixels', 'farm land', 'berry', 'task board', 'grinding pixels'] },
-  { game: 'ARC Raiders', genrePack: 'extraction_shooter', signatures: ['arc raiders', 'raider', 'extract', 'exfil', 'wild zone'] },
+  // Avoid matching generic "raider/raiders" alone: MCV's Nifty show is called Island Raiders.
+  { game: 'ARC Raiders', genrePack: 'extraction_shooter', signatures: ['arc raiders', 'arc raider', 'extract', 'exfil', 'wild zone'] },
   { game: 'Valorant', genrePack: 'shooter', signatures: ['valorant', 'spike planted', 'ace', 'site take', 'clutched the round'] },
   { game: 'Apex Legends', genrePack: 'battle_royale', signatures: ['apex', 'rez beacon', 'champion', 'third party', 'cracked shield'] },
   { game: 'Fortnite', genrePack: 'battle_royale', signatures: ['fortnite', 'storm', 'boxed', 'crown win', 'reboot van'] },
@@ -2131,6 +2132,66 @@ function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priori
   return pool
 }
 
+function getCandidateBucketIndex(candidate, totalSec, bucketCount) {
+  const safeTotal = Math.max(1, totalSec || 1)
+  const safeBuckets = Math.max(1, bucketCount || 1)
+  return Math.max(0, Math.min(safeBuckets - 1, Math.floor(((candidate?.startSec || 0) / safeTotal) * safeBuckets)))
+}
+
+function selectPromptCandidatesWithCoverage(topCandidates, totalSec, limit, priorityProfile, detectionMode) {
+  if (!Array.isArray(topCandidates) || topCandidates.length <= limit) return topCandidates
+
+  const bucketCount = Math.max(6, Math.min(12, Math.ceil((totalSec || 0) / 600)))
+  const minPerBucket = isGameplayStrictMode(priorityProfile, detectionMode) ? 2 : 3
+  const selected = []
+  const seen = new Set()
+
+  const addCandidate = (candidate) => {
+    if (!candidate || seen.has(candidate.startSec) || selected.length >= limit) return false
+    selected.push(candidate)
+    seen.add(candidate.startSec)
+    return true
+  }
+
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const bucketCandidates = topCandidates
+      .filter((candidate) => getCandidateBucketIndex(candidate, totalSec, bucketCount) === bucket)
+      .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
+
+    let added = 0
+    for (const candidate of bucketCandidates) {
+      if (added >= minPerBucket) break
+      if (addCandidate(candidate)) added += 1
+    }
+  }
+
+  for (const candidate of topCandidates) {
+    if (selected.length >= limit) break
+    addCandidate(candidate)
+  }
+
+  return selected.sort((a, b) => {
+    const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+    if (rankDelta !== 0) return rankDelta
+    return a.startSec - b.startSec
+  })
+}
+
+function sortCandidatesForCoverageBackfill(candidates, selectedClips, totalSec, priorityProfile) {
+  const bucketCount = Math.max(6, Math.min(12, Math.ceil((totalSec || 0) / 600)))
+  const usedBuckets = new Set((selectedClips || []).map((clip) => getCandidateBucketIndex(clip, totalSec, bucketCount)))
+
+  return [...(candidates || [])].sort((a, b) => {
+    const aBucketUsed = usedBuckets.has(getCandidateBucketIndex(a, totalSec, bucketCount)) ? 1 : 0
+    const bBucketUsed = usedBuckets.has(getCandidateBucketIndex(b, totalSec, bucketCount)) ? 1 : 0
+    if (aBucketUsed !== bBucketUsed) return aBucketUsed - bBucketUsed
+
+    const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+    if (rankDelta !== 0) return rankDelta
+    return a.startSec - b.startSec
+  })
+}
+
 function mergeChunkSources(primaryChunks, secondaryChunks) {
   const merged = []
   const seen = new Set()
@@ -2325,9 +2386,16 @@ function candidateProofFrameTimestamps(clip) {
   const start = Math.max(0, Number(clip.start_time) || 0)
   const end = Math.max(start + 1, Number(clip.end_time) || start + 1)
   const duration = end - start
-  const ratios = [0.18, 0.3, 0.42, 0.55, 0.68, 0.82]
+  const ratios = [0.12, 0.2, 0.3, 0.42, 0.52, 0.6, 0.68, 0.76, 0.86]
   const seeded = Array.isArray(clip.proof_frames) ? clip.proof_frames.map((frame) => Number(frame.timestamp)) : []
-  return [...new Set([...seeded, ...ratios.map((ratio) => start + duration * ratio)]
+  const cueWords = Array.isArray(clip.subtitles)
+    ? clip.subtitles
+        .filter((word) => /\b(bang|clutch|flag|got|headshot|kill|killing|lmao|no|revenge|sniper|wipe|won|wtf)\b/i.test(word?.text || ''))
+        .slice(0, 8)
+        .map((word) => start + Number(word.start || 0) + 0.35)
+    : []
+
+  return [...new Set([...seeded, ...cueWords, ...ratios.map((ratio) => start + duration * ratio)]
     .filter((value) => Number.isFinite(value))
     .map((value) => Math.max(start, Math.min(end - 0.25, value)).toFixed(2)))]
     .map(Number)
@@ -2894,7 +2962,7 @@ async function handleScoreClips(req, res) {
   let parsed
   try { parsed = JSON.parse(raw) } catch { return sendJson(res, 400, { error: 'Invalid JSON' }) }
 
-  const { words, clipCount, clipLength, detectionMode, customGame, volumeSpikes, jobId, priorityHint, sourceUrl } = parsed
+  const { words, clipCount, clipLength, detectionMode, customGame, volumeSpikes, jobId, priorityHint, sourceUrl, title } = parsed
   if (!words || !jobId) return sendJson(res, 400, { error: 'words and jobId required' })
 
   // Prevent duplicate scoring for same job
@@ -2951,7 +3019,9 @@ async function handleScoreClips(req, res) {
       const transcriptText = sampled
         .map((segment) => `[${formatClock(segment.startSec)}] ${segment.text}`)
         .join('\n')
-      const signatureHit = detectGameBySignatures(transcriptText)
+      const titleContext = typeof title === 'string' && title.trim() ? `TITLE: ${title.trim()}\n` : ''
+      const classificationText = `${titleContext}${transcriptText}`
+      const signatureHit = detectGameBySignatures(classificationText)
 
       let genreInfo = {
         game: customGame?.trim() || signatureHit?.game || 'gaming stream',
@@ -2976,7 +3046,7 @@ Choose exactly one genrePack from this list only:
 Return JSON only on one line:
 {"game":"<specific game if obvious, otherwise broad label>","genrePack":"<one listed value>","confidence":"high|medium|low"}
 
-TRANSCRIPT EXCERPTS:\n${transcriptText}`
+${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
 
         if (!GEMINI_API_KEY) throw new Error('No Gemini key for genre detection')
         const genreContent = await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, genrePrompt, { maxOutputTokens: 512, temperature: 0.1 })
@@ -3096,7 +3166,13 @@ ${scoutTranscript}`
         if (rankDelta !== 0) return rankDelta
         return a.startSec - b.startSec
       })
-      const promptCandidates = topCandidates.slice(0, Math.min(topCandidates.length, 48))
+      const promptCandidates = selectPromptCandidatesWithCoverage(
+        topCandidates,
+        totalSec,
+        Math.min(topCandidates.length, 64),
+        priorityProfile,
+        detectionMode,
+      )
       const shortlistCount = gameplayStrict
         ? Math.min(96, Math.max(clipCount * 9, 40))
         : Math.min(90, Math.max(clipCount * 8, 36))
@@ -3370,13 +3446,12 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       if (result.length < clipCount) {
-        const coverageCandidates = topCandidates
-          .filter((candidate) => candidate.startSec >= introSkipSec)
-          .sort((a, b) => {
-            const scoreDelta = (b.score || 0) - (a.score || 0)
-            if (scoreDelta !== 0) return scoreDelta
-            return a.startSec - b.startSec
-          })
+        const coverageCandidates = sortCandidatesForCoverageBackfill(
+          topCandidates.filter((candidate) => candidate.startSec >= introSkipSec),
+          selectedClips,
+          totalSec,
+          priorityProfile,
+        )
         for (const candidate of coverageCandidates) {
           if (result.length >= clipCount) break
           const payload = buildPriorityAwareClipPayload(
@@ -3566,6 +3641,7 @@ async function handleJobStart(req, res) {
           priorityHint: options.priorityHint,
           volumeSpikes: transcriptionEntry.volumeSpikes || [],
           jobId,
+          title: resolvedTitle,
           sourceUrl: finalSourceUrl,
         }),
       })
@@ -3842,14 +3918,19 @@ function buildStillOutputArgs({ crop, format, outputFile }) {
 }
 
 function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
-  const baseOffsets = windowSec > 0 ? [-2, -1.25, -0.5, 0, 0.5, 1.25, 2] : [0]
+  const safeWindow = Math.max(0, Math.min(10, Number(windowSec) || 0))
+  const baseOffsets = safeWindow > 0
+    ? [-safeWindow, -safeWindow * 0.7, -safeWindow * 0.45, -safeWindow * 0.22, 0, safeWindow * 0.22, safeWindow * 0.45, safeWindow * 0.7, safeWindow]
+    : [0]
+  const maxTimestamp = totalSec ? Math.max(0, totalSec - 0.25) : Number.MAX_SAFE_INTEGER
   const candidates = baseOffsets
-    .map((offset) => Math.max(0, Math.min(totalSec || Number.MAX_SAFE_INTEGER, targetTimestamp + Math.max(-windowSec, Math.min(windowSec, offset)))))
+    .map((offset) => Math.max(0, Math.min(maxTimestamp, targetTimestamp + offset)))
     .filter((value, index, arr) => Number.isFinite(value) && arr.findIndex((other) => Math.abs(other - value) < 0.04) === index)
     .map((timestamp) => {
       const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
-      const distancePenalty = Math.abs(timestamp - targetTimestamp) * 0.35
-      return { timestamp, visual, rank: (visual.score || 0) - distancePenalty }
+      const distancePenalty = Math.abs(timestamp - targetTimestamp) * 0.22
+      const centerBonus = Math.abs(timestamp - targetTimestamp) <= 1.25 ? 1.2 : 0
+      return { timestamp, visual, rank: (visual.score || 0) + centerBonus - distancePenalty }
     })
 
   const usable = candidates.filter((candidate) => candidate.visual.usable)
@@ -3865,6 +3946,7 @@ async function handleStillExport(req, res) {
     const format = normalizeStillFormat(url.searchParams.get('format'))
     const crop = normalizeStillCrop(url.searchParams.get('crop'))
     const qualitySearch = url.searchParams.get('qualitySearch') !== 'false'
+    const qualityWindowSec = Math.max(0, Math.min(10, parseFloat(url.searchParams.get('qualityWindowSec') || '6') || 0))
     const download = url.searchParams.get('download') === 'true'
     const fileBase = (url.searchParams.get('fileName') || 'slicer-still').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 90) || 'slicer-still'
 
@@ -3874,7 +3956,7 @@ async function handleStillExport(req, res) {
     if (!inputPath || !fs.existsSync(inputPath)) return sendJson(res, 404, { error: 'Source file not found for still export' })
 
     const totalSec = getMediaDuration(inputPath)
-    const best = chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualitySearch ? 2 : 0)
+    const best = chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualitySearch ? qualityWindowSec : 0)
     const selectedTimestamp = Math.max(0, best.timestamp)
     const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}`).digest('hex').slice(0, 24)
     const outputFile = path.join(STILL_CACHE_DIR, `still-${cacheHash}.${format === 'png' ? 'png' : 'jpg'}`)
