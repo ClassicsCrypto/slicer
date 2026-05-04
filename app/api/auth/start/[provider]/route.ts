@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { getPublicBaseUrl } from '@/lib/public-url'
 
 const PROVIDERS = ['discord', 'google'] as const
 
@@ -10,7 +11,7 @@ function isProvider(value: string): value is Provider {
 }
 
 function authUrl(provider: Provider, request: NextRequest, state: string) {
-  const origin = request.nextUrl.origin
+  const origin = getPublicBaseUrl(request.nextUrl)
   const redirectUri = `${origin}/api/auth/callback/${provider}`
 
   if (provider === 'discord') {
