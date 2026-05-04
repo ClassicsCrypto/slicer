@@ -50,6 +50,7 @@ export async function GET(request: NextRequest, { params }: { params: { provider
   const state = crypto.randomBytes(24).toString('base64url')
   try {
     const response = NextResponse.redirect(authUrl(params.provider, request, state))
+    response.headers.set('Cache-Control', 'no-store, max-age=0')
     response.cookies.set('slicer_oauth_state', state, {
       httpOnly: true,
       sameSite: 'lax',
