@@ -222,16 +222,20 @@ function ClipCard({
   sourceUrl,
   onPreview,
   onDelete,
+  onVote,
 }: {
   clip: Clip
   sourceUrl: string
   onPreview: (clip: Clip) => void
   onDelete: (clipId: string) => void
+  onVote: (clipId: string, value: 'up' | 'down' | 'neutral') => void
 }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [voting, setVoting] = useState(false)
   const clipDuration = Number.isFinite(clip.duration) ? clip.duration : Math.max(0, clip.end_time - clip.start_time)
   const proofFrameKey = useMemo(() => JSON.stringify(clip.proof_frames || []), [clip.proof_frames])
+  const currentVote = clip.vote?.value
 
   useEffect(() => {
     let cancelled = false
@@ -311,6 +315,38 @@ function ClipCard({
           {clip.matched_categories.slice(0, 3).map((cat) => (
             <Badge key={cat} variant="dark">{formatCategory(cat)}</Badge>
           ))}
+        </div>
+        <div className="mt-3 rounded-lg border border-white/8 bg-black/20 p-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">Teach Slicer</div>
+          <div className="grid grid-cols-3 gap-1">
+            {([
+              ['up', 'Good', '👍'],
+              ['down', 'Miss', '👎'],
+              ['neutral', 'Meh', '➖'],
+            ] as const).map(([value, label, icon]) => (
+              <button
+                key={value}
+                type="button"
+                disabled={voting}
+                onClick={async () => {
+                  setVoting(true)
+                  await Promise.resolve(onVote(getClipStableId(clip), value))
+                  setVoting(false)
+                }}
+                className={`rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50 ${
+                  currentVote === value
+                    ? value === 'up'
+                      ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                      : value === 'down'
+                        ? 'border-red-400/40 bg-red-500/15 text-red-200'
+                        : 'border-white/25 bg-white/10 text-white/80'
+                    : 'border-white/10 bg-white/5 text-white/45 hover:border-white/20 hover:text-white/80'
+                }`}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -641,6 +677,7 @@ function JobCard({
   onRescore,
   onJobComplete,
   onClipDelete,
+  onClipVote,
 }: {
   job: Job
   onDelete: (id: string) => void
@@ -648,6 +685,7 @@ function JobCard({
   onRescore: (id: string) => void
   onJobComplete: (job: Job) => void
   onClipDelete: (jobId: string, clipId: string) => void
+  onClipVote: (jobId: string, clipId: string, value: 'up' | 'down' | 'neutral') => void
 }) {
   const [previewClip, setPreviewClip] = useState<Clip | null>(null)
   const [trimmedStart, setTrimmedStart] = useState<number | null>(null)
@@ -721,6 +759,21 @@ function JobCard({
     setPreviewClip(updatedClip)
   }
 
+  const handleManifestDownload = async () => {
+    const res = await fetch(`/api/jobs/${job.id}/manifest`)
+    if (!res.ok) return
+    const data = await res.json()
+    const blob = new Blob([JSON.stringify(data.manifest, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${slugifyFilePart(job.title)}-clip-manifest.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const previewSubtitleOptions = previewClip ? getClipSubtitleOptions(previewClip.id) : defaultSubtitleOptions
   const previewAspectRatio = previewClip ? getClipAspectRatio(previewClip.id) : 'custom'
 
@@ -764,6 +817,16 @@ function JobCard({
               className="text-white/50 hover:text-white"
             >
               Retry
+            </Button>
+          )}
+          {job.status === 'complete' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); handleManifestDownload() }}
+              className="text-white/40 hover:text-white"
+            >
+              Manifest
             </Button>
           )}
           {job.status === 'complete' && (
@@ -814,6 +877,7 @@ function JobCard({
                   sourceUrl={job.source_url}
                   onPreview={setPreviewClip}
                   onDelete={handleClipDelete}
+                  onVote={(clipId, value) => onClipVote(job.id, clipId, value)}
                 />
               ))}
             </div>
@@ -943,6 +1007,35 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     }
   }
 
+  const handleClipVote = async (jobId: string, clipId: string, value: 'up' | 'down' | 'neutral') => {
+    const vote = { value, voted_at: new Date().toISOString() }
+    setJobs((prev) => prev.map((job) => {
+      if (job.id !== jobId) return job
+      const updateClip = (clip: Clip) => getClipStableId(clip) === clipId ? { ...clip, vote } : clip
+      return {
+        ...job,
+        clips: (job.clips ?? []).map(updateClip),
+        progress: {
+          ...(job.progress ?? {}),
+          completedClips: (job.progress?.completedClips ?? []).map(updateClip),
+        },
+      }
+    }))
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/clips/${clipId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      })
+      if (!res.ok) throw new Error('Failed to save clip vote')
+      fetchJobs()
+    } catch (error) {
+      console.error(error)
+      fetchJobs()
+    }
+  }
+
   const handleRescore = async (jobId: string) => {
     setJobs((prev) =>
       prev.map((job) =>
@@ -1057,6 +1150,7 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
           onRescore={handleRescore}
           onJobComplete={handleJobComplete}
           onClipDelete={handleClipDelete}
+          onClipVote={handleClipVote}
         />
       ))}
     </div>

@@ -160,7 +160,10 @@ curl -L -H "Authorization: Bearer $SLICER_API_KEY" \\
   -o slicer-clip.mp4
 
 curl -H "Authorization: Bearer $SLICER_API_KEY" \\
-  https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/jobs/<job_id>`}</pre>
+  https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/jobs/<job_id>
+
+curl -H "Authorization: Bearer $SLICER_API_KEY" \\
+  https://deputy-stats-implies-beaches.trycloudflare.com/api/v1/jobs/<job_id>/manifest`}</pre>
       </section>
     </div>
   )

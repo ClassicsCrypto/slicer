@@ -25,6 +25,7 @@ export function publicClip(clip: Clip, job: Job) {
     ai_reason: clip.ai_reason,
     matched_categories: clip.matched_categories || [],
     proof_frames: clip.proof_frames || [],
+    vote: clip.vote,
     subtitles: clip.subtitles || [],
     thumbnail_hint: (clip.proof_frames || []).find((frame) => frame.label === 'best') || null,
     created_at: clip.created_at || job.created_at,

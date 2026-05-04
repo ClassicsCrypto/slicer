@@ -36,7 +36,17 @@ export interface Clip {
   virality_score?: number
   subtitles?: SubtitleWord[]
   proof_frames?: ProofFrame[]
+  vote?: ClipVote
   created_at: string
+}
+
+export type ClipVoteValue = 'up' | 'down' | 'neutral'
+
+export interface ClipVote {
+  value: ClipVoteValue
+  reason?: string
+  note?: string
+  voted_at: string
 }
 
 export interface ProofFrame {
@@ -65,6 +75,11 @@ export interface JobProgress {
   completedAt?: string
   scoreRunId?: string
   completedClips?: Clip[]
+  clipVoteStats?: {
+    up: number
+    down: number
+    neutral: number
+  }
   rawInputUrl?: string
   sourceReady?: boolean
 }
