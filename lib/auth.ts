@@ -13,7 +13,7 @@ const SESSION_DAYS = 30
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
 const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000101'
 
-type AuthProvider = 'discord' | 'google' | 'wallet'
+type AuthProvider = 'discord' | 'google' | 'wallet' | 'email'
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 
 export type AuthUser = {
@@ -137,6 +137,14 @@ function ensureAuthSchema(database: Database.Database) {
       wallet_address TEXT PRIMARY KEY,
       nonce TEXT NOT NULL,
       message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS email_login_codes (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     );
@@ -298,6 +306,50 @@ export function upsertOAuthUser(input: {
 
   const workspace = ensureDefaultWorkspaceForUser(userId, input.displayName)
   return { userId, workspaceId: workspace.id }
+}
+
+export function createEmailLoginCode(email: string) {
+  const normalized = email.trim().toLowerCase()
+  const code = crypto.randomInt(100000, 1000000).toString()
+  const ts = nowIso()
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+
+  getDb().prepare(`
+    INSERT INTO email_login_codes (email, code_hash, attempts, created_at, expires_at)
+    VALUES (?, ?, 0, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET
+      code_hash = excluded.code_hash,
+      attempts = 0,
+      created_at = excluded.created_at,
+      expires_at = excluded.expires_at
+  `).run(normalized, hashToken(code), ts, expiresAt)
+
+  return { email: normalized, code, expiresAt }
+}
+
+export function consumeEmailLoginCode(email: string, code: string) {
+  const normalized = email.trim().toLowerCase()
+  const database = getDb()
+  const row = database.prepare(`
+    SELECT * FROM email_login_codes WHERE email = ? AND expires_at > ?
+  `).get(normalized, nowIso()) as { email: string; code_hash: string; attempts: number } | undefined
+
+  if (!row || row.attempts >= 5) return null
+
+  if (row.code_hash !== hashToken(code.trim())) {
+    database.prepare('UPDATE email_login_codes SET attempts = attempts + 1 WHERE email = ?').run(normalized)
+    return null
+  }
+
+  database.prepare('DELETE FROM email_login_codes WHERE email = ?').run(normalized)
+  const displayName = normalized.split('@')[0] || 'Slicer User'
+  return upsertOAuthUser({
+    provider: 'email',
+    providerAccountId: normalized,
+    email: normalized,
+    displayName,
+    avatarUrl: null,
+  })
 }
 
 function ensureDefaultWorkspaceForUser(userId: string, displayName: string): WorkspaceRow {

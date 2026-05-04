@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { attachSessionCookie, createSession, upsertOAuthUser } from '@/lib/auth'
 import { getPublicBaseUrl } from '@/lib/public-url'
 
-const PROVIDERS = ['discord', 'google'] as const
+const PROVIDERS = ['google'] as const
 
 type Provider = (typeof PROVIDERS)[number]
 
@@ -100,9 +100,7 @@ export async function GET(request: NextRequest, { params }: { params: { provider
 
   try {
     const redirectUri = `${getPublicBaseUrl(request.nextUrl)}/api/auth/callback/${provider}`
-    const account = provider === 'discord'
-      ? await exchangeDiscordCode(code, redirectUri)
-      : await exchangeGoogleCode(code, redirectUri)
+    const account = await exchangeGoogleCode(code, redirectUri)
 
     const { userId, workspaceId } = upsertOAuthUser(account)
     const { token, expiresAt } = createSession(userId, workspaceId)

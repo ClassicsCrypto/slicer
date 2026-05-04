@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getPublicBaseUrl } from '@/lib/public-url'
 
-const PROVIDERS = ['discord', 'google'] as const
+const PROVIDERS = ['google'] as const
 
 type Provider = (typeof PROVIDERS)[number]
 
@@ -13,19 +13,6 @@ function isProvider(value: string): value is Provider {
 function authUrl(provider: Provider, request: NextRequest, state: string) {
   const origin = getPublicBaseUrl(request.nextUrl)
   const redirectUri = `${origin}/api/auth/callback/${provider}`
-
-  if (provider === 'discord') {
-    const clientId = process.env.DISCORD_CLIENT_ID || process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID
-    if (!clientId) throw new Error('DISCORD_CLIENT_ID is not configured')
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'identify email',
-      state,
-    })
-    return `https://discord.com/api/oauth2/authorize?${params}`
-  }
 
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
   if (!clientId) throw new Error('GOOGLE_CLIENT_ID is not configured')
