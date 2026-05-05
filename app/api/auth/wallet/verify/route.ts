@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAddress, verifyMessage } from 'viem'
-import { attachSessionCookie, consumeWalletNonce, createSession, getWalletNonce, upsertOAuthUser } from '@/lib/auth'
+import { attachSessionCookie, consumeWalletNonce, createSession, getAuthContext, getWalletNonce, upsertOAuthUser } from '@/lib/auth'
 import { resolveEnsNameForAddress, shortWalletAddress } from '@/lib/ens'
 
 export async function POST(request: NextRequest) {
@@ -19,15 +19,23 @@ export async function POST(request: NextRequest) {
   consumeWalletNonce(walletAddress)
   const ensName = await resolveEnsNameForAddress(walletAddress)
   const displayName = ensName || shortWalletAddress(walletAddress)
-  const { userId, workspaceId } = upsertOAuthUser({
-    provider: 'wallet',
-    providerAccountId: walletAddress.toLowerCase(),
-    email: null,
-    displayName,
-    avatarUrl: null,
-  })
-  const { token, expiresAt } = createSession(userId, workspaceId)
-  const response = NextResponse.json({ ok: true, redirectTo: '/dashboard' })
+  const currentAuth = getAuthContext(request)
+  const linkToUserId = currentAuth?.isDevBypass ? null : currentAuth?.user.id
+  let account: { userId: string; workspaceId: string }
+  try {
+    account = upsertOAuthUser({
+      provider: 'wallet',
+      providerAccountId: walletAddress.toLowerCase(),
+      email: null,
+      displayName,
+      avatarUrl: null,
+      linkToUserId,
+    })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Could not link that wallet.' }, { status: 409 })
+  }
+  const { token, expiresAt } = createSession(account.userId, account.workspaceId)
+  const response = NextResponse.json({ ok: true, linked: Boolean(linkToUserId), redirectTo: '/dashboard' })
   attachSessionCookie(response, token, expiresAt)
   return response
 }

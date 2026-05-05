@@ -108,7 +108,7 @@ export default function LoginPanel() {
   }
 
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-white/10 p-5 text-left" style={{ background: '#15151F' }}>
+    <div className="liquid-card w-full max-w-sm p-5 text-left">
       <div className="mb-4">
         <div className="text-sm font-bold text-white">Sign in to Slicer</div>
         <div className="text-xs text-white/40 mt-1">Use an email one-time code or a wallet. Discord login is disabled while Slicer gets its own app identity.</div>
@@ -121,7 +121,7 @@ export default function LoginPanel() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="email@example.com"
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-white/30"
+            className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-white/30"
             required
           />
           {codeRequested && (
@@ -131,14 +131,14 @@ export default function LoginPanel() {
               onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="6-digit code"
               inputMode="numeric"
-              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold tracking-[0.35em] text-white outline-none transition placeholder:tracking-normal placeholder:text-white/25 focus:border-white/30"
+              className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-semibold tracking-[0.35em] text-white outline-none transition placeholder:tracking-normal placeholder:text-white/25 focus:border-white/30"
               required
             />
           )}
           <button
             type="submit"
             disabled={emailBusy}
-            className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+            className="liquid-button flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-black text-black">@</span>
             {emailBusy ? 'Working…' : codeRequested ? 'Verify code' : 'Send one-time code'}
@@ -162,7 +162,7 @@ export default function LoginPanel() {
           type="button"
           onClick={connectWallet}
           disabled={walletBusy}
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+          className="liquid-button flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
         >
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs">◇</span>
           {walletBusy ? 'Waiting for wallet…' : 'Connect Wallet'}

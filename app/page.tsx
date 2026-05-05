@@ -3,7 +3,7 @@ import LoginPanel from '@/components/auth/LoginPanel'
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4" style={{ background: '#0A0A0F' }}>
+    <main className="min-h-screen flex flex-col items-center justify-center px-4" style={{ background: 'radial-gradient(circle at 50% 10%, rgba(255,77,77,0.12), transparent 28%), radial-gradient(circle at 12% 80%, rgba(0,191,165,0.08), transparent 26%), #0A0A0F' }}>
       {/* Background glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full opacity-10"
@@ -41,8 +41,7 @@ export default function LandingPage() {
           ].map((f) => (
             <div
               key={f.label}
-              className="rounded-xl p-4 border border-white/10 text-left"
-              style={{ background: '#15151F' }}
+              className="liquid-card rounded-xl p-4 text-left"
             >
               <div className="text-2xl mb-2">{f.icon}</div>
               <div className="text-sm font-semibold text-white mb-1">{f.label}</div>

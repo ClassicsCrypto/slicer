@@ -8,20 +8,19 @@ import { resolveEnsNameForAddress } from '@/lib/ens'
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
 const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
 
-function getWalletAddressForUser(userId: string) {
+function getLinkedAccountsForUser(userId: string) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true })
     const db = new Database(DB_PATH)
-    const row = db.prepare(`
-      SELECT provider_account_id FROM linked_accounts
-      WHERE user_id = ? AND provider = 'wallet'
+    const rows = db.prepare(`
+      SELECT provider, provider_account_id FROM linked_accounts
+      WHERE user_id = ?
       ORDER BY updated_at DESC
-      LIMIT 1
-    `).get(userId) as { provider_account_id?: string } | undefined
+    `).all(userId) as Array<{ provider: string; provider_account_id: string }>
     db.close()
-    return row?.provider_account_id || null
+    return rows
   } catch {
-    return null
+    return []
   }
 }
 
@@ -29,9 +28,9 @@ export async function GET(request: NextRequest) {
   const auth = getAuthContext(request)
   if (!auth) return NextResponse.json({ authenticated: false }, { status: 401 })
 
-  const walletAddress = auth.user.primaryProvider === 'wallet'
-    ? getWalletAddressForUser(auth.user.id)
-    : null
+  const linkedAccounts = getLinkedAccountsForUser(auth.user.id)
+  const walletAddress = linkedAccounts.find((account) => account.provider === 'wallet')?.provider_account_id || null
+  const linkedProviders = Array.from(new Set(linkedAccounts.map((account) => account.provider)))
   const ensName = await resolveEnsNameForAddress(walletAddress)
 
   return NextResponse.json({
@@ -40,6 +39,7 @@ export async function GET(request: NextRequest) {
       ...auth.user,
       walletAddress,
       ensName,
+      linkedProviders,
       displayName: ensName || auth.user.displayName,
     },
     workspace: auth.workspace,

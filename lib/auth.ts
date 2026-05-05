@@ -255,18 +255,31 @@ export function upsertOAuthUser(input: {
   accessToken?: string | null
   refreshToken?: string | null
   expiresAt?: string | null
+  linkToUserId?: string | null
 }) {
   const database = getDb()
   const ts = nowIso()
+  const normalizedEmail = input.email?.trim().toLowerCase() || null
   const existingAccount = database.prepare(`
     SELECT user_id FROM linked_accounts WHERE provider = ? AND provider_account_id = ?
   `).get(input.provider, input.providerAccountId) as { user_id: string } | undefined
 
+  const existingEmailUser = normalizedEmail
+    ? database.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: string } | undefined
+    : undefined
+
   let userId = existingAccount?.user_id
-  if (!userId && input.email) {
-    const existingUser = database.prepare('SELECT id FROM users WHERE email = ?').get(input.email) as { id: string } | undefined
-    userId = existingUser?.id
+  if (input.linkToUserId) {
+    if (existingAccount && existingAccount.user_id !== input.linkToUserId) {
+      throw new Error(`${input.provider} is already linked to another Slicer account.`)
+    }
+    if (existingEmailUser && existingEmailUser.id !== input.linkToUserId) {
+      throw new Error('That email is already linked to another Slicer account.')
+    }
+    userId = input.linkToUserId
   }
+
+  if (!userId && existingEmailUser) userId = existingEmailUser.id
   if (!userId) userId = uuid()
 
   database.prepare(`
@@ -277,7 +290,7 @@ export function upsertOAuthUser(input: {
       display_name = excluded.display_name,
       avatar_url = COALESCE(excluded.avatar_url, users.avatar_url),
       updated_at = excluded.updated_at
-  `).run(userId, input.email ?? null, input.displayName, input.avatarUrl ?? null, input.provider, ts, ts)
+  `).run(userId, normalizedEmail, input.displayName, input.avatarUrl ?? null, input.provider, ts, ts)
 
   database.prepare(`
     INSERT INTO linked_accounts (provider, provider_account_id, user_id, email, display_name, avatar_url, access_token, refresh_token, expires_at, created_at, updated_at)
@@ -294,7 +307,7 @@ export function upsertOAuthUser(input: {
     input.provider,
     input.providerAccountId,
     userId,
-    input.email ?? null,
+    normalizedEmail,
     input.displayName,
     input.avatarUrl ?? null,
     input.accessToken ?? null,
@@ -327,7 +340,7 @@ export function createEmailLoginCode(email: string) {
   return { email: normalized, code, expiresAt }
 }
 
-export function consumeEmailLoginCode(email: string, code: string) {
+export function consumeEmailLoginCode(email: string, code: string, linkToUserId?: string | null) {
   const normalized = email.trim().toLowerCase()
   const database = getDb()
   const row = database.prepare(`
@@ -349,6 +362,7 @@ export function consumeEmailLoginCode(email: string, code: string) {
     email: normalized,
     displayName,
     avatarUrl: null,
+    linkToUserId,
   })
 }
 

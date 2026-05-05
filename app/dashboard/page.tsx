@@ -37,8 +37,8 @@ export default function DashboardPage() {
     <div className="min-h-screen" style={{ background: '#0A0A0F' }}>
       {/* Header */}
       <header
-        className="border-b border-white/5 sticky top-0 z-40 backdrop-blur-md"
-        style={{ background: 'rgba(10,10,15,0.9)' }}
+        className="sticky top-0 z-40 border-b border-white/10 backdrop-blur-2xl"
+        style={{ background: 'linear-gradient(135deg, rgba(10,10,15,0.82), rgba(21,21,31,0.58))' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -66,7 +66,7 @@ export default function DashboardPage() {
                 onClick={() => handleTabChange(tab.key)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                   activeTab === tab.key
-                    ? 'text-white'
+                    ? 'liquid-button text-white'
                     : 'text-white/40 hover:text-white/70'
                 }`}
                 style={activeTab === tab.key ? { background: 'linear-gradient(135deg, #FF4D4D22, #FF6B6B11)', borderBottom: '2px solid #FF4D4D' } : {}}

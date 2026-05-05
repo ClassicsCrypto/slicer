@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { attachSessionCookie, consumeEmailLoginCode, createSession } from '@/lib/auth'
+import { attachSessionCookie, consumeEmailLoginCode, createSession, getAuthContext } from '@/lib/auth'
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
@@ -14,13 +14,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Enter the email and 6-digit code.' }, { status: 400 })
   }
 
-  const account = consumeEmailLoginCode(email, code)
-  if (!account) {
-    return NextResponse.json({ error: 'Invalid or expired code.' }, { status: 400 })
+  const currentAuth = getAuthContext(request)
+  const linkToUserId = currentAuth?.isDevBypass ? null : currentAuth?.user.id
+  let account: { userId: string; workspaceId: string }
+  try {
+    const consumed = consumeEmailLoginCode(email, code, linkToUserId)
+    if (!consumed) {
+      return NextResponse.json({ error: 'Invalid or expired code.' }, { status: 400 })
+    }
+    account = consumed
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Could not link that email.' }, { status: 409 })
   }
 
   const { token, expiresAt } = createSession(account.userId, account.workspaceId)
-  const response = NextResponse.json({ ok: true, redirectTo: '/dashboard' })
+  const response = NextResponse.json({ ok: true, linked: Boolean(linkToUserId), redirectTo: '/dashboard' })
   attachSessionCookie(response, token, expiresAt)
   return response
 }
