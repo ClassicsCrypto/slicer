@@ -117,8 +117,36 @@ body {
   100% { transform: translateX(300%); }
 }
 
+@keyframes hover-shimmer {
+  0% { transform: translateX(-140%) skewX(-18deg); opacity: 0; }
+  12% { opacity: 0.55; }
+  100% { transform: translateX(260%) skewX(-18deg); opacity: 0; }
+}
+
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+button:not(:disabled) {
+  position: relative;
+  overflow: hidden;
+}
+
+button:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: -35%;
+  bottom: -35%;
+  left: -45%;
+  width: 38%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  opacity: 0;
+  transform: translateX(-140%) skewX(-18deg);
+}
+
+button:not(:disabled):hover::after {
+  animation: hover-shimmer 0.9s ease-out;
 }
 
 @keyframes float {
