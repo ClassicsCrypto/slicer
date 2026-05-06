@@ -193,8 +193,9 @@ export default function AccountMenu() {
         </button>
 
         {open && (
-          <div className="liquid-card top-origin-popover fixed right-6 top-24 z-[9999] max-h-[calc(100vh-8rem)] w-[min(25rem,calc(100vw-1.5rem))] overflow-y-auto p-4 text-left shadow-2xl shadow-black/50 sm:right-24 sm:top-28">
-          <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="fixed right-6 top-40 z-[9999] w-[min(25rem,calc(100vw-1.5rem))] sm:right-28 sm:top-44">
+            <div className="liquid-card top-origin-popover max-h-[calc(100vh-12rem)] overflow-y-auto p-4 text-left shadow-2xl shadow-black/50">
+              <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-white">Account links</div>
               <div className="mt-1 text-xs text-white/45">Link email and wallet once, then sign in with either later.</div>
@@ -207,9 +208,9 @@ export default function AccountMenu() {
             >
               ×
             </button>
-          </div>
+              </div>
 
-          <div className="space-y-3 text-xs text-white/55">
+              <div className="space-y-3 text-xs text-white/55">
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <div className="font-semibold text-white">Email</div>
               <div className="mt-1">{auth.user.email || 'No email linked yet.'}</div>
@@ -218,9 +219,9 @@ export default function AccountMenu() {
               <div className="font-semibold text-white">Wallet</div>
               <div className="mt-1 break-all">{auth.user.ensName || auth.user.walletAddress || 'No wallet linked yet.'}</div>
             </div>
-          </div>
+              </div>
 
-          <form onSubmit={codeRequested ? verifyEmailCode : requestEmailCode} className="mt-4 space-y-2">
+              <form onSubmit={codeRequested ? verifyEmailCode : requestEmailCode} className="mt-4 space-y-2">
             <input
               type="email"
               value={email}
@@ -245,13 +246,14 @@ export default function AccountMenu() {
             </button>
             {devCode && <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">Preview code: <span className="font-mono font-bold tracking-[0.25em]">{devCode}</span></div>}
             {emailStatus && <p className="text-xs text-white/45">{emailStatus}</p>}
-          </form>
+              </form>
 
-          <button type="button" onClick={connectWallet} disabled={walletBusy} className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60">
+              <button type="button" onClick={connectWallet} disabled={walletBusy} className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60">
             {walletBusy ? 'Waiting for wallet…' : hasWallet ? 'Change linked wallet' : 'Link wallet'}
           </button>
           {!walletAvailable && <p className="mt-2 text-xs text-white/30">Wallet linking appears when a browser wallet is installed.</p>}
-            {walletStatus && <p className="mt-2 text-xs text-white/45">{walletStatus}</p>}
+              {walletStatus && <p className="mt-2 text-xs text-white/45">{walletStatus}</p>}
+            </div>
           </div>
         )}
       </div>
