@@ -583,37 +583,54 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             {currentStill ? (
               <div className="space-y-5">
                 <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-                  <div className="flex items-center justify-center gap-4">
+                  <div className="relative flex min-h-[540px] items-center justify-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_58%)]">
                     <button
                       type="button"
                       onClick={() => moveCarousel(-1)}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                      className="absolute left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
                       aria-label="Previous still"
                     >
                       ‹
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setPreviewStill(currentStill)}
-                      className="relative overflow-hidden rounded-2xl border border-red-400/45 bg-black shadow-2xl shadow-red-950/30"
-                      style={{
-                        width: stillCrop === 'portrait' ? '288px' : stillCrop === 'square' ? '420px' : '640px',
-                        height: stillCrop === 'portrait' ? '512px' : stillCrop === 'square' ? '420px' : '360px',
-                        maxWidth: 'calc(100vw - 12rem)',
-                        maxHeight: '62vh',
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img key={currentStill.thumbUrl} src={currentStill.thumbUrl} alt={`${currentStill.clipLabel} ${currentStill.frameLabel}`} className="h-full w-full object-cover" />
-                      <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${currentStill.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{currentStill.frameLabel}</span>
-                      <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>
-                    </button>
+                    <div className="relative flex h-[540px] w-full max-w-5xl items-center justify-center">
+                      {[-1, 0, 1].map((offset) => {
+                        const index = (currentStillIndex + offset + stills.length) % stills.length
+                        const still = stills[index]
+                        const active = offset === 0
+                        if (!still || (stills.length === 1 && !active)) return null
+                        const translate = offset * 62
+                        const scale = active ? 1 : 0.74
+                        const opacity = active ? 1 : 0.42
+
+                        return (
+                          <button
+                            key={`${still.id}-${offset}-${stillCrop}-${stillFormat}`}
+                            type="button"
+                            onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
+                            className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
+                            style={{
+                              width: stillCrop === 'portrait' ? '288px' : stillCrop === 'square' ? '420px' : '640px',
+                              height: stillCrop === 'portrait' ? '512px' : stillCrop === 'square' ? '420px' : '360px',
+                              maxWidth: active ? 'calc(100vw - 12rem)' : 'calc(100vw - 18rem)',
+                              maxHeight: active ? '62vh' : '48vh',
+                              transform: `translateX(${translate}%) scale(${scale})`,
+                              opacity,
+                            }}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                            <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
+                            {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
 
                     <button
                       type="button"
                       onClick={() => moveCarousel(1)}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                      className="absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
                       aria-label="Next still"
                     >
                       ›
