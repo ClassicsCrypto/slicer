@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
     'content-type',
     'content-length',
     'content-disposition',
-    'cache-control',
     'x-slicer-requested-timestamp',
     'x-slicer-selected-timestamp',
     'x-slicer-still-score',
@@ -38,6 +37,10 @@ export async function GET(request: NextRequest) {
     const value = stillResponse.headers.get(name)
     if (value) headers.set(name, value)
   }
+
+  // Still previews are interactive UI state, not immutable assets. Avoid stale
+  // browser/edge cache when users switch crop/format and refresh the dashboard.
+  headers.set('cache-control', 'no-store, max-age=0')
 
   return new NextResponse(stillResponse.body, { status: 200, headers })
 }

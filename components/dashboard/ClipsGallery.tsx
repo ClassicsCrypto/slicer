@@ -437,6 +437,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         // Earlier qualitySearch=true could jump to a nearby sharper frame, which made the
         // saved still differ from the visible selected still.
         hqParams.set('qualitySearch', 'false')
+        hqParams.set('previewVersion', 'still-export-v2')
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         const hqUrl = `/api/stills/export?${hqParams.toString()}`
