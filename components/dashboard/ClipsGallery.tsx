@@ -594,30 +594,33 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                     </button>
 
                     <div className="relative flex h-[440px] w-full max-w-5xl items-center justify-center">
-                      {[-1, 0, 1].map((offset) => {
+                      {[-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+                        if (!stills.length) return null
                         const index = (currentStillIndex + offset + stills.length) % stills.length
                         const still = stills[index]
                         const active = offset === 0
+                        const absOffset = Math.abs(offset)
                         if (!still || (stills.length === 1 && !active)) return null
                         const activeWidth = stillCrop === 'portrait' ? 288 : stillCrop === 'square' ? 420 : 640
                         const activeHeight = stillCrop === 'portrait' ? 512 : stillCrop === 'square' ? 420 : 360
-                        const sideWidth = stillCrop === 'portrait' ? 150 : stillCrop === 'square' ? 190 : 260
-                        const sideHeight = stillCrop === 'portrait' ? 267 : stillCrop === 'square' ? 190 : 146
-                        const sideOffset = stillCrop === 'portrait' ? 275 : stillCrop === 'square' ? 360 : 520
-                        const opacity = active ? 1 : 0.32
+                        const sideGap = stillCrop === 'portrait' ? 82 : stillCrop === 'square' ? 118 : 150
+                        const scale = active ? 1 : absOffset === 1 ? 0.82 : absOffset === 2 ? 0.68 : 0.54
+                        const opacity = active ? 1 : absOffset === 1 ? 0.72 : absOffset === 2 ? 0.48 : 0.3
+                        const zIndex = active ? 40 : 40 - absOffset
 
                         return (
                           <button
                             key={`${still.id}-${offset}-${stillCrop}-${stillFormat}`}
                             type="button"
                             onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
-                            className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
+                            className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'border-red-400/45 shadow-red-950/30' : 'border-white/10 hover:border-white/25'}`}
                             style={{
-                              width: `${active ? activeWidth : sideWidth}px`,
-                              height: `${active ? activeHeight : sideHeight}px`,
-                              maxWidth: active ? 'calc(100vw - 16rem)' : '260px',
-                              transform: `translateX(${offset * sideOffset}px)`,
+                              width: `${activeWidth}px`,
+                              height: `${activeHeight}px`,
+                              maxWidth: 'calc(100vw - 16rem)',
+                              transform: `translateX(${offset * sideGap}px) scale(${scale})`,
                               opacity,
+                              zIndex,
                             }}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
