@@ -439,10 +439,15 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         hqParams.set('qualitySearch', 'false')
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
+        const hqUrl = `/api/stills/export?${hqParams.toString()}`
+
         return {
           id: `${clipId}-${frameLabel}-${frameIndex}`,
-          thumbUrl: `${apiBase}/thumbnail?${thumbParams.toString()}`,
-          hqUrl: `/api/stills/export?${hqParams.toString()}`,
+          // Still-shot previews must use the same export route as downloads so the
+          // visible thumbnail matches the selected crop/format instead of always
+          // showing the generic 16:9 clip thumbnail.
+          thumbUrl: hqUrl,
+          hqUrl,
           fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${stillCrop}-${Math.round(timestamp)}s.${stillFormat}`,
           clipLabel: `Clip ${clipIndex + 1}`,
           frameLabel: frameLabel === 'best' ? 'Best Still' : frameLabel,
