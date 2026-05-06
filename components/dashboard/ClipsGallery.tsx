@@ -599,9 +599,11 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                         const still = stills[index]
                         const active = offset === 0
                         if (!still || (stills.length === 1 && !active)) return null
-                        const translate = offset * 62
-                        const scale = active ? 1 : 0.74
-                        const opacity = active ? 1 : 0.42
+                        const translate = offset * 82
+                        const scale = active ? 1 : 0.58
+                        const opacity = active ? 1 : 0.34
+                        const activeWidth = stillCrop === 'portrait' ? 288 : stillCrop === 'square' ? 420 : 640
+                        const sideWidth = stillCrop === 'portrait' ? 180 : stillCrop === 'square' ? 260 : 360
 
                         return (
                           <button
@@ -610,10 +612,9 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                             onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
                             className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
                             style={{
-                              width: stillCrop === 'portrait' ? '288px' : stillCrop === 'square' ? '420px' : '640px',
-                              height: stillCrop === 'portrait' ? '512px' : stillCrop === 'square' ? '420px' : '360px',
-                              maxWidth: active ? 'calc(100vw - 12rem)' : 'calc(100vw - 18rem)',
-                              maxHeight: active ? '62vh' : '48vh',
+                              width: `${active ? activeWidth : sideWidth}px`,
+                              aspectRatio: stillCrop === 'portrait' ? '9 / 16' : stillCrop === 'square' ? '1 / 1' : '16 / 9',
+                              maxWidth: active ? 'min(72vw, 640px)' : 'min(32vw, 360px)',
                               transform: `translateX(${translate}%) scale(${scale})`,
                               opacity,
                             }}
