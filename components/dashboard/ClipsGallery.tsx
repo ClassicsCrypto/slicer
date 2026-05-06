@@ -394,7 +394,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
   const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [stillFormat, setStillFormat] = useState<StillFormat>('jpg')
-  const [stillCrop, setStillCrop] = useState<StillCrop>('portrait')
+  const [stillCrop, setStillCrop] = useState<StillCrop>('original')
   const [currentStillIndex, setCurrentStillIndex] = useState(0)
 
   useEffect(() => {
@@ -437,7 +437,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         // Earlier qualitySearch=true could jump to a nearby sharper frame, which made the
         // saved still differ from the visible selected still.
         hqParams.set('qualitySearch', 'false')
-        hqParams.set('previewVersion', `still-export-v3-${stillCrop}-${stillFormat}`)
+        hqParams.set('previewVersion', `still-export-v4-${stillCrop}-${stillFormat}`)
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         const hqUrl = `/api/stills/export?${hqParams.toString()}`
@@ -466,7 +466,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
   }, [stillCrop, stillFormat, open])
 
   useEffect(() => {
-    if (open) setStillCrop('portrait')
+    if (open) setStillCrop('original')
   }, [open])
 
   const currentStill = stills[currentStillIndex] || null
@@ -530,7 +530,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <div className="text-sm font-semibold text-white">Post-ready still exports</div>
-                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Opens in 9:16 social format by default; crop buttons update both preview and download.</div>
+                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Opens in 16:9 format by default; crop buttons update both preview and download.</div>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div>
@@ -583,7 +583,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             {currentStill ? (
               <div className="space-y-5">
                 <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-                  <div className="relative flex min-h-[540px] items-center justify-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_58%)]">
+                  <div className="relative flex min-h-[440px] items-center justify-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_58%)]">
                     <button
                       type="button"
                       onClick={() => moveCarousel(-1)}
@@ -593,17 +593,18 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                       ‹
                     </button>
 
-                    <div className="relative flex h-[540px] w-full max-w-5xl items-center justify-center">
+                    <div className="relative flex h-[440px] w-full max-w-5xl items-center justify-center">
                       {[-1, 0, 1].map((offset) => {
                         const index = (currentStillIndex + offset + stills.length) % stills.length
                         const still = stills[index]
                         const active = offset === 0
                         if (!still || (stills.length === 1 && !active)) return null
-                        const translate = offset * 82
-                        const scale = active ? 1 : 0.58
-                        const opacity = active ? 1 : 0.34
                         const activeWidth = stillCrop === 'portrait' ? 288 : stillCrop === 'square' ? 420 : 640
-                        const sideWidth = stillCrop === 'portrait' ? 180 : stillCrop === 'square' ? 260 : 360
+                        const activeHeight = stillCrop === 'portrait' ? 512 : stillCrop === 'square' ? 420 : 360
+                        const sideWidth = stillCrop === 'portrait' ? 150 : stillCrop === 'square' ? 190 : 260
+                        const sideHeight = stillCrop === 'portrait' ? 267 : stillCrop === 'square' ? 190 : 146
+                        const sideOffset = stillCrop === 'portrait' ? 275 : stillCrop === 'square' ? 360 : 520
+                        const opacity = active ? 1 : 0.32
 
                         return (
                           <button
@@ -613,9 +614,9 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                             className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
                             style={{
                               width: `${active ? activeWidth : sideWidth}px`,
-                              aspectRatio: stillCrop === 'portrait' ? '9 / 16' : stillCrop === 'square' ? '1 / 1' : '16 / 9',
-                              maxWidth: active ? 'min(72vw, 640px)' : 'min(32vw, 360px)',
-                              transform: `translateX(${translate}%) scale(${scale})`,
+                              height: `${active ? activeHeight : sideHeight}px`,
+                              maxWidth: active ? 'calc(100vw - 16rem)' : '260px',
+                              transform: `translateX(${offset * sideOffset}px)`,
                               opacity,
                             }}
                           >
