@@ -183,23 +183,17 @@ export default function AccountMenu() {
   const hasWallet = Boolean(auth.user.walletAddress || linkedProviders.includes('wallet'))
 
   return (
-    <div ref={menuRef} className="relative flex items-center gap-3 text-right">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="group text-right">
-        <div className="text-xs font-semibold text-white group-hover:text-white/80">{auth.user.ensName || auth.user.displayName}</div>
-        <div className="text-[11px] text-white/35">
-          {hasEmail ? 'Email linked' : 'No email'} · {hasWallet ? 'Wallet linked' : 'No wallet'}{auth.isDevBypass ? ' · dev mode' : ''}
-        </div>
-      </button>
-      <button
-        type="button"
-        onClick={logout}
-        className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-white/50 transition hover:border-white/20 hover:text-white"
-      >
-        Sign out
-      </button>
+    <div ref={menuRef} className="flex items-center gap-3 text-right">
+      <div className="relative">
+        <button type="button" onClick={() => setOpen((value) => !value)} className="group text-right">
+          <div className="text-xs font-semibold text-white group-hover:text-white/80">{auth.user.ensName || auth.user.displayName}</div>
+          <div className="text-[11px] text-white/35">
+            {hasEmail ? 'Email linked' : 'No email'} · {hasWallet ? 'Wallet linked' : 'No wallet'}{auth.isDevBypass ? ' · dev mode' : ''}
+          </div>
+        </button>
 
-      {open && (
-        <div className="liquid-card top-origin-popover absolute right-0 top-[calc(100%+0.75rem)] z-[9999] max-h-[calc(100vh-7rem)] w-[min(25rem,calc(100vw-1.5rem))] overflow-y-auto p-4 text-left shadow-2xl shadow-black/50">
+        {open && (
+          <div className="liquid-card top-origin-popover absolute right-0 top-[calc(100%+0.75rem)] z-[9999] max-h-[calc(100vh-7rem)] w-[min(25rem,calc(100vw-1.5rem))] overflow-y-auto p-4 text-left shadow-2xl shadow-black/50">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-white">Account links</div>
@@ -257,9 +251,18 @@ export default function AccountMenu() {
             {walletBusy ? 'Waiting for wallet…' : hasWallet ? 'Change linked wallet' : 'Link wallet'}
           </button>
           {!walletAvailable && <p className="mt-2 text-xs text-white/30">Wallet linking appears when a browser wallet is installed.</p>}
-          {walletStatus && <p className="mt-2 text-xs text-white/45">{walletStatus}</p>}
-        </div>
-      )}
+            {walletStatus && <p className="mt-2 text-xs text-white/45">{walletStatus}</p>}
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={logout}
+        className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-white/50 transition hover:border-white/20 hover:text-white"
+      >
+        Sign out
+      </button>
     </div>
   )
 }

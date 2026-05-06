@@ -582,62 +582,43 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
           <div className="rounded-3xl border border-white/10 bg-black/30 p-4 md:p-6">
             {currentStill ? (
               <div className="space-y-5">
-                <div className="relative flex min-h-[360px] items-center justify-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.12),transparent_58%)] [perspective:1200px]">
-                  <button
-                    type="button"
-                    onClick={() => moveCarousel(-1)}
-                    className="absolute left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
-                    aria-label="Previous still"
-                  >
-                    ‹
-                  </button>
+                <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
+                  <div className="flex items-center justify-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => moveCarousel(-1)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                      aria-label="Previous still"
+                    >
+                      ‹
+                    </button>
 
-                  <div className="relative flex h-[360px] w-full max-w-5xl items-center justify-center">
-                    {[-2, -1, 0, 1, 2].map((offset) => {
-                      const index = (currentStillIndex + offset + stills.length) % stills.length
-                      const still = stills[index]
-                      const active = offset === 0
-                      const hidden = !still || stills.length <= Math.abs(offset)
-                      if (!still || hidden) return null
-                      const translate = offset * 42
-                      const rotate = offset * -18
-                      const scale = active ? 1 : Math.max(0.58, 0.82 - Math.abs(offset) * 0.1)
-                      const opacity = active ? 1 : Math.max(0.18, 0.48 - Math.abs(offset) * 0.12)
+                    <button
+                      type="button"
+                      onClick={() => setPreviewStill(currentStill)}
+                      className="relative overflow-hidden rounded-2xl border border-red-400/45 bg-black shadow-2xl shadow-red-950/30"
+                      style={{
+                        width: stillCrop === 'portrait' ? '288px' : stillCrop === 'square' ? '420px' : '640px',
+                        height: stillCrop === 'portrait' ? '512px' : stillCrop === 'square' ? '420px' : '360px',
+                        maxWidth: 'calc(100vw - 12rem)',
+                        maxHeight: '62vh',
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img key={currentStill.thumbUrl} src={currentStill.thumbUrl} alt={`${currentStill.clipLabel} ${currentStill.frameLabel}`} className="h-full w-full object-cover" />
+                      <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${currentStill.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{currentStill.frameLabel}</span>
+                      <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>
+                    </button>
 
-                      return (
-                        <button
-                          key={`${still.id}-${offset}-${stillCrop}-${stillFormat}`}
-                          type="button"
-                          onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
-                          className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
-                          style={{
-                            width: stillCrop === 'portrait' ? '210px' : stillCrop === 'square' ? '320px' : '520px',
-                            height: stillCrop === 'portrait' ? '340px' : stillCrop === 'square' ? '320px' : '292px',
-                            transform: `translateX(${translate}%) rotateY(${rotate}deg) scale(${scale})`,
-                            opacity,
-                          }}
-                        >
-                          {Math.abs(offset) <= 1 ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="h-full w-full bg-white/[0.03]" />
-                          )}
-                          <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
-                          {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">Click to full preview</span>}
-                        </button>
-                      )
-                    })}
+                    <button
+                      type="button"
+                      onClick={() => moveCarousel(1)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
+                      aria-label="Next still"
+                    >
+                      ›
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => moveCarousel(1)}
-                    className="absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/55 text-2xl text-white/80 transition-all hover:border-red-300/40 hover:text-white"
-                    aria-label="Next still"
-                  >
-                    ›
-                  </button>
                 </div>
 
                 <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
