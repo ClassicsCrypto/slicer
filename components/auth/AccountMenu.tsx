@@ -178,7 +178,7 @@ export default function AccountMenu() {
       </button>
 
       {open && (
-        <div className="liquid-card absolute right-0 top-12 z-50 w-80 p-4 text-left shadow-2xl shadow-black/40">
+        <div className="liquid-card top-origin-popover absolute right-0 top-full z-50 mt-3 w-80 p-4 text-left shadow-2xl shadow-black/40">
           <div className="mb-3">
             <div className="text-sm font-bold text-white">Account links</div>
             <div className="mt-1 text-xs text-white/45">Link email and wallet once, then sign in with either later.</div>

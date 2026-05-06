@@ -68,6 +68,22 @@ body {
   -webkit-backdrop-filter: blur(14px) saturate(145%);
 }
 
+.top-origin-popover {
+  transform-origin: top right;
+  animation: popover-open-from-top 140ms ease-out;
+}
+
+@keyframes popover-open-from-top {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
