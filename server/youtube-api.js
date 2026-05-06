@@ -3914,7 +3914,7 @@ function buildStillOutputArgs({ crop, format, outputFile }) {
     return `-vf "scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
   }
 
-  return `-vf "format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+  return `-filter_complex "[0:v]split=2[base][fg];[base]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=24:2,eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=1920:1080:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
 }
 
 function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
