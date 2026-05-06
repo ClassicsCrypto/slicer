@@ -199,7 +199,7 @@ export default function AccountMenu() {
       </button>
 
       {open && (
-        <div className="liquid-card top-origin-popover fixed right-4 top-28 z-50 max-h-[calc(100vh-8rem)] w-80 overflow-y-auto p-4 text-left shadow-2xl shadow-black/40 sm:right-6">
+        <div className="liquid-card top-origin-popover fixed right-0 top-0 z-50 max-h-screen w-[min(24rem,calc(100vw-0.75rem))] overflow-y-auto rounded-r-none rounded-t-none border-r-0 border-t-0 p-4 text-left shadow-2xl shadow-black/40">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-white">Account links</div>
