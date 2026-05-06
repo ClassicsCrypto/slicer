@@ -394,7 +394,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
   const [previewStill, setPreviewStill] = useState<StillShot | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [stillFormat, setStillFormat] = useState<StillFormat>('jpg')
-  const [stillCrop, setStillCrop] = useState<StillCrop>('original')
+  const [stillCrop, setStillCrop] = useState<StillCrop>('portrait')
   const [currentStillIndex, setCurrentStillIndex] = useState(0)
 
   useEffect(() => {
@@ -437,7 +437,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         // Earlier qualitySearch=true could jump to a nearby sharper frame, which made the
         // saved still differ from the visible selected still.
         hqParams.set('qualitySearch', 'false')
-        hqParams.set('previewVersion', 'still-export-v2')
+        hqParams.set('previewVersion', `still-export-v3-${stillCrop}-${stillFormat}`)
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         const hqUrl = `/api/stills/export?${hqParams.toString()}`
@@ -602,7 +602,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
 
                       return (
                         <button
-                          key={`${still.id}-${offset}`}
+                          key={`${still.id}-${offset}-${stillCrop}-${stillFormat}`}
                           type="button"
                           onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
                           className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'z-20 border-red-400/45 shadow-red-950/30' : 'z-10 border-white/10 hover:border-white/25'}`}
@@ -615,7 +615,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                         >
                           {Math.abs(offset) <= 1 ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                            <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
                           ) : (
                             <div className="h-full w-full bg-white/[0.03]" />
                           )}
@@ -667,7 +667,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
           {previewStill && (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/70">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewStill.hqUrl} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[72vh] w-full object-contain" />
+              <img key={previewStill.hqUrl} src={previewStill.hqUrl} alt={`${previewStill.clipLabel} ${previewStill.frameLabel}`} className="max-h-[72vh] w-full object-contain" />
             </div>
           )}
         </div>
