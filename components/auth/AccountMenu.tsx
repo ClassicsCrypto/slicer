@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 declare global {
   interface Window {
@@ -29,6 +29,7 @@ type AuthPayload = {
 }
 
 export default function AccountMenu() {
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const [auth, setAuth] = useState<AuthPayload | null>(null)
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
@@ -56,6 +57,26 @@ export default function AccountMenu() {
       .catch(() => { if (mounted) setAuth(null) })
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -162,7 +183,7 @@ export default function AccountMenu() {
   const hasWallet = Boolean(auth.user.walletAddress || linkedProviders.includes('wallet'))
 
   return (
-    <div className="relative flex items-center gap-3 text-right">
+    <div ref={menuRef} className="relative flex items-center gap-3 text-right">
       <button type="button" onClick={() => setOpen((value) => !value)} className="group text-right">
         <div className="text-xs font-semibold text-white group-hover:text-white/80">{auth.user.ensName || auth.user.displayName}</div>
         <div className="text-[11px] text-white/35">
@@ -178,10 +199,20 @@ export default function AccountMenu() {
       </button>
 
       {open && (
-        <div className="liquid-card top-origin-popover absolute right-0 top-full z-50 mt-3 w-80 p-4 text-left shadow-2xl shadow-black/40">
-          <div className="mb-3">
-            <div className="text-sm font-bold text-white">Account links</div>
-            <div className="mt-1 text-xs text-white/45">Link email and wallet once, then sign in with either later.</div>
+        <div className="liquid-card top-origin-popover fixed right-4 top-20 z-50 max-h-[calc(100vh-6rem)] w-80 overflow-y-auto p-4 text-left shadow-2xl shadow-black/40 sm:right-6">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-white">Account links</div>
+              <div className="mt-1 text-xs text-white/45">Link email and wallet once, then sign in with either later.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg border border-white/10 px-2 py-1 text-xs font-bold text-white/45 transition hover:border-white/25 hover:text-white"
+              aria-label="Close account options"
+            >
+              ×
+            </button>
           </div>
 
           <div className="space-y-3 text-xs text-white/55">
