@@ -266,10 +266,7 @@ function ClipCard({
   }, [sourceUrl, clip.start_time, clip.end_time, clipDuration, clip.id, proofFrameKey])
 
   return (
-    <div
-      className="rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all group relative"
-      style={{ background: '#15151F' }}
-    >
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/20 transition-all hover:border-white/20 group">
       {/* Thumbnail */}
       <div className="relative aspect-video bg-black/50 flex items-center justify-center cursor-pointer" onClick={() => onPreview(clip)}>
         {thumbUrl ? (
@@ -609,10 +606,8 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                         const zIndex = active ? 40 : 40 - absOffset
 
                         return (
-                          <button
+                          <div
                             key={`${still.id}-${offset}-${stillCrop}-${stillFormat}`}
-                            type="button"
-                            onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
                             className={`absolute overflow-hidden rounded-2xl border bg-black shadow-2xl transition-all duration-300 ${active ? 'border-red-400/45 shadow-red-950/30' : 'border-white/10 hover:border-white/25'}`}
                             style={{
                               width: `${activeWidth}px`,
@@ -624,11 +619,17 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                               zIndex,
                             }}
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
-                            <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
-                            {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => active ? setPreviewStill(still) : setCurrentStillIndex(index)}
+                              className="block h-full w-full overflow-hidden rounded-2xl text-left"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                              <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
+                              {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>}
+                            </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -792,10 +793,7 @@ function JobCard({
   const previewAspectRatio = previewClip ? getClipAspectRatio(previewClip.id) : 'custom'
 
   return (
-    <div
-      className="rounded-2xl border border-white/10 overflow-hidden mb-6"
-      style={{ background: '#15151F' }}
-    >
+    <div className="mb-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
       {/* Job header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
         <div className="flex-1 min-w-0">
@@ -1135,38 +1133,53 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     setTimeout(() => fetchJobs(), 500)
   }
 
-  if (jobs.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-16 md:py-24">
-        <div className="relative flex min-h-[300px] w-full items-center justify-center overflow-hidden rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-8 py-14 md:min-h-[340px] md:px-14 md:py-20">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.14),transparent_64%)]" />
-          <Image
-            src="/slicer-watermark-white.png"
-            alt="Slicer watermark"
-            width={1024}
-            height={1024}
-            className="relative z-10 h-auto w-[340px] opacity-40 drop-shadow-[0_0_70px_rgba(255,77,77,0.18)] md:w-[520px]"
-            priority
-          />
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="py-4">
-      {jobs.map((job) => (
-        <JobCard
-          key={job.id}
-          job={job}
-          onDelete={handleDelete}
-          onRetry={handleRetry}
-          onRescore={handleRescore}
-          onJobComplete={handleJobComplete}
-          onClipDelete={handleClipDelete}
-          onClipVote={handleClipVote}
-        />
-      ))}
+    <div className="py-8 md:py-10 space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-7">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-red-400 text-sm font-bold mb-2">CLIP GALLERY</p>
+            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Review, teach, and export the best cuts.</h1>
+            <p className="text-white/50 leading-7">
+              Finished jobs live here with clip previews, still-shot folders, scoring notes, download controls, and training feedback for Slicer.
+            </p>
+          </div>
+          <div className="max-w-md rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/50">
+            <strong className="text-white/75">Workflow:</strong> preview the clip, vote on quality, export the format, or open still shots for post-ready frames.
+          </div>
+        </div>
+      </section>
+
+      {jobs.length === 0 ? (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+          <div className="relative flex min-h-[300px] w-full items-center justify-center overflow-hidden rounded-[28px] border border-white/10 bg-black/20 px-8 py-14 md:min-h-[340px] md:px-14 md:py-20">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,77,77,0.14),transparent_64%)]" />
+            <Image
+              src="/slicer-watermark-white.png"
+              alt="Slicer watermark"
+              width={1024}
+              height={1024}
+              className="relative z-10 h-auto w-[340px] opacity-40 drop-shadow-[0_0_70px_rgba(255,77,77,0.18)] md:w-[520px]"
+              priority
+            />
+          </div>
+        </section>
+      ) : (
+        <section className="space-y-6">
+          {jobs.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              onDelete={handleDelete}
+              onRetry={handleRetry}
+              onRescore={handleRescore}
+              onJobComplete={handleJobComplete}
+              onClipDelete={handleClipDelete}
+              onClipVote={handleClipVote}
+            />
+          ))}
+        </section>
+      )}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingOptions, Job } from '@/types'
@@ -35,7 +36,7 @@ function getEstimatedTime(durationMin: number): string {
   return 'About 10-15 minutes'
 }
 
-function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: () => void }) {
+function InlineProcessing({ jobId, onComplete, onViewClips }: { jobId: string; onComplete: () => void; onViewClips: () => void }) {
   const [phase, setPhase] = useState(jobId === 'downloading' ? 'downloading' : 'submitting')
   const [elapsed, setElapsed] = useState(0)
   const [showInterstitial, setShowInterstitial] = useState(false)
@@ -91,7 +92,7 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
   if (showInterstitial) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 animate-fadeIn">
-        <img src="/mcv-logo.jpg" alt="MCV" className="w-24 h-24 rounded-full mb-6 drop-shadow-[0_0_20px_rgba(255,77,77,0.4)]" />
+        <Image src="/mcv-logo-official.png" alt="MCV" width={96} height={96} className="w-24 h-24 object-contain mb-6 drop-shadow-[0_0_20px_rgba(255,77,77,0.4)]" />
         <h2 className="text-2xl font-black text-white mb-2">Thanks for using Slicer! 🐱✂️</h2>
         <p className="text-white/40 text-sm mb-1">by Mars Cats Voyage</p>
         <p className="text-white/20 text-xs mt-4">Loading your clips...</p>
@@ -166,7 +167,9 @@ function InlineProcessing({ jobId, onComplete }: { jobId: string; onComplete: ()
 const DEFAULT_OPTIONS: ProcessingOptions = {
   clipCount: 5,
   clipLength: '30',
+  detectionMode: 'default',
   aiFocus: ['funny_moments', 'hype_moments', 'intense_action'],
+  priorityHint: '',
   outputQuality: '720p',
   platformFormat: 'twitter',
   subtitles: {
@@ -177,18 +180,26 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     style: 'bold',
     background: 'none',
     font: 'impact',
+    mode: 'active_word',
+    preset: 'auto',
+    animationPreset: 'pop',
+    highlightColor: '#ffeb3b',
+    activeWordStyle: 'pill',
+    safeZone: 'bottom_safe',
     outlineThickness: 'medium',
     outlineColor: '#000000',
     shadow: true,
     textCase: 'original',
+    watermarkEnabled: true,
   },
 }
 
 interface UploadTabProps {
   onJobCreated: (job: Job) => void
+  onViewClips: () => void
 }
 
-export default function UploadTab({ onJobCreated }: UploadTabProps) {
+export default function UploadTab({ onJobCreated, onViewClips }: UploadTabProps) {
   const [url, setUrl] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [options, setOptions] = useState<ProcessingOptions>(DEFAULT_OPTIONS)
@@ -271,10 +282,55 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     setError(null)
 
     try {
-      let sourceUrl = url.trim()
-      let title = file ? file.name : extractTitle(sourceUrl)
+      const normalizedOptions: ProcessingOptions = {
+        ...options,
+        priorityHint: options.priorityHint?.trim().slice(0, 180) || undefined,
+      }
+      const rawInputUrl = url.trim()
+      let sourceUrl = rawInputUrl
+      let title = file ? file.name.replace(/\.[^.]+$/, '') : extractTitle(rawInputUrl)
+      const inputKind = file ? 'uploaded_file' : 'remote_url'
 
-      // Local file upload: upload to local server (bypasses Supabase RLS/size limits)
+      const createJobRes = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          options: normalizedOptions,
+          inputKind,
+          rawInputUrl: file ? undefined : rawInputUrl,
+        }),
+      })
+      const createJobData = await createJobRes.json()
+      if (!createJobRes.ok || !createJobData.job) {
+        setError(createJobData.error ?? 'Failed to create job')
+        return
+      }
+
+      const job = createJobData.job as Job
+
+      setShowOptions(false)
+      setProcessingJobId(job.id)
+      onJobCreated(job)
+
+      const failJob = async (message: string) => {
+        setError(message)
+        try {
+          await fetch(`/api/jobs/${job.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              status: 'failed',
+              progress: {
+                ...(job.progress || {}),
+                phase: 'failed',
+                progress: message,
+              },
+            }),
+          })
+        } catch {}
+      }
+
       if (file) {
         setUploadProgress('Uploading video...')
         try {
@@ -289,82 +345,16 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
 
           if (!uploadRes.ok) {
             const errText = await uploadRes.text()
-            setError(`Upload failed: ${errText}`)
-            setIsSubmitting(false)
+            await failJob(`Upload failed: ${errText}`)
             setUploadProgress(null)
             return
           }
 
           const uploadData = await uploadRes.json()
           sourceUrl = uploadData.publicUrl
-          title = file.name.replace(/\.[^.]+$/, '')
           setUploadProgress(null)
         } catch (uploadErr) {
-          setError(`Upload error: ${uploadErr}`)
-          setIsSubmitting(false)
-          setUploadProgress(null)
-          return
-        }
-      }
-
-      // YouTube/Twitch: route through local yt-dlp API
-      if (!file && isYouTubeUrl(sourceUrl)) {
-        setError(null)
-        setShowOptions(false) // Close modal immediately
-        // Show processing screen immediately with downloading phase
-        setProcessingJobId('downloading')
-        setUploadProgress('Downloading video...')
-        try {
-          const apiBase = await getApiUrl()
-          // Start download (async — polls for completion)
-          const startRes = await fetch(`${apiBase}/download-start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: sourceUrl }),
-          })
-          const startData = await startRes.json()
-          if (!startRes.ok) {
-            setError(startData.error || 'Download failed to start')
-            setIsSubmitting(false)
-            setUploadProgress(null)
-            return
-          }
-
-          // If download was cached, skip polling
-          if (startData.cached) {
-            sourceUrl = startData.publicUrl
-            title = startData.title || title
-            setUploadProgress(null)
-          } else {
-            // Poll for completion
-            const downloadId = startData.downloadId
-            let done = false
-            while (!done) {
-              await new Promise(r => setTimeout(r, 3000))
-              try {
-                const pollRes = await fetch(`${apiBase}/download-poll/${downloadId}`)
-                const pollData = await pollRes.json()
-                if (pollData.status === 'complete') {
-                  sourceUrl = pollData.publicUrl
-                  title = pollData.title || title
-                  done = true
-                } else if (pollData.status === 'error') {
-                  setError(pollData.error || 'Download failed')
-                  setIsSubmitting(false)
-                  setUploadProgress(null)
-                  return
-                } else {
-                  setUploadProgress(`Downloading... ${pollData.progress || ''}`)
-                }
-              } catch {
-                // Poll failed, retry
-              }
-            }
-            setUploadProgress(null)
-          }
-        } catch {
-          setError('Download server not available. Is the local API running?')
-          setIsSubmitting(false)
+          await failJob(`Upload error: ${uploadErr}`)
           setUploadProgress(null)
           return
         }
@@ -374,23 +364,20 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceUrl,
+          jobId: job.id,
           title,
-          options,
+          sourceUrl: file ? sourceUrl : undefined,
+          rawInputUrl: file ? undefined : rawInputUrl,
+          options: normalizedOptions,
+          inputKind,
         }),
       })
 
       const data = await res.json()
-
       if (!res.ok) {
-        setError(data.error ?? 'Failed to start processing')
-        setIsSubmitting(false)
+        await failJob(data.error ?? 'Failed to start processing')
         return
       }
-
-      // Show processing screen and start polling
-      setShowOptions(false)
-      setProcessingJobId(data.jobId)
     } catch (err) {
       setError(`Network error: ${err}`)
     } finally {
@@ -411,33 +398,36 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
     return (
       <InlineProcessing
         jobId={processingJobId}
+        onViewClips={onViewClips}
         onComplete={() => {
           setProcessingJobId(null)
           setUrl('')
           setIsSubmitting(false)
-          // Build minimal job and switch to clips
-          const completedJob: Job = {
-            id: processingJobId,
-            user_id: '',
-            title: extractTitle(url.trim() || 'Video'),
-            source_url: url.trim(),
-            status: 'complete',
-            options,
-            progress: { phase: 'complete' },
-            clips: [],
-            created_at: new Date().toISOString(),
-          }
-          onJobCreated(completedJob)
+          setUploadProgress(null)
         }}
       />
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-12">
-      {/* Upload progress banner (only for local file uploads, not URL downloads) */}
+    <div className="py-8 md:py-10 space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-7">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-red-400 text-sm font-bold mb-2">UPLOAD & PROCESS</p>
+            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Turn raw streams into clean clips.</h1>
+            <p className="text-white/50 leading-7">
+              Paste YouTube, Twitch, X/Twitter, direct video links, or drop a local file. Slicer queues the job with your export settings and opens finished clips in the gallery.
+            </p>
+          </div>
+          <div className="max-w-md rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100/80">
+            <strong className="text-red-100">Fast path:</strong> paste a URL, hit Analyze, choose the clip settings, and let Slicer do the boring part.
+          </div>
+        </div>
+      </section>
+
       {uploadProgress && !processingJobId && (
-        <div className="mb-6 rounded-xl p-5 border border-yellow-500/20 bg-yellow-500/5 flex items-center gap-4">
+        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4 flex items-center gap-4">
           <div className="w-8 h-8 border-3 border-yellow-500/30 border-t-yellow-400 rounded-full animate-spin flex-shrink-0" />
           <div>
             <p className="text-sm font-semibold text-yellow-400">{uploadProgress}</p>
@@ -445,112 +435,116 @@ export default function UploadTab({ onJobCreated }: UploadTabProps) {
           </div>
         </div>
       )}
-      {/* Features */}
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        {[
-          { icon: '📺', label: 'YouTube, Twitch & X', desc: 'Paste any video URL' },
-          { icon: '📁', label: 'Local Files', desc: 'Upload MP4, MOV, WebM up to 2GB' },
-          { icon: '🧠', label: 'AI Powered', desc: 'AI finds your best moments' },
-        ].map((tip) => (
-          <div
-            key={tip.label}
-            className="rounded-xl p-4 border border-white/5 text-center"
-            style={{ background: '#15151F' }}
-          >
-            <div className="text-2xl mb-2">{tip.icon}</div>
-            <div className="text-xs font-semibold text-white mb-1">{tip.label}</div>
-            <div className="text-xs text-white/30">{tip.desc}</div>
-          </div>
-        ))}
-      </div>
 
-      {/* Drop zone + URL input */}
-      <div
-        {...getRootProps()}
-        className={`rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
-          isDragActive ? 'drag-active' : 'border-white/10 hover:border-white/20'
-        }`}
-        style={{ background: '#15151F' }}
-      >
-        <input {...getInputProps()} />
-
-        <div className="flex flex-col items-center gap-4">
-          <div className="text-5xl animate-float">🎬</div>
-
+      <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6 space-y-4">
           <div>
-            <h3 className="text-xl font-bold text-white mb-1">Drop a video, browse, or paste a URL</h3>
-            <p className="text-white/40 text-sm">YouTube, Twitch, X/Twitter, direct URLs, or local video files</p>
+            <h2 className="text-xl font-bold text-white mb-1">Supported sources</h2>
+            <p className="text-sm text-white/35">Same pipeline, whether the source is platform content or a local file.</p>
           </div>
-
-          <div className="w-full max-w-lg">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="YouTube, Twitch, X/Twitter URL or drop a file"
-                value={url}
-                onChange={(e) => { setUrl(e.target.value); setFile(null); setError(null) }}
-                onKeyDown={(e) => e.key === 'Enter' && handleOpenOptions()}
-                className="flex-1 bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/30 text-sm"
-                readOnly={!!file}
-              />
-              <Button
-                variant="primary"
-                onClick={handleOpenOptions}
-                disabled={!url.trim() && !file}
-              >
-                Analyze →
-              </Button>
+          {[
+            { icon: 'TV', label: 'YouTube, Twitch & X', desc: 'Paste public uploads, VODs, broadcasts, or posts.' },
+            { icon: 'MP4', label: 'Local files', desc: 'Upload MP4, MOV, WebM, or MKV up to 2GB.' },
+            { icon: 'AI', label: 'AI scoring', desc: 'Slicer finds the strongest moments and proof frames.' },
+          ].map((tip) => (
+            <div key={tip.label} className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-xs font-black text-red-200">{tip.icon}</div>
+                <div>
+                  <div className="text-sm font-bold text-white mb-1">{tip.label}</div>
+                  <div className="text-xs leading-5 text-white/35">{tip.desc}</div>
+                </div>
+              </div>
             </div>
-
-            {/* Browse button */}
-            <div className="flex items-center gap-3 mt-3">
-              <label className="cursor-pointer px-4 py-2 rounded-lg border border-white/10 text-white/60 text-sm hover:border-white/30 hover:text-white transition-all">
-                📂 Browse Files
-                <input
-                  type="file"
-                  accept="video/*,audio/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) {
-                      if (f.size > 2 * 1024 * 1024 * 1024) {
-                        setError('File too large — max 2GB')
-                        return
-                      }
-                      setFile(f)
-                      setUrl(`📁 ${f.name}`)
-                      setError(null)
-                    }
-                  }}
-                />
-              </label>
-              {file && (
-                <button
-                  onClick={() => { setFile(null); setUrl('') }}
-                  className="text-white/30 hover:text-red-400 text-xs transition-colors"
-                >
-                  ✕ Clear
-                </button>
-              )}
-              {uploadProgress && (
-                <span className="text-xs text-yellow-400 animate-pulse">{uploadProgress}</span>
-              )}
-            </div>
-
-            {error && (
-              <p className="mt-2 text-red-400 text-sm">{error}</p>
-            )}
-          </div>
-
-          <p className="text-white/20 text-xs">Drag & drop works too — just drop your video here</p>
+          ))}
         </div>
-      </div>
 
-      {/* Limits info */}
-      <div className="mt-4 rounded-xl p-3 border border-white/5 flex items-center justify-center" style={{ background: '#15151F' }}>
-        <div className="flex items-center gap-4 text-xs text-white/40">
-          <span>📏 Max <strong className="text-white/60">2GB</strong> / <strong className="text-white/60">3 hours</strong></span>
-          <span>📄 MP4, MOV, WebM, MKV</span>
+        <div
+          {...getRootProps()}
+          className={`rounded-2xl border p-5 md:p-6 text-center transition-all ${
+            isDragActive ? 'drag-active border-red-400/40 bg-red-500/10' : 'border-white/10 bg-white/[0.03] hover:border-white/20'
+          }`}
+        >
+          <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-6 sm:p-8">
+            <input {...getInputProps()} />
+
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-xl font-black text-red-100 animate-float">S</div>
+
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black text-white mb-2 tracking-tight">Drop a video, browse, or paste a URL</h3>
+                <p className="text-white/45 text-sm">YouTube, Twitch, X/Twitter, direct URLs, or local video files</p>
+              </div>
+
+              <div className="w-full max-w-2xl">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="YouTube, Twitch, X/Twitter URL or drop a file"
+                    value={url}
+                    onChange={(e) => { setUrl(e.target.value); setFile(null); setError(null) }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleOpenOptions()}
+                    className="flex-1 rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-red-500 focus:outline-none"
+                    readOnly={!!file}
+                  />
+                  <Button
+                    variant="primary"
+                    onClick={handleOpenOptions}
+                    disabled={!url.trim() && !file}
+                  >
+                    Analyze &rarr;
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 mt-3 justify-center sm:justify-start">
+                  <label className="cursor-pointer px-4 py-2 rounded-lg border border-white/10 text-white/60 text-sm hover:border-white/30 hover:text-white transition-all">
+                    Browse Files
+                    <input
+                      type="file"
+                      accept="video/*,audio/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) {
+                          if (f.size > 2 * 1024 * 1024 * 1024) {
+                            setError('File too large - max 2GB')
+                            return
+                          }
+                          setFile(f)
+                          setUrl(`File: ${f.name}`)
+                          setError(null)
+                        }
+                      }}
+                    />
+                  </label>
+                  {file && (
+                    <button
+                      onClick={() => { setFile(null); setUrl('') }}
+                      className="text-white/30 hover:text-red-400 text-xs transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {uploadProgress && (
+                    <span className="text-xs text-yellow-400 animate-pulse">{uploadProgress}</span>
+                  )}
+                </div>
+
+                {error && (
+                  <p className="mt-2 text-red-400 text-sm">{error}</p>
+                )}
+              </div>
+
+              <p className="text-white/20 text-xs">Drag and drop works too. Just drop your video here.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-white/45">
+          <span>Max <strong className="text-white/70">2GB</strong> / <strong className="text-white/70">3 hours</strong></span>
+          <span>MP4, MOV, WebM, MKV</span>
         </div>
       </div>
 
