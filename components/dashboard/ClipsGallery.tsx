@@ -603,9 +603,9 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                         if (!still || (stills.length === 1 && !active)) return null
                         const activeWidth = stillCrop === 'portrait' ? 288 : stillCrop === 'square' ? 420 : 640
                         const activeHeight = stillCrop === 'portrait' ? 512 : stillCrop === 'square' ? 420 : 360
-                        const sideGap = stillCrop === 'portrait' ? 82 : stillCrop === 'square' ? 118 : 150
-                        const scale = active ? 1 : absOffset === 1 ? 0.82 : absOffset === 2 ? 0.68 : 0.54
-                        const opacity = active ? 1 : absOffset === 1 ? 0.72 : absOffset === 2 ? 0.48 : 0.3
+                        const sideGap = stillCrop === 'portrait' ? 54 : stillCrop === 'square' ? 76 : 108
+                        const scale = active ? 1 : absOffset === 1 ? 0.88 : absOffset === 2 ? 0.76 : 0.64
+                        const opacity = active ? 1 : absOffset === 1 ? 0.78 : absOffset === 2 ? 0.55 : 0.36
                         const zIndex = active ? 40 : 40 - absOffset
 
                         return (
@@ -619,6 +619,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                               height: `${activeHeight}px`,
                               maxWidth: 'calc(100vw - 16rem)',
                               transform: `translateX(${offset * sideGap}px) scale(${scale})`,
+                              transformOrigin: 'center center',
                               opacity,
                               zIndex,
                             }}
