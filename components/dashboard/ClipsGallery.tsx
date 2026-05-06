@@ -465,6 +465,10 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
     setPreviewStill(null)
   }, [stillCrop, stillFormat, open])
 
+  useEffect(() => {
+    if (open) setStillCrop('portrait')
+  }, [open])
+
   const currentStill = stills[currentStillIndex] || null
 
   const moveCarousel = (delta: number) => {
@@ -526,16 +530,16 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <div className="text-sm font-semibold text-white">Post-ready still exports</div>
-                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Preview/download now saves the exact selected frame.</div>
+                <div className="mt-1 text-xs text-white/55">{stills.length} still shot{stills.length === 1 ? '' : 's'} grouped under this job. Opens in 9:16 social format by default; crop buttons update both preview and download.</div>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div>
                   <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Crop</label>
                   <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/25 p-1">
                     {[
-                      { value: 'original', label: '16:9' },
-                      { value: 'square', label: '1:1' },
                       { value: 'portrait', label: '9:16' },
+                      { value: 'square', label: '1:1' },
+                      { value: 'original', label: '16:9' },
                     ].map((opt) => (
                       <button
                         key={opt.value}
