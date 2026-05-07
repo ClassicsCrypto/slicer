@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createEmailLoginCode } from '@/lib/auth'
+import { sendEmailLoginCode } from '@/lib/email-login'
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
@@ -15,14 +16,28 @@ export async function POST(request: NextRequest) {
 
   const { code, expiresAt } = createEmailLoginCode(email)
 
-  // Delivery hook: wire SMTP/Resend/Postmark here when MCV picks a sender.
-  // Until then, this dev/stable preview exposes the code after request so the team can use OTP login now.
-  console.info(`[slicer-auth] Email login code for ${email}: ${code}`)
+  try {
+    const delivery = await sendEmailLoginCode({ to: email, code, expiresAt })
 
-  return NextResponse.json({
-    ok: true,
-    expiresAt,
-    devCode: code,
-    delivery: 'debug',
-  })
+    if (delivery.delivered) {
+      return NextResponse.json({
+        ok: true,
+        expiresAt,
+        delivery: delivery.provider,
+      })
+    }
+
+    // Development/stable fallback until MCV provides a verified sender and API key.
+    console.info(`[slicer-auth] Email login code for ${email}: ${code}`)
+    return NextResponse.json({
+      ok: true,
+      expiresAt,
+      devCode: code,
+      delivery: 'debug',
+      deliveryReason: delivery.reason,
+    })
+  } catch (error) {
+    console.error('[slicer-auth] Email login delivery failed', error)
+    return NextResponse.json({ error: 'Could not send login code. Please try again.' }, { status: 502 })
+  }
 }
