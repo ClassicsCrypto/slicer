@@ -286,9 +286,6 @@ export default function AutoClipTab() {
               Lowest-friction flow: users enter a Twitch or YouTube handle once. Slicer checks for new public VODs/uploads, queues the latest one, and processes clips with their saved settings.
             </p>
           </div>
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/80 max-w-md">
-            <strong className="text-amber-100">Admin note:</strong> Twitch auto-detection needs backend <code className="text-amber-50">TWITCH_CLIENT_ID</code> and <code className="text-amber-50">TWITCH_CLIENT_SECRET</code>. YouTube uses public channel RSS for basic latest-upload detection. Users never see backend credentials.
-          </div>
         </div>
       </section>
 
