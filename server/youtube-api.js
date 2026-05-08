@@ -162,13 +162,87 @@ function pruneDirectoryFiles(dirPath, shouldDelete) {
       deleted += pruneDirectoryFiles(absolute, shouldDelete)
       continue
     }
-    const stats = fs.statSync(absolute)
+    let stats
+    try {
+      stats = fs.statSync(absolute)
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      throw error
+    }
     if (shouldDelete(absolute, stats)) {
-      fs.unlinkSync(absolute)
-      deleted += 1
+      try {
+        fs.unlinkSync(absolute)
+        deleted += 1
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
     }
   }
   return deleted
+}
+
+
+async function reconcileInterruptedSqliteJobs() {
+  if (!isSqlitePrimaryJobStore()) return
+
+  const staleMinutes = Number(process.env.SLICER_INTERRUPTED_JOB_MINUTES || 45)
+  const cutoffMs = Date.now() - staleMinutes * 60 * 1000
+  const rows = sqliteShadowStore.listShadowJobs(500)
+  const completedRows = rows.filter((row) => row.status === 'complete' && !row.deleted_at)
+  let recovered = 0
+  let failed = 0
+
+  for (const row of rows) {
+    if (row.status !== 'processing' || row.deleted_at) continue
+    const updatedMs = new Date(row.updated_at || row.created_at).getTime()
+    if (Number.isFinite(updatedMs) && updatedMs > cutoffMs) continue
+
+    let progress = {}
+    try { progress = JSON.parse(row.progress_json || '{}') } catch {}
+
+    const matchingComplete = completedRows.find((candidate) => (
+      candidate.id !== row.id &&
+      candidate.raw_input_url === row.raw_input_url &&
+      candidate.source_cache_key === row.source_cache_key &&
+      candidate.options_json === row.options_json
+    ))
+
+    const nowIso = new Date().toISOString()
+    if (matchingComplete) {
+      let sourceProgress = {}
+      try { sourceProgress = JSON.parse(matchingComplete.progress_json || '{}') } catch {}
+      await updateJob(row.id, {
+        status: 'complete',
+        progress: {
+          ...progress,
+          ...sourceProgress,
+          phase: 'complete',
+          progress: 'Clip selection complete. Recovered from matching completed run after API restart interrupted final write.',
+          recoveredFromJobId: matchingComplete.id,
+          recoveredAt: nowIso,
+          completedAt: nowIso,
+        },
+      })
+      recovered += 1
+      continue
+    }
+
+    await updateJob(row.id, {
+      status: 'failed',
+      progress: {
+        ...progress,
+        phase: 'failed',
+        progress: `Processing was interrupted by an API restart and did not resume within ${staleMinutes} minutes. Please retry the job.`,
+        interruptedAt: nowIso,
+        completedAt: nowIso,
+      },
+    })
+    failed += 1
+  }
+
+  if (recovered || failed) {
+    console.warn(`[job-reconcile] Recovered ${recovered} interrupted jobs; marked ${failed} stale jobs failed.`)
+  }
 }
 
 function cleanupTempArtifacts() {
@@ -4169,6 +4243,9 @@ async function handleInfo(req, res) {
 
 server.listen(PORT, () => {
   cleanupTempArtifacts()
+  reconcileInterruptedSqliteJobs().catch((error) => {
+    console.error('[job-reconcile] failed:', error.message)
+  })
   if (isSqlitePrimaryJobStore() && process.env.SLICER_ENABLE_RETENTION_SWEEPER !== 'false') {
     retentionSweeper.scheduleRetentionSweeps({ runImmediately: true })
   } else {
