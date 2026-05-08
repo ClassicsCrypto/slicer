@@ -144,8 +144,11 @@ body {
 }
 
 button:not(:disabled) {
-  position: relative;
   overflow: hidden;
+}
+
+button:not(:disabled):not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
 }
 
 button:not(:disabled)::after {

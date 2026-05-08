@@ -485,26 +485,23 @@ export default function ClipPlayer({
           playsInline
         />
 
-        {!isPlaying && (
-          <button
-            onClick={togglePlay}
-            className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors"
+        <button
+          type="button"
+          onClick={togglePlay}
+          aria-label={isPlaying ? 'Pause clip' : 'Play clip'}
+          className={`absolute inset-0 z-20 flex items-center justify-center transition-colors ${
+            isPlaying ? 'bg-transparent hover:bg-black/20' : 'bg-black/30 hover:bg-black/40'
+          }`}
+        >
+          <span
+            className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl text-white shadow-lg glow-red transition-opacity ${
+              isPlaying ? 'opacity-0 hover:opacity-100' : 'opacity-100'
+            }`}
+            style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
           >
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl shadow-lg glow-red"
-              style={{ background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' }}
-            >
-              ▶
-            </div>
-          </button>
-        )}
-
-        {isPlaying && (
-          <button
-            onClick={togglePlay}
-            className="absolute inset-0 bg-transparent"
-          />
-        )}
+            {isPlaying ? '❚❚' : '▶'}
+          </span>
+        </button>
 
         {subOpts.enabled && displaySubtitles.length > 0 && (
           <SubtitleOverlay

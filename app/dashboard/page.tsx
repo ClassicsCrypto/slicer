@@ -37,8 +37,8 @@ export default function DashboardPage() {
     <div className="min-h-screen" style={{ background: '#0A0A0F' }}>
       {/* Header */}
       <header
-        className="sticky top-0 z-40 border-b border-white/10 backdrop-blur-2xl"
-        style={{ background: 'linear-gradient(135deg, rgba(10,10,15,0.82), rgba(21,21,31,0.58))' }}
+        className="fixed left-0 right-0 top-0 z-50 border-b border-white/10 backdrop-blur-2xl"
+        style={{ background: 'linear-gradient(135deg, rgba(10,10,15,0.92), rgba(21,21,31,0.78))' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -81,7 +81,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6">
+      <main className="max-w-7xl mx-auto px-4 pt-[76px] sm:px-6">
         {activeTab === 'upload' && (
           <UploadTab onJobCreated={handleJobCreated} onViewClips={openClipsTab} />
         )}

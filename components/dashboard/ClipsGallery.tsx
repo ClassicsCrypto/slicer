@@ -313,7 +313,7 @@ function ClipCard({
             <Badge key={cat} variant="dark">{formatCategory(cat)}</Badge>
           ))}
         </div>
-        <div className="mt-3 rounded-lg border border-white/8 bg-black/20 p-2">
+        <div className="mt-3 rounded-lg bg-black/20 p-2">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">Teach Slicer</div>
           <div className="grid grid-cols-3 gap-1">
             {([
@@ -330,14 +330,14 @@ function ClipCard({
                   await Promise.resolve(onVote(getClipStableId(clip), value))
                   setVoting(false)
                 }}
-                className={`rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50 ${
+                className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50 ${
                   currentVote === value
                     ? value === 'up'
-                      ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                      ? 'bg-emerald-500/15 text-emerald-200'
                       : value === 'down'
-                        ? 'border-red-400/40 bg-red-500/15 text-red-200'
-                        : 'border-white/25 bg-white/10 text-white/80'
-                    : 'border-white/10 bg-white/5 text-white/45 hover:border-white/20 hover:text-white/80'
+                        ? 'bg-red-500/15 text-red-200'
+                        : 'bg-white/10 text-white/80'
+                    : 'bg-white/5 text-white/45 hover:bg-white/10 hover:text-white/80'
                 }`}
               >
                 {icon} {label}
@@ -1136,17 +1136,12 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
   return (
     <div className="py-8 md:py-10 space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-red-400 text-sm font-bold mb-2">CLIP GALLERY</p>
-            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Review, teach, and export the best cuts.</h1>
-            <p className="text-white/50 leading-7">
-              Finished jobs live here with clip previews, still-shot folders, scoring notes, download controls, and training feedback for Slicer.
-            </p>
-          </div>
-          <div className="max-w-md rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/50">
-            <strong className="text-white/75">Workflow:</strong> preview the clip, vote on quality, export the format, or open still shots for post-ready frames.
-          </div>
+        <div className="max-w-2xl">
+          <p className="text-red-400 text-sm font-bold mb-2">CLIP GALLERY</p>
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Review, teach, and export the best cuts.</h1>
+          <p className="text-white/50 leading-7">
+            Finished jobs live here with clip previews, still-shot folders, scoring notes, download controls, and training feedback for Slicer.
+          </p>
         </div>
       </section>
 

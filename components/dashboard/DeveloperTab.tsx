@@ -60,7 +60,7 @@ export default function DeveloperTab() {
   }
 
   const revokeKey = async (id: string) => {
-    if (!confirm('Revoke this API key? Existing tools using it will stop working.')) return
+    if (!confirm('Delete this API key? Existing tools using it will stop working.')) return
     setError(null)
     try {
       const res = await fetch(`/api/developer/keys/${id}`, { method: 'DELETE' })
@@ -138,7 +138,7 @@ export default function DeveloperTab() {
                         <div>Last used: {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never'}</div>
                       </div>
                     </div>
-                    {!key.revokedAt && <Button variant="danger" size="sm" onClick={() => revokeKey(key.id)}>Revoke</Button>}
+                    {!key.revokedAt && <Button variant="danger" size="sm" onClick={() => revokeKey(key.id)}>Delete</Button>}
                   </div>
                 </div>
               ))}

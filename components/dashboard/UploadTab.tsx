@@ -412,17 +412,12 @@ export default function UploadTab({ onJobCreated, onViewClips }: UploadTabProps)
   return (
     <div className="py-8 md:py-10 space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-red-400 text-sm font-bold mb-2">UPLOAD & PROCESS</p>
-            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Turn raw streams into clean clips.</h1>
-            <p className="text-white/50 leading-7">
-              Paste YouTube, Twitch, X/Twitter, direct video links, or drop a local file. Slicer queues the job with your export settings and opens finished clips in the gallery.
-            </p>
-          </div>
-          <div className="max-w-md rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100/80">
-            <strong className="text-red-100">Fast path:</strong> paste a URL, hit Analyze, choose the clip settings, and let Slicer do the boring part.
-          </div>
+        <div className="max-w-2xl">
+          <p className="text-red-400 text-sm font-bold mb-2">UPLOAD & PROCESS</p>
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Turn raw streams into clean clips.</h1>
+          <p className="text-white/50 leading-7">
+            Paste YouTube, Twitch, X/Twitter, direct video links, or drop a local file. Slicer queues the job with your export settings and opens finished clips in the gallery.
+          </p>
         </div>
       </section>
 
@@ -469,7 +464,14 @@ export default function UploadTab({ onJobCreated, onViewClips }: UploadTabProps)
             <input {...getInputProps()} />
 
             <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-xl font-black text-red-100 animate-float">S</div>
+              <Image
+                src="/mcv-logo-official.png"
+                alt="Slicer logo"
+                width={72}
+                height={72}
+                className="h-[72px] w-[72px] object-contain drop-shadow-[0_0_18px_rgba(255,77,77,0.45)]"
+                priority
+              />
 
               <div>
                 <h3 className="text-xl sm:text-2xl font-black text-white mb-2 tracking-tight">Drop a video, browse, or paste a URL</h3>
