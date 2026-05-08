@@ -7,18 +7,11 @@ const FALLBACK_URL = 'http://localhost:3001'
 
 export async function getServerApiUrl(): Promise<string> {
   const envUrl = process.env.NEXT_PUBLIC_SLICER_API_URL
-  if (envUrl) return envUrl
+  if (envUrl) return envUrl.replace(/\/$/, '')
 
-  try {
-    const tunnelFile = path.join(process.cwd(), 'server', 'tunnel-url.txt')
-    if (fs.existsSync(tunnelFile)) {
-      const url = fs.readFileSync(tunnelFile, 'utf8').trim()
-      if (/^https?:\/\//i.test(url)) return url.replace(/\/$/, '')
-    }
-  } catch {
-    // Fall through
-  }
-
+  // Prefer the tunnel URL published by the live tunnel process. The checked-in
+  // local file can be stale after git checkout/cleanup and will break browser
+  // thumbnail/still requests if trusted first.
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     if (supabaseUrl) {
@@ -30,6 +23,16 @@ export async function getServerApiUrl(): Promise<string> {
         const url = (await res.text()).trim()
         if (/^https?:\/\//i.test(url)) return url.replace(/\/$/, '')
       }
+    }
+  } catch {
+    // Fall through
+  }
+
+  try {
+    const tunnelFile = path.join(process.cwd(), 'server', 'tunnel-url.txt')
+    if (fs.existsSync(tunnelFile)) {
+      const url = fs.readFileSync(tunnelFile, 'utf8').trim()
+      if (/^https?:\/\//i.test(url)) return url.replace(/\/$/, '')
     }
   } catch {
     // Fall through
