@@ -2030,13 +2030,26 @@ function findPriorityCueMatchInPayload(payload, priorityProfile) {
 
 function getPriorityCueTrimLeadSec(phrase) {
   const lowered = String(phrase || '').toLowerCase()
-  if (/(killing frenzy|killing spree|double kill|triple kill|flag secured|captured the flag|got our flag|got the flag)/.test(lowered)) return 2.5
-  if (/(fought him off|fought them off|got him|got one|picked off|one down|revenge|bang|headshot)/.test(lowered)) return 3
-  return 3.5
+  // Medal/objective notifications are aftermath. Keep enough lead-in to show the actual fight,
+  // not just the badge/audio callout appearing at the start of the clip.
+  if (/(killing frenzy|killing spree|double kill|triple kill)/.test(lowered)) return 9
+  if (/(flag secured|captured the flag|got our flag|got the flag)/.test(lowered)) return 7
+  if (/(fought him off|fought them off|got him|got one|picked off|one down|revenge|bang|headshot)/.test(lowered)) return 6
+  return 5
 }
 
 function buildPriorityAwareClipPayload(startSec, viralityScore, aiReason, words, clipLength, detectionMode, priorityProfile) {
-  let payload = buildClipPayloadFromWindow(startSec, viralityScore, aiReason, words, clipLength, detectionMode)
+  const initialLeadInSec = getGameplayLeadInSec(
+    words
+      .filter((word) => (word.start || 0) / 1000 >= Math.max(0, startSec - 2) && (word.end || 0) / 1000 <= startSec + Math.min(10, clipLength * 0.4))
+      .map((word) => sanitizeTranscriptToken(word.text))
+      .filter(Boolean)
+      .join(' '),
+    priorityProfile,
+    detectionMode,
+  )
+  const initialStartSec = initialLeadInSec > 0 ? Math.max(0, startSec - initialLeadInSec) : startSec
+  let payload = buildClipPayloadFromWindow(initialStartSec, viralityScore, aiReason, words, clipLength, detectionMode)
   if (!payload) return null
 
   const leadInSec = getGameplayLeadInSec(payload.selectedWindow.text, priorityProfile, detectionMode)
@@ -2288,9 +2301,10 @@ function buildProofFramesForClip(startSec, endSec, viralityScore, aiReason, clip
   const scoreBase = Math.max(5, Math.min(10, Number(viralityScore) || 7))
   const lowered = `${aiReason || ''} ${clipText || ''}`.toLowerCase()
   const hasActionCue = /(clutch|kill|headshot|wipe|won|victory|goal|flag|raid|no way|wtf|haha|lmao|bruh)/.test(lowered)
-  const cleanRatio = duration <= 16 ? 0.3 : 0.22
-  const bestRatio = hasActionCue || detectionMode === 'gaming' ? 0.55 : 0.48
-  const actionRatio = hasActionCue || detectionMode === 'gaming' ? 0.68 : 0.62
+  const cleanRatio = duration <= 16 ? 0.28 : 0.2
+  // Bias stills toward the action build/payoff, not the post-action menu/scoreboard aftermath.
+  const bestRatio = hasActionCue || detectionMode === 'gaming' ? 0.46 : 0.44
+  const actionRatio = hasActionCue || detectionMode === 'gaming' ? 0.56 : 0.54
 
   return [
     {
@@ -2322,7 +2336,44 @@ function parseSignalStats(output) {
   return metrics
 }
 
-function visualRejectReason(metrics, timestamp, totalSec) {
+function parseAverageSignalMetric(output, key) {
+  const values = [...String(output || '').matchAll(new RegExp(`lavfi\\.signalstats\\.${key}=(-?\\d+(?:\\.\\d+)?)`, 'g'))]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value))
+  if (!values.length) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function analyzeFrameMotion(inputPath, timestamp) {
+  try {
+    const start = Math.max(0, Number(timestamp || 0) - 0.45)
+    const result = spawnSync('ffmpeg', [
+      '-hide_banner',
+      '-ss', String(start),
+      '-i', inputPath,
+      '-t', '0.9',
+      '-an',
+      '-vf', 'fps=6,scale=160:-1,format=gray,tblend=all_mode=difference,signalstats,metadata=print',
+      '-f', 'null',
+      '-',
+    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    const motionYAvg = parseAverageSignalMetric(output, 'YAVG')
+    if (motionYAvg == null) return { score: 0, reason: 'Motion metrics unavailable.' }
+    return {
+      score: motionYAvg,
+      reason: motionYAvg < 1.1
+        ? 'Very low local motion; likely menu/static overlay.'
+        : motionYAvg < 2.2
+          ? 'Low local motion.'
+          : 'Local motion looks like gameplay.',
+    }
+  } catch (error) {
+    return { score: 0, reason: `Motion scoring skipped: ${error.message}` }
+  }
+}
+
+function visualRejectReason(metrics, timestamp, totalSec, motion) {
   const yAvg = metrics.YAVG ?? 0
   const yMin = metrics.YMIN ?? 0
   const yMax = metrics.YMAX ?? 0
@@ -2335,10 +2386,11 @@ function visualRejectReason(metrics, timestamp, totalSec) {
   if (yAvg > 238 && satAvg < 10) return 'white/blank frame'
   if (contrast < 24) return 'solid/low-detail frame'
   if (satAvg < 3 && contrast < 45) return 'flat grayscale frame'
+  if (motion && motion.score > 0 && motion.score < 1.1 && contrast > 55) return 'static/menu-like frame'
   return null
 }
 
-function scoreVisualMetrics(metrics, timestamp, totalSec) {
+function scoreVisualMetrics(metrics, timestamp, totalSec, motion) {
   const yAvg = metrics.YAVG ?? 0
   const yMin = metrics.YMIN ?? 0
   const yMax = metrics.YMAX ?? 0
@@ -2348,7 +2400,8 @@ function scoreVisualMetrics(metrics, timestamp, totalSec) {
   const contrastScore = contrast >= 115 ? 3 : contrast >= 70 ? 2 : contrast >= 42 ? 1 : -3
   const saturationScore = satAvg >= 18 ? 2 : satAvg >= 8 ? 1 : satAvg < 3 ? -2 : 0
   const edgePenalty = (timestamp < 15 || (totalSec && timestamp > totalSec - 15)) ? -4 : 0
-  return brightnessScore + contrastScore + saturationScore + edgePenalty
+  const motionScore = motion?.score > 4 ? 2 : motion?.score > 2.2 ? 1 : motion?.score > 0 && motion.score < 1.1 ? -5 : 0
+  return brightnessScore + contrastScore + saturationScore + edgePenalty + motionScore
 }
 
 function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
@@ -2369,13 +2422,15 @@ function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
     const output = `${result.stdout || ''}\n${result.stderr || ''}`
     const metrics = parseSignalStats(output)
     if (!Object.keys(metrics).length) return { usable: true, score: 0, reason: 'Visual metrics unavailable.' }
-    const reject = visualRejectReason(metrics, timestamp, totalSec)
-    const visualScore = scoreVisualMetrics(metrics, timestamp, totalSec)
+    const motion = analyzeFrameMotion(inputPath, timestamp)
+    const reject = visualRejectReason(metrics, timestamp, totalSec, motion)
+    const visualScore = scoreVisualMetrics(metrics, timestamp, totalSec, motion)
     return {
       usable: !reject,
       score: visualScore,
-      reason: reject ? `Rejected: ${reject}.` : `Visual pass: brightness/contrast/detail look usable.`,
+      reason: reject ? `Rejected: ${reject}. ${motion.reason}` : `Visual pass: brightness/contrast/detail usable. ${motion.reason}`,
       metrics,
+      motion,
     }
   } catch (error) {
     return { usable: true, score: 0, reason: `Visual scoring skipped: ${error.message}` }
@@ -2386,7 +2441,9 @@ function candidateProofFrameTimestamps(clip) {
   const start = Math.max(0, Number(clip.start_time) || 0)
   const end = Math.max(start + 1, Number(clip.end_time) || start + 1)
   const duration = end - start
-  const ratios = [0.12, 0.2, 0.3, 0.42, 0.52, 0.6, 0.68, 0.76, 0.86]
+  // Prefer early/mid action frames. Late clip frames are where menus, scoreboards,
+  // death screens, and inventory overlays most often appear.
+  const ratios = [0.1, 0.18, 0.26, 0.34, 0.42, 0.5, 0.58, 0.66]
   const seeded = Array.isArray(clip.proof_frames) ? clip.proof_frames.map((frame) => Number(frame.timestamp)) : []
   const cueWords = Array.isArray(clip.subtitles)
     ? clip.subtitles
