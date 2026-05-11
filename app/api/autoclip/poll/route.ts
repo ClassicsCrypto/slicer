@@ -114,7 +114,14 @@ export async function POST(request: NextRequest) {
       }, scope)
       results.push({ subscriptionId: subscription.id, status: 'queued', source, jobId: run.jobId })
     } catch (error: any) {
-      results.push({ subscriptionId: subscription.id, status: 'error', error: error?.message || 'unknown error' })
+      const cause = error?.cause
+      const details = [
+        error?.message || 'unknown error',
+        cause?.code,
+        cause?.hostname,
+        cause?.message,
+      ].filter(Boolean).join(' | ')
+      results.push({ subscriptionId: subscription.id, platform: subscription.platform, status: 'error', error: details })
     }
   }
 

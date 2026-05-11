@@ -9,9 +9,13 @@ export interface TwitchStreamOrVod {
 
 let cachedToken: { token: string; expiresAt: number } | null = null
 
+function cleanEnv(value?: string) {
+  return String(value || '').trim().replace(/^["']|["']$/g, '')
+}
+
 async function getTwitchAppToken() {
-  const clientId = process.env.TWITCH_CLIENT_ID
-  const clientSecret = process.env.TWITCH_CLIENT_SECRET
+  const clientId = cleanEnv(process.env.TWITCH_CLIENT_ID)
+  const clientSecret = cleanEnv(process.env.TWITCH_CLIENT_SECRET)
   if (!clientId || !clientSecret) {
     throw new Error('TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET are required for Twitch polling')
   }
@@ -41,7 +45,7 @@ async function getTwitchAppToken() {
 }
 
 async function twitchFetch(path: string) {
-  const clientId = process.env.TWITCH_CLIENT_ID
+  const clientId = cleanEnv(process.env.TWITCH_CLIENT_ID)
   const token = await getTwitchAppToken()
   const response = await fetch(`https://api.twitch.tv/helix${path}`, {
     headers: {

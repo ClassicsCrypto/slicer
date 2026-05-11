@@ -9,12 +9,15 @@ if (fs.existsSync(envPath)) {
     const eq = trimmed.indexOf('=')
     if (eq === -1) continue
     const key = trimmed.slice(0, eq).trim()
-    const value = trimmed.slice(eq + 1).trim()
+    const rawValue = trimmed.slice(eq + 1).trim()
+    const value = rawValue.replace(/^["']|["']$/g, '')
     if (!process.env[key]) process.env[key] = value
   }
 }
 
-const baseUrl = process.env.SLICER_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
+// PM2 runs this on the same machine as the Next app. Use the local app URL by
+// default so the poller is not dependent on the public Cloudflare tunnel path.
+const baseUrl = process.env.AUTOCLIP_POLL_URL || process.env.SLICER_INTERNAL_URL || 'http://127.0.0.1:3000'
 const mode = process.env.AUTOCLIP_POLL_MODE || 'vod'
 const secret = process.env.AUTOCLIP_POLL_SECRET || process.env.SLICER_INTERNAL_TOKEN || process.env.CRON_SECRET || ''
 

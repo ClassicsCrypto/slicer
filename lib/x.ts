@@ -5,8 +5,12 @@ export interface XVideoSource {
   publishedAt?: string
 }
 
+function cleanEnv(value?: string) {
+  return String(value || '').trim().replace(/^["']|["']$/g, '')
+}
+
 function getBearer() {
-  const token = process.env.X_BEARER_TOKEN || process.env.TWITTER_BEARER_TOKEN
+  const token = cleanEnv(process.env.X_BEARER_TOKEN || process.env.TWITTER_BEARER_TOKEN)
   if (!token) throw new Error('X_BEARER_TOKEN is required for X polling')
   return token
 }
