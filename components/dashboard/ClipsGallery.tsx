@@ -438,13 +438,19 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
         hqParams.set('fileName', `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${Math.round(timestamp)}s`)
 
         const hqUrl = `/api/stills/export?${hqParams.toString()}`
+        const previewParams = new URLSearchParams(hqParams)
+        previewParams.set('preview', 'true')
+        previewParams.set('format', 'jpg')
+        previewParams.set('previewVersion', `still-thumb-v1-${stillCrop}`)
+        previewParams.delete('fileName')
+        const thumbUrl = `/api/stills/export?${previewParams.toString()}`
 
         return {
           id: `${clipId}-${frameLabel}-${frameIndex}`,
-          // Still-shot previews must use the same export route as downloads so the
-          // visible thumbnail matches the selected crop/format instead of always
-          // showing the generic 16:9 clip thumbnail.
-          thumbUrl: hqUrl,
+          // Carousel thumbnails use a cached, downscaled still export. The download
+          // URL stays full quality, but the UI no longer asks ffmpeg/browser to move
+          // multiple 1080p/PNG frames just to render the carousel.
+          thumbUrl,
           hqUrl,
           fileName: `${jobSlug}-clip-${String(clipIndex + 1).padStart(2, '0')}-${slugifyFilePart(frameLabel)}-${stillCrop}-${Math.round(timestamp)}s.${stillFormat}`,
           clipLabel: `Clip ${clipIndex + 1}`,
@@ -591,7 +597,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                     </button>
 
                     <div className="relative flex h-[440px] w-full max-w-5xl items-center justify-center">
-                      {[-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+                      {[-1, 0, 1].map((offset) => {
                         if (!stills.length) return null
                         const index = (currentStillIndex + offset + stills.length) % stills.length
                         const still = stills[index]
@@ -625,7 +631,7 @@ function JobStillShotsFolder({ job, clips }: { job: Job; clips: Clip[] }) {
                               className="block h-full w-full overflow-hidden rounded-2xl text-left"
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} className="h-full w-full object-cover" />
+                              <img key={still.thumbUrl} src={still.thumbUrl} alt={`${still.clipLabel} ${still.frameLabel}`} loading={active ? 'eager' : 'lazy'} decoding="async" className="h-full w-full object-cover" />
                               <span className={`absolute bottom-3 left-3 rounded px-2 py-1 text-[10px] font-semibold uppercase text-white/90 ${still.frameLabel === 'Best Still' ? 'bg-red-500/85' : 'bg-black/70'}`}>{still.frameLabel}</span>
                               {active && <span className="absolute right-3 top-3 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/75">{stillCrop === 'portrait' ? '9:16' : stillCrop === 'square' ? '1:1' : '16:9'} preview</span>}
                             </button>

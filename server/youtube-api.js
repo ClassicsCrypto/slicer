@@ -4031,21 +4031,32 @@ function normalizeStillCrop(value) {
   return 'original'
 }
 
-function buildStillOutputArgs({ crop, format, outputFile }) {
+function buildStillOutputArgs({ crop, format, outputFile, preview = false }) {
   const output = shellQuote(outputFile)
+  const target = preview
+    ? crop === 'portrait'
+      ? { w: 360, h: 640 }
+      : crop === 'square'
+        ? { w: 520, h: 520 }
+        : { w: 640, h: 360 }
+    : crop === 'portrait'
+      ? { w: 1080, h: 1920 }
+      : crop === 'square'
+        ? { w: 1080, h: 1080 }
+        : { w: 1920, h: 1080 }
   const imageCodecArgs = format === 'png'
-    ? `-frames:v 1 -compression_level 2 -y ${output}`
-    : `-frames:v 1 -q:v 1 -y ${output}`
+    ? `-frames:v 1 -compression_level ${preview ? 5 : 2} -y ${output}`
+    : `-frames:v 1 -q:v ${preview ? 5 : 1} -y ${output}`
 
   if (crop === 'portrait') {
-    return `-filter_complex "[0:v]split=2[base][fg];[base]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2,eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+    return `-filter_complex "[0:v]split=2[base][fg];[base]scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},boxblur=${preview ? '12:1' : '24:2'},eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=${target.w}:${target.h}:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
   }
 
   if (crop === 'square') {
-    return `-vf "scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+    return `-vf "scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
   }
 
-  return `-filter_complex "[0:v]split=2[base][fg];[base]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=24:2,eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=1920:1080:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
+  return `-filter_complex "[0:v]split=2[base][fg];[base]scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},boxblur=${preview ? '12:1' : '24:2'},eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=${target.w}:${target.h}:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
 }
 
 function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
@@ -4074,7 +4085,8 @@ async function handleStillExport(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`)
     const sourceUrl = url.searchParams.get('sourceUrl')
     const requestedTimestamp = Math.max(0, parseFloat(url.searchParams.get('timestamp') || '0') || 0)
-    const format = normalizeStillFormat(url.searchParams.get('format'))
+    const preview = url.searchParams.get('preview') === 'true'
+    const format = preview ? 'jpg' : normalizeStillFormat(url.searchParams.get('format'))
     const crop = normalizeStillCrop(url.searchParams.get('crop'))
     const qualitySearch = url.searchParams.get('qualitySearch') !== 'false'
     const qualityWindowSec = Math.max(0, Math.min(10, parseFloat(url.searchParams.get('qualityWindowSec') || '6') || 0))
@@ -4086,17 +4098,19 @@ async function handleStillExport(req, res) {
     const inputPath = resolveServedInputPath(sourceUrl)
     if (!inputPath || !fs.existsSync(inputPath)) return sendJson(res, 404, { error: 'Source file not found for still export' })
 
-    const totalSec = getMediaDuration(inputPath)
-    const best = chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualitySearch ? qualityWindowSec : 0)
+    const totalSec = qualitySearch ? getMediaDuration(inputPath) : null
+    const best = qualitySearch
+      ? chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualityWindowSec)
+      : { timestamp: requestedTimestamp, visual: { score: 0, reason: 'Exact requested frame.' } }
     const selectedTimestamp = Math.max(0, best.timestamp)
-    const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}`).digest('hex').slice(0, 24)
-    const outputFile = path.join(STILL_CACHE_DIR, `still-${cacheHash}.${format === 'png' ? 'png' : 'jpg'}`)
+    const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}|${preview ? 'preview-v1' : 'full-v1'}`).digest('hex').slice(0, 24)
+    const outputFile = path.join(STILL_CACHE_DIR, `${preview ? 'still-thumb' : 'still'}-${cacheHash}.${format === 'png' ? 'png' : 'jpg'}`)
 
     if (!fs.existsSync(outputFile)) {
-      const args = buildStillOutputArgs({ crop, format, outputFile })
+      const args = buildStillOutputArgs({ crop, format, outputFile, preview })
       const cmd = `ffmpeg -hide_banner -ss ${selectedTimestamp.toFixed(2)} -i ${shellQuote(inputPath)} ${args}`
-      console.log(`[still] exporting ${crop}/${format} at ${selectedTimestamp.toFixed(2)}s (requested ${requestedTimestamp.toFixed(2)}s)`)
-      execSync(cmd, { timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] })
+      console.log(`[still] exporting ${preview ? 'preview ' : ''}${crop}/${format} at ${selectedTimestamp.toFixed(2)}s (requested ${requestedTimestamp.toFixed(2)}s)`)
+      execSync(cmd, { timeout: preview ? 12000 : 20000, stdio: ['ignore', 'pipe', 'pipe'] })
     }
 
     if (!fs.existsSync(outputFile)) return sendJson(res, 500, { error: 'Still file not created' })

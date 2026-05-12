@@ -38,9 +38,8 @@ export async function GET(request: NextRequest) {
     if (value) headers.set(name, value)
   }
 
-  // Still previews are interactive UI state, not immutable assets. Avoid stale
-  // browser/edge cache when users switch crop/format and refresh the dashboard.
-  headers.set('cache-control', 'no-store, max-age=0')
+  const upstreamCache = stillResponse.headers.get('cache-control')
+  headers.set('cache-control', upstreamCache || 'public, max-age=86400, stale-while-revalidate=604800')
 
   return new NextResponse(stillResponse.body, { status: 200, headers })
 }
