@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerApiUrl } from '@/lib/api-url-server'
+import { getInternalServerApiUrl } from '@/lib/api-url-server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (!sourceUrl) return NextResponse.json({ error: 'sourceUrl required' }, { status: 400 })
   if (!timestamp) return NextResponse.json({ error: 'timestamp required' }, { status: 400 })
 
-  const apiBase = await getServerApiUrl()
+  const apiBase = getInternalServerApiUrl()
   const stillUrl = new URL(`${apiBase}/still`)
 
   for (const [key, value] of request.nextUrl.searchParams.entries()) {

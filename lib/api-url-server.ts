@@ -5,18 +5,22 @@ import path from 'path'
 
 const FALLBACK_URL = 'http://localhost:3001'
 
-export async function getServerApiUrl(): Promise<string> {
+function cleanUrl(url: string) {
+  return url.replace(/\/$/, '')
+}
+
+export function getInternalServerApiUrl(): string {
   const internalUrl = process.env.SLICER_INTERNAL_API_URL || process.env.SLICER_API_INTERNAL_URL
-  if (internalUrl) return internalUrl.replace(/\/$/, '')
+  if (internalUrl) return cleanUrl(internalUrl)
+  return FALLBACK_URL
+}
 
-  // Server-side routes run beside the local Slicer API. Prefer localhost so
-  // still/thumbnail proxying does not round-trip through the public tunnel.
-  if (process.env.SLICER_SERVER_API_USE_PUBLIC !== 'true') return FALLBACK_URL
-
+export async function getServerApiUrl(): Promise<string> {
   const envUrl = process.env.NEXT_PUBLIC_SLICER_API_URL
-  if (envUrl) return envUrl.replace(/\/$/, '')
+  if (envUrl) return cleanUrl(envUrl)
 
-  // Public URL fallback for hosted deployments where the API is not colocated.
+  // Browser-facing runtime config must return a public URL. Returning localhost
+  // works on this machine but breaks clip thumbnails for everyone else.
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     if (supabaseUrl) {
@@ -26,7 +30,7 @@ export async function getServerApiUrl(): Promise<string> {
       )
       if (res.ok) {
         const url = (await res.text()).trim()
-        if (/^https?:\/\//i.test(url)) return url.replace(/\/$/, '')
+        if (/^https?:\/\//i.test(url)) return cleanUrl(url)
       }
     }
   } catch {
@@ -37,7 +41,7 @@ export async function getServerApiUrl(): Promise<string> {
     const tunnelFile = path.join(process.cwd(), 'server', 'tunnel-url.txt')
     if (fs.existsSync(tunnelFile)) {
       const url = fs.readFileSync(tunnelFile, 'utf8').trim()
-      if (/^https?:\/\//i.test(url)) return url.replace(/\/$/, '')
+      if (/^https?:\/\//i.test(url)) return cleanUrl(url)
     }
   } catch {
     // Fall through
