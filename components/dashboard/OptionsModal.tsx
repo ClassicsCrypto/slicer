@@ -1,25 +1,32 @@
 'use client'
 
-import { ProcessingOptions, AIFocus, ClipLength, SubtitleOptions, SubtitleSize, SubtitleColor, SubtitlePosition, SubtitleStyle, SubtitleBackground, SubtitleFont, SubtitleOutlineThickness, SubtitleOutlineColor, SubtitleCase } from '@/types'
+import { ProcessingOptions, AIFocus, ClipLength, DetectionMode } from '@/types'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 
-const AI_FOCUS_OPTIONS: { value: AIFocus; label: string; emoji: string }[] = [
-  { value: 'funny_moments', label: 'Funny Moments', emoji: '😂' },
-  { value: 'kill_streaks', label: 'Kill Streaks', emoji: '🔫' },
-  { value: 'intense_action', label: 'Intense Action', emoji: '💥' },
-  { value: 'big_plays', label: 'Big Plays', emoji: '🏆' },
-  { value: 'reactions', label: 'Reactions', emoji: '😮' },
-  { value: 'key_dialogue', label: 'Key Dialogue', emoji: '💬' },
-  { value: 'hype_moments', label: 'Hype Moments', emoji: '🔥' },
-  { value: 'fails', label: 'Fails', emoji: '💀' },
+const AI_FOCUS_OPTIONS: { value: AIFocus; label: string; icon: string; desc: string }[] = [
+  { value: 'funny_moments', label: 'Funny Moments', icon: '\uD83D\uDE02', desc: 'jokes, chaos, reactions' },
+  { value: 'kill_streaks', label: 'Kill Streaks', icon: '\uD83D\uDC80', desc: 'multi-kills and streaks' },
+  { value: 'intense_action', label: 'Intense Action', icon: '\uD83D\uDD25', desc: 'fights, tension, pressure' },
+  { value: 'big_plays', label: 'Big Plays', icon: '\uD83C\uDFC6', desc: 'wins and clutch moments' },
+  { value: 'reactions', label: 'Reactions', icon: '\uD83D\uDE31', desc: 'facecam or voice spikes' },
+  { value: 'key_dialogue', label: 'Key Dialogue', icon: '\uD83D\uDDE3\uFE0F', desc: 'strong spoken moments' },
+  { value: 'hype_moments', label: 'Hype Moments', icon: '\u26A1', desc: 'high-energy clips' },
+  { value: 'fails', label: 'Fails', icon: '\uD83D\uDCA5', desc: 'mistakes worth clipping' },
 ]
 
-const CLIP_LENGTHS: { value: ClipLength; label: string }[] = [
-  { value: '15', label: '15s' },
-  { value: '30', label: '30s' },
-  { value: '45', label: '45s' },
-  { value: '60', label: '60s' },
+const CLIP_LENGTHS: { value: ClipLength; label: string; desc: string }[] = [
+  { value: '15', label: '15s', desc: 'tight cuts' },
+  { value: '30', label: '30s', desc: 'default' },
+  { value: '45', label: '45s', desc: 'context' },
+  { value: '60', label: '60s', desc: 'full beat' },
+]
+
+const DETECTION_MODES: { value: DetectionMode; label: string; desc: string }[] = [
+  { value: 'default', label: 'Default', desc: 'balanced clip scoring' },
+  { value: 'gaming', label: 'Gaming', desc: 'combat, wins, objectives' },
+  { value: 'funny', label: 'Funny', desc: 'bits, fails, laughs' },
+  { value: 'conversation', label: 'Dialogue', desc: 'clear spoken moments' },
 ]
 
 interface OptionsModalProps {
@@ -33,6 +40,51 @@ interface OptionsModalProps {
   fetchingInfo?: boolean
 }
 
+function Toggle({ checked, onClick }: { checked: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative h-6 w-11 rounded-full transition-colors ${checked ? 'bg-red-500' : 'bg-white/20'}`}
+    >
+      <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  )
+}
+
+function OptionCard({
+  active,
+  label,
+  desc,
+  icon,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  desc?: string
+  icon?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border p-3 text-left transition-all ${
+        active
+          ? 'border-red-500 bg-red-500/10 text-white shadow-[0_0_24px_rgba(255,77,77,0.08)]'
+          : 'border-white/10 bg-black/20 text-white/50 hover:border-white/25 hover:text-white'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        {icon && <span className="text-base leading-none">{icon}</span>}
+        <span className="text-sm font-bold">{label}</span>
+        {active && <span className="ml-auto text-xs text-red-300">✓</span>}
+      </div>
+      {desc && <div className="mt-1 text-[11px] leading-4 text-white/35">{desc}</div>}
+    </button>
+  )
+}
+
 export default function OptionsModal({
   open,
   onClose,
@@ -44,341 +96,168 @@ export default function OptionsModal({
   fetchingInfo,
 }: OptionsModalProps) {
   const toggleFocus = (focus: AIFocus) => {
-    const current = options.aiFocus
-    const next = current.includes(focus)
-      ? current.filter((f) => f !== focus)
-      : [...current, focus]
+    const next = options.aiFocus.includes(focus)
+      ? options.aiFocus.filter((f) => f !== focus)
+      : [...options.aiFocus, focus]
     onChange({ ...options, aiFocus: next })
   }
 
+  const updateSubtitles = (patch: Partial<ProcessingOptions['subtitles']>) => {
+    onChange({ ...options, subtitles: { ...options.subtitles, ...patch } })
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Clip Options" maxWidth="max-w-xl">
-      <div className="space-y-6">
-        {/* Clip Count */}
-        <div>
-          <label className="block text-sm font-medium text-white/70 mb-2">
-            Number of Clips: <span className="text-white">{options.clipCount}</span>
-          </label>
+    <Modal open={open} onClose={onClose} title="Clip Options" maxWidth="max-w-2xl">
+      <div className="space-y-5">
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-white">Clip count</h3>
+              <p className="text-xs text-white/35">How many finished clips Slicer should target.</p>
+            </div>
+            <span className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1 text-lg font-black text-red-100">{options.clipCount}</span>
+          </div>
           <input
             type="range"
             min={1}
             max={10}
             value={options.clipCount}
-            onChange={(e) => onChange({ ...options, clipCount: parseInt(e.target.value) })}
+            onChange={(e) => onChange({ ...options, clipCount: parseInt(e.target.value, 10) })}
             className="w-full accent-red-500"
           />
-          <div className="flex justify-between text-xs text-white/30 mt-1">
-            <span>1</span><span>10</span>
-          </div>
-        </div>
+          <div className="mt-1 flex justify-between text-xs text-white/30"><span>1</span><span>10</span></div>
+        </section>
 
-        {/* Clip Length */}
-        <div>
-          <label className="block text-sm font-medium text-white/70 mb-2">Clip Length</label>
-          <div className="flex gap-2">
-            {CLIP_LENGTHS.map((l) => (
-              <button
-                key={l.value}
-                onClick={() => onChange({ ...options, clipLength: l.value })}
-                className={`flex-1 py-2 rounded-lg border text-sm font-semibold transition-all ${
-                  options.clipLength === l.value
-                    ? 'border-red-500 text-red-400 bg-red-500/10'
-                    : 'border-white/10 text-white/50 hover:border-white/30'
-                }`}
-              >
-                {l.label}
-              </button>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-bold text-white">Clip length</h3>
+            <p className="text-xs text-white/35">Pick the target length for each cut.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CLIP_LENGTHS.map((length) => (
+              <OptionCard
+                key={length.value}
+                active={options.clipLength === length.value}
+                label={length.label}
+                desc={length.desc}
+                onClick={() => onChange({ ...options, clipLength: length.value })}
+              />
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* AI Focus */}
-        <div>
-          <label className="block text-sm font-medium text-white/70 mb-2">AI Focus</label>
-          <div className="grid grid-cols-2 gap-2">
-            {AI_FOCUS_OPTIONS.map((f) => {
-              const active = options.aiFocus.includes(f.value)
-              return (
-                <button
-                  key={f.value}
-                  onClick={() => toggleFocus(f.value)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-                    active
-                      ? 'border-red-500 bg-red-500/10 text-white'
-                      : 'border-white/10 text-white/50 hover:border-white/30'
-                  }`}
-                >
-                  <span>{f.emoji}</span>
-                  <span>{f.label}</span>
-                </button>
-              )
-            })}
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-bold text-white">Detection mode</h3>
+            <p className="text-xs text-white/35">Tune what Slicer treats as a strong moment.</p>
           </div>
-        </div>
-
-        {/* Subtitle Options */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-white/70">Subtitles</label>
-            <button
-              onClick={() => onChange({
-                ...options,
-                subtitles: { ...options.subtitles, enabled: !options.subtitles.enabled },
-              })}
-              className={`relative w-10 h-5 rounded-full transition-colors ${
-                options.subtitles.enabled ? 'bg-red-500' : 'bg-white/20'
-              }`}
-            >
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                options.subtitles.enabled ? 'translate-x-5' : 'translate-x-0.5'
-              }`} />
-            </button>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {DETECTION_MODES.map((mode) => (
+              <OptionCard
+                key={mode.value}
+                active={options.detectionMode === mode.value}
+                label={mode.label}
+                desc={mode.desc}
+                onClick={() => onChange({ ...options, detectionMode: mode.value })}
+              />
+            ))}
           </div>
+        </section>
 
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-bold text-white">AI focus</h3>
+            <p className="text-xs text-white/35">Select all clip types the model should favor.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {AI_FOCUS_OPTIONS.map((focus) => (
+              <OptionCard
+                key={focus.value}
+                active={options.aiFocus.includes(focus.value)}
+                label={focus.label}
+                desc={focus.desc}
+                icon={focus.icon}
+                onClick={() => toggleFocus(focus.value)}
+              />
+            ))}
+          </div>
+          {options.aiFocus.length === 0 && <p className="mt-2 text-xs text-yellow-300">Select at least one focus type before processing.</p>}
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-white">Subtitles</h3>
+              <p className="text-xs text-white/35">Generate captions now; fine-tune styling per clip after processing.</p>
+            </div>
+            <Toggle checked={options.subtitles.enabled} onClick={() => updateSubtitles({ enabled: !options.subtitles.enabled })} />
+          </div>
           {options.subtitles.enabled && (
-            <div className="pl-1">
-              <p className="text-xs text-white/30">Style options available per-clip after processing</p>
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs leading-5 text-white/45">
+              Per-clip subtitle styling stays in the Clips tab so upload stays clean and fast.
             </div>
           )}
-          {/* REMOVED: all subtitle style options moved to clips tab */}
-          {false && options.subtitles.enabled && (
-            <div className="space-y-4 pl-1">
-              {/* Size */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Size</label>
-                <div className="flex gap-2">
-                  {(['small', 'medium', 'large'] as SubtitleSize[]).map(s => (
-                    <button
-                      key={s}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, size: s } })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                        options.subtitles.size === s
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        </section>
 
-              {/* Color */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Color</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: '#ffffff' as SubtitleColor, label: 'White', swatch: '#ffffff' },
-                    { value: '#ffff00' as SubtitleColor, label: 'Yellow', swatch: '#ffff00' },
-                    { value: '#FF4D4D' as SubtitleColor, label: 'Mars Red', swatch: '#FF4D4D' },
-                  ]).map(c => (
-                    <button
-                      key={c.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, color: c.value } })}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-all ${
-                        options.subtitles.color === c.value
-                          ? 'border-red-500 bg-red-500/10 text-white'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full" style={{ background: c.swatch }} />
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Position */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Position</label>
-                <div className="flex gap-2">
-                  {(['bottom', 'center', 'top'] as SubtitlePosition[]).map(p => (
-                    <button
-                      key={p}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, position: p } })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                        options.subtitles.position === p
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Font */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Font</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'impact' as SubtitleFont, label: 'Impact', desc: 'Classic meme font' },
-                    { value: 'bebas' as SubtitleFont, label: 'Bebas Neue', desc: 'Clean & tall' },
-                    { value: 'montserrat' as SubtitleFont, label: 'Montserrat', desc: 'Modern geometric' },
-                  ]).map(f => (
-                    <button
-                      key={f.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, font: f.value } })}
-                      className={`flex-1 py-2 rounded-lg border text-xs text-center transition-all ${
-                        (options.subtitles.font || 'impact') === f.value
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      <div className="font-semibold">{f.label}</div>
-                      <div className="text-white/30 text-[10px]">{f.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Outline Thickness */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Outline</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'thin' as SubtitleOutlineThickness, label: 'Thin' },
-                    { value: 'medium' as SubtitleOutlineThickness, label: 'Medium' },
-                    { value: 'thick' as SubtitleOutlineThickness, label: 'Thick' },
-                  ]).map(o => (
-                    <button
-                      key={o.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, outlineThickness: o.value } })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                        (options.subtitles.outlineThickness || 'medium') === o.value
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Outline Color */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Outline Color</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: '#000000' as SubtitleOutlineColor, label: 'Black', swatch: '#000000' },
-                    { value: '#ffffff' as SubtitleOutlineColor, label: 'White', swatch: '#ffffff' },
-                    { value: '#FF4D4D' as SubtitleOutlineColor, label: 'Red', swatch: '#FF4D4D' },
-                  ]).map(c => (
-                    <button
-                      key={c.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, outlineColor: c.value } })}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-all ${
-                        (options.subtitles.outlineColor || '#000000') === c.value
-                          ? 'border-red-500 bg-red-500/10 text-white'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      <span className="w-3 h-3 rounded-full border border-white/20" style={{ background: c.swatch }} />
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shadow */}
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-white/50">Drop Shadow</label>
-                <button
-                  onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, shadow: !options.subtitles.shadow } })}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    options.subtitles.shadow ? 'bg-red-500' : 'bg-white/20'
-                  }`}
-                >
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                    options.subtitles.shadow ? 'translate-x-5' : 'translate-x-0.5'
-                  }`} />
-                </button>
-              </div>
-
-              {/* Letter Case */}
-              <div>
-                <label className="block text-xs text-white/50 mb-1.5">Letter Case</label>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'upper' as SubtitleCase, label: 'UPPER' },
-                    { value: 'title' as SubtitleCase, label: 'Title Case' },
-                    { value: 'original' as SubtitleCase, label: 'Original' },
-                  ]).map(c => (
-                    <button
-                      key={c.value}
-                      onClick={() => onChange({ ...options, subtitles: { ...options.subtitles, textCase: c.value } })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                        (options.subtitles.textCase || 'upper') === c.value
-                          ? 'border-red-500 text-red-400 bg-red-500/10'
-                          : 'border-white/10 text-white/50 hover:border-white/30'
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Quality + Format */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">Quality</label>
+        <section className="grid gap-3 sm:grid-cols-2">
+          <label className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <span className="mb-2 block text-sm font-bold text-white">Quality</span>
             <select
               value={options.outputQuality}
-              onChange={(e) => onChange({ ...options, outputQuality: e.target.value as '720p' | '1080p' })}
-              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              onChange={(e) => onChange({ ...options, outputQuality: e.target.value as ProcessingOptions['outputQuality'] })}
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none"
             >
               <option value="720p">720p</option>
               <option value="1080p">1080p</option>
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">Aspect Ratio</label>
+          </label>
+          <label className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <span className="mb-2 block text-sm font-bold text-white">Aspect ratio</span>
             <select
               value={options.platformFormat}
               onChange={(e) => onChange({ ...options, platformFormat: e.target.value as ProcessingOptions['platformFormat'] })}
-              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-red-500 focus:outline-none"
             >
               <option value="twitter">16:9 Landscape (YouTube/Twitter)</option>
               <option value="tiktok">9:16 Vertical (TikTok/Reels/Shorts)</option>
               <option value="youtube_shorts">1:1 Square (Instagram)</option>
               <option value="custom">Original (no crop)</option>
             </select>
-          </div>
-        </div>
+          </label>
+        </section>
 
-        {/* Video info */}
+        <label className="block rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <span className="mb-2 block text-sm font-bold text-white">Clip priority <span className="text-white/30">optional</span></span>
+          <textarea
+            value={options.priorityHint || ''}
+            maxLength={180}
+            onChange={(e) => onChange({ ...options, priorityHint: e.target.value })}
+            placeholder="Examples: gunfights, clutch moments, funny rage, big wins"
+            className="min-h-[72px] w-full resize-none rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-red-500 focus:outline-none"
+          />
+        </label>
+
         {fetchingInfo && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-            <span className="w-3 h-3 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
             <span className="text-xs text-white/40">Fetching video info...</span>
           </div>
         )}
         {videoInfo && !fetchingInfo && (
-          <div className="px-3 py-2.5 rounded-lg border bg-green-500/10 border-green-500/20">
-            <span className="text-xs text-white/60">
-              📏 <strong>{videoInfo.durationMin > 0 ? `${videoInfo.durationMin} min` : 'Broadcast'}</strong> — Estimated processing: <strong className="text-green-400">{
-                videoInfo.durationMin === 0 ? 'May take 10-20 minutes for broadcasts'
-                : videoInfo.durationMin <= 2 ? 'Less than 2 minutes'
-                : videoInfo.durationMin <= 10 ? '~2-3 minutes'
-                : videoInfo.durationMin <= 30 ? '~3-5 minutes'
-                : videoInfo.durationMin <= 60 ? '~5-8 minutes'
-                : '~10-15 minutes'
-              }</strong>
-            </span>
+          <div className="rounded-xl border border-green-500/20 bg-green-500/10 px-3 py-2.5 text-xs text-white/60">
+            <strong>{videoInfo.durationMin > 0 ? `${videoInfo.durationMin} min` : 'Broadcast'}</strong> — Estimated processing: <strong className="text-green-300">{
+              videoInfo.durationMin === 0 ? 'May take 10-20 minutes for broadcasts'
+              : videoInfo.durationMin <= 2 ? 'Less than 2 minutes'
+              : videoInfo.durationMin <= 10 ? '~2-3 minutes'
+              : videoInfo.durationMin <= 30 ? '~3-5 minutes'
+              : videoInfo.durationMin <= 60 ? '~5-8 minutes'
+              : '~10-15 minutes'
+            }</strong>
           </div>
         )}
 
-        {/* Submit */}
-        <div className="flex gap-3 pt-2">
-          <Button variant="secondary" onClick={onClose} className="flex-1">
-            Cancel
-          </Button>
+        <div className="flex gap-3 pt-1">
+          <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
           <Button
             variant="primary"
             onClick={onConfirm}
@@ -387,12 +266,10 @@ export default function OptionsModal({
           >
             {isSubmitting ? (
               <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Submitting…
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Submitting...
               </span>
-            ) : (
-              '🚀 Start Processing'
-            )}
+            ) : 'Start Processing'}
           </Button>
         </div>
       </div>
