@@ -2439,16 +2439,47 @@ function buildActionCueChunks(words, introSkipSec, totalSec, priorityProfile) {
   return mergeChunkSources(cues, [])
 }
 
+function clipReasonQuote(text, cuePattern = null) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  const words = clean.split(' ')
+  const lowerWords = words.map((word) => word.toLowerCase().replace(/[^a-z0-9']/g, ''))
+  let index = 0
+  if (cuePattern) {
+    const foundIndex = lowerWords.findIndex((word, wordIndex) => cuePattern.test(`${word} ${lowerWords[wordIndex + 1] || ''}`.trim()))
+    if (foundIndex >= 0) index = foundIndex
+  }
+  const start = Math.max(0, index - 3)
+  const quote = words.slice(start, Math.min(words.length, start + 9)).join(' ')
+  return quote.length > 70 ? `${quote.slice(0, 67).trim()}...` : quote
+}
+
+function buildSpecificClipReason(prefix, text, cuePattern = null) {
+  const quote = clipReasonQuote(text, cuePattern)
+  return quote ? `${prefix}: “${quote}”` : prefix
+}
+
 function buildClipReasonFromWindow(clipText, detectionMode) {
   const text = String(clipText || '').trim()
   if (!text) return 'Strong moment from the stream'
 
   const lowered = text.toLowerCase()
-  if (/(clutch|ace|wiped|wipe|headshot|double kill|killing frenzy|killing spree|triple kill|one shot)/.test(lowered)) return 'Gameplay payoff with a strong reaction'
-  if (/(caps? the flag|got our flag|got the flag|flag secured|captured the flag|stole the flag)/.test(lowered)) return 'Objective swing with a live reaction'
-  if (/(won|victory|raid complete|wave cleared|goal|champion)/.test(lowered)) return 'A clean win or objective swing'
-  if (/(bruh|lmao|haha|wtf|no way)/.test(lowered) || detectionMode === 'funny') return 'Funny reaction with a clear payoff'
-  return 'Memorable moment with a clear reaction'
+  if (/(triple kill|killing spree|killing frenzy|double kill|multi.?kill)/.test(lowered)) {
+    return buildSpecificClipReason('Multi-kill payoff', text, /triple|double|multi|killing/).slice(0, 120)
+  }
+  if (/(clutch|ace|wiped|wipe|headshot|one shot|sniper|revenge|got one|got two|killed|kill)/.test(lowered)) {
+    return buildSpecificClipReason('Kill/payoff moment', text, /clutch|ace|wipe|headshot|shot|sniper|revenge|got|killed|kill/).slice(0, 120)
+  }
+  if (/(caps? the flag|got our flag|got the flag|flag secured|captured the flag|stole the flag|protect the boxes|get to the dock|dock|sharks?)/.test(lowered)) {
+    return buildSpecificClipReason('Objective swing', text, /flag|boxes|dock|shark|protect/).slice(0, 120)
+  }
+  if (/(won|victory|raid complete|wave cleared|goal|champion|we did it)/.test(lowered)) {
+    return buildSpecificClipReason('Win/clear payoff', text, /won|victory|complete|cleared|goal|champion/).slice(0, 120)
+  }
+  if (/(bruh|lmao|haha|wtf|no way|oh shit|oh god|screaming|let'?s go)/.test(lowered) || detectionMode === 'funny') {
+    return buildSpecificClipReason('Reaction spike', text, /bruh|lmao|haha|wtf|way|shit|god|screaming|go/).slice(0, 120)
+  }
+  return buildSpecificClipReason('Clear stream moment', text).slice(0, 120)
 }
 
 function mapCandidateScoreToVirality(score) {
