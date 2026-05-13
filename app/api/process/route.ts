@@ -38,7 +38,6 @@ function buildProgressUpdate(params: {
       aiReturnedClipCount: 0,
       duplicateClipsRemoved: 0,
       clipShortfallReason: undefined,
-      error: undefined,
       completedClips: [],
       processingStartedAt: new Date().toISOString(),
     }
@@ -55,7 +54,6 @@ function buildProgressUpdate(params: {
       aiReturnedClipCount: 0,
       duplicateClipsRemoved: 0,
       clipShortfallReason: undefined,
-      error: undefined,
       completedClips: [],
       rawInputUrl,
       sourceReady: false,
@@ -73,7 +71,6 @@ function buildProgressUpdate(params: {
     aiReturnedClipCount: 0,
     duplicateClipsRemoved: 0,
     clipShortfallReason: undefined,
-    error: undefined,
     completedClips: [],
     sourceReady: Boolean(sourceUrl),
     processingStartedAt: new Date().toISOString(),

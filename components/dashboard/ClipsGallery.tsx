@@ -1112,7 +1112,6 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
                 deliveredClipCount: 0,
                 completedClips: [],
                 clipShortfallReason: undefined,
-                error: undefined,
               },
             }
           : job,
