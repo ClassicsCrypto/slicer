@@ -1826,6 +1826,37 @@ function detectGameBySignatures(segmentsText) {
   return best
 }
 
+function isSpecificGameLabel(value) {
+  const label = String(value || '').trim().toLowerCase()
+  if (!label) return false
+  if (['gaming', 'gameplay', 'gaming stream', 'general gaming', 'unknown', 'unknown game', 'video game'].includes(label)) return false
+  return true
+}
+
+function hasExplicitGameEvidence(game, segmentsText) {
+  const gameLabel = String(game || '').trim().toLowerCase()
+  if (!isSpecificGameLabel(gameLabel)) return false
+  const haystack = String(segmentsText || '').toLowerCase()
+  const normalizedGame = gameLabel.replace(/[^a-z0-9]+/g, ' ').trim()
+  if (!normalizedGame) return false
+
+  // Do not let genre-model guesses label a stream as Valorant/Overwatch/etc.
+  // unless the actual title/transcript contains the game name. Known signature
+  // matches are handled before Gemini and can still lock a specific game.
+  const words = normalizedGame.split(/\s+/).filter(Boolean)
+  const exactPattern = new RegExp(`\\b${words.map(escapeRegex).join('\\s+')}\\b`, 'i')
+  if (exactPattern.test(haystack)) return true
+
+  // Accept compact variants for titles/transcripts that drop punctuation, e.g. COD.
+  const compact = normalizedGame.replace(/\s+/g, '')
+  if (compact.length >= 5) {
+    const compactHaystack = haystack.replace(/[^a-z0-9]+/g, '')
+    if (compactHaystack.includes(compact)) return true
+  }
+
+  return false
+}
+
 function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -3282,25 +3313,31 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
         const genreJson = extractJsonObject(genreContent)
         if (genreJson) {
           const parsedGenre = JSON.parse(genreJson)
+          const parsedGame = String(parsedGenre.game || '').trim()
+          const parsedConfidence = String(parsedGenre.confidence || genreInfo.confidence || 'low').toLowerCase()
+          const specificGame = isSpecificGameLabel(parsedGame) && hasExplicitGameEvidence(parsedGame, classificationText)
           genreInfo = {
-            game: customGame?.trim() || parsedGenre.game || genreInfo.game,
-            genrePack: signatureHit?.genrePack || normalizeGenrePack(parsedGenre.genrePack),
-            confidence: parsedGenre.confidence || genreInfo.confidence,
+            game: specificGame ? parsedGame : 'general gaming',
+            genrePack: specificGame ? normalizeGenrePack(parsedGenre.genrePack) : 'general_gaming',
+            confidence: specificGame ? parsedConfidence : 'fallback',
           }
         }
       } catch (error) {
         console.warn('[score-clips] Genre detection fallback:', error.message)
       }
 
-      const detectedGame = genreInfo.game || 'gaming stream'
+      const detectedGame = genreInfo.game || 'general gaming'
       const detectedGenrePack = normalizeGenrePack(genreInfo.genrePack)
       const detectedPackLabel = GENRE_PACK_LABELS[detectedGenrePack] || detectedGenrePack
+      const streamContextLabel = detectedGame.toLowerCase() === detectedPackLabel.toLowerCase()
+        ? detectedGame
+        : `${detectedGame} (${detectedPackLabel})`
 
       if (jobId) {
         await mergeJobProgress(jobId, {
           phase: 'scoring',
           progress: `Context locked: ${detectedGame}. Selecting clips...`,
-          streamContext: `${detectedGame} (${detectedPackLabel})`,
+          streamContext: streamContextLabel,
         }, 'processing')
       }
 
