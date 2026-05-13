@@ -2799,6 +2799,20 @@ function buildAudioActionChunks(volumeSpikes, words, introSkipSec, totalSec, cli
 }
 
 
+async function withTimeout(promise, timeoutMs, label = 'operation') {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function callGeminiText(apiKey, model, prompt, options = {}) {
   const { temperature = 0.2, maxOutputTokens = 2048, retries = 4, timeoutMs = 90000 } = options
 
@@ -3198,7 +3212,7 @@ async function handleScoreClips(req, res) {
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
-      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || 'off').toLowerCase()
+      const FULL_TRANSCRIPT_SCOUT = 'off' // Disabled: redundant scout path caused retry confusion/hangs; Gemini/OpenRouter scorer fallback handles model-side review.
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
@@ -3333,7 +3347,7 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
         })
 
       let scoutCandidatesAdded = 0
-      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
+      if (false && FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
         try {
           const scoutTranscript = buildWholeTranscriptForScout(segments)
           const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
@@ -3491,13 +3505,21 @@ Return ONLY compact JSON on ONE LINE:
       } else {
         if (!GEMINI_API_KEY) throw new Error('Gemini scorer requested but GEMINI_API_KEY is missing')
         try {
-          geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000, retries: 1, timeoutMs: 30000 })
+          geminiContent = geminiContent || await withTimeout(
+            callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000, retries: 1, timeoutMs: 20000 }),
+            25000,
+            'Gemini clip scorer',
+          )
           content = geminiContent
         } catch (geminiError) {
           console.warn(`[score-clips] Gemini scorer timed out/failed for ${jobId}: ${geminiError.message}`)
           if (OPENROUTER_API_KEY) {
             try {
-              openRouterContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+              openRouterContent = await withTimeout(
+                callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000, retries: 1, timeoutMs: 15000 }),
+                20000,
+                'OpenRouter clip fallback',
+              )
               content = openRouterContent
               scorerUsed = 'openrouter_fallback'
             } catch (openRouterError) {
@@ -3779,7 +3801,7 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
     } catch (err) {
-      console.error('[score-clips] Error:', err.message)
+      console.error('[score-clips] Error:', err?.stack || err?.message || err)
       if (jobId) {
         try {
           await mergeJobProgress(jobId, {
