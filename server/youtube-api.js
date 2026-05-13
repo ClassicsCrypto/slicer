@@ -785,6 +785,12 @@ async function handleClip(req, res) {
       const trimmedSubs = (opts.profanityFilter ? censorSubtitleWords(subtitles) : subtitles)
         .map(w => ({ ...w, start: w.start - trimOffset, end: w.end - trimOffset }))
         .filter(w => w.end > 0 && w.start < clipDuration)
+        .map(w => ({
+          ...w,
+          start: parseFloat(Math.max(0, w.start).toFixed(2)),
+          end: parseFloat(Math.min(clipDuration, Math.max(0.05, w.end)).toFixed(2)),
+        }))
+        .filter(w => w.end > w.start)
       
       // Build style parameters. Keep ASS font sizes aligned to the browser preview's
       // actual Tailwind pixel sizes at the 720p player breakpoint. Word-pop is
@@ -1082,6 +1088,12 @@ function getAssCueEnd(start, fallbackEnd, nextStart = null) {
 function normalizeSubtitleWords(words = []) {
   return [...words]
     .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
+    .map((word) => ({
+      ...word,
+      start: Math.max(0, word.start),
+      end: Math.max(0, word.end),
+    }))
+    .filter((word) => word.end > word.start)
     .sort((a, b) => (a.start - b.start) || (a.end - b.end))
 }
 
@@ -2655,13 +2667,15 @@ function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, wo
   const safeEndSec = Math.max(safeStartSec + 1, Number(endSec) || safeStartSec + 1)
   const clipStartMs = safeStartSec * 1000
   const clipEndMs = safeEndSec * 1000
+  const clipDurationSec = safeEndSec - safeStartSec
   const subtitles = words
-    .filter(w => w.start >= clipStartMs - 500 && w.end <= clipEndMs + 500)
+    .filter(w => w.end > clipStartMs && w.start < clipEndMs)
     .map(w => ({
       text: w.text,
       start: parseFloat(Math.max(0, (w.start - clipStartMs) / 1000).toFixed(2)),
-      end: parseFloat(((w.end - clipStartMs) / 1000).toFixed(2)),
+      end: parseFloat(Math.min(clipDurationSec, Math.max(0.05, (w.end - clipStartMs) / 1000)).toFixed(2)),
     }))
+    .filter(w => w.end > w.start)
     .sort((a, b) => (a.start - b.start) || (a.end - b.end))
 
   const clipText = subtitles.map((word) => word.text).join(' ').trim()

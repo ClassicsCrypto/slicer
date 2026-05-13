@@ -312,6 +312,12 @@ function getClipTranscriptText(clip: Clip) {
 function normalizeSubtitleWords(words: SubtitleWord[] = []) {
   return [...words]
     .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
+    .map((word) => ({
+      ...word,
+      start: Math.max(0, word.start),
+      end: Math.max(0, word.end),
+    }))
+    .filter((word) => word.end > word.start)
     .sort((a, b) => (a.start - b.start) || (a.end - b.end))
 }
 
