@@ -3760,7 +3760,7 @@ Return ONLY compact JSON on ONE LINE:
               phase: 'complete',
               progress: visualProofClips.length ? 'Clip selection complete.' : 'No strong clips matched the request.',
               completedClips: visualProofClips,
-              streamContext: `${detectedGame} (${detectedPackLabel})`,
+              streamContext: streamContextLabel,
               requestedClipCount: clipCount,
               shortlistClipCount: shortlistCount,
               aiReturnedClipCount: clips.length,
