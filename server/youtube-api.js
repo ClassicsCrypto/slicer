@@ -846,13 +846,16 @@ async function handleClip(req, res) {
 
       // Generate proper ASS file (reliable alignment vs SRT+force_style)
       const assFile = srtFile.replace('.srt', '.ass')
+      const effectiveActiveWordStyle = backgroundMode === 'none' && (opts.activeWordStyle || 'pill') === 'pill'
+        ? 'color'
+        : (opts.activeWordStyle || 'pill')
       const assEventLines = buildAssDialogueLines(trimmedSubs, {
         textCase,
         mode: subtitleMode,
         animationPreset,
         baseColour: basePrimaryColour,
         highlightColour,
-        activeWordStyle: opts.activeWordStyle || 'pill',
+        activeWordStyle: effectiveActiveWordStyle,
         includeBackground: hasSubtitleBackground,
       })
       const assEvents = assEventLines.join('\n')

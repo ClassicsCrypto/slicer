@@ -237,7 +237,7 @@ function SubtitleOverlay({
       {currentCue.words.map((word, index) => {
         const isActive = index === currentWordIndex
         const animatedStyle = getAnimatedStyle(isActive)
-        const pillActive = isActive && (options.activeWordStyle || 'pill') === 'pill'
+        const pillActive = backgroundMode !== 'none' && isActive && (options.activeWordStyle || 'pill') === 'pill'
         return (
           <span
             key={`${currentCue.start}-${index}`}

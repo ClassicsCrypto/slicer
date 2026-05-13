@@ -115,11 +115,11 @@ const DEFAULT_BACKGROUND_OPACITY = 45
 const BRAND_KIT_STORAGE_KEY = 'slicer.subtitleBrandKit.v1'
 
 const SUBTITLE_PRESETS: { value: SubtitlePreset; label: string; desc: string; options: Partial<SubtitleOptions> }[] = [
-  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'original' } },
+  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original' } },
   { value: 'clean_tiktok', label: 'Clean TikTok', desc: 'Native-looking white text with strong outline', options: { mode: 'phrase', safeZone: 'bottom_safe', font: 'montserrat', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'medium', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original' } },
-  { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'upper' } },
+  { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'upper' } },
   { value: 'hormozi_highlight', label: 'Hormozi Highlight', desc: 'Phrase captions with active keyword emphasis', options: { mode: 'active_word', safeZone: 'center_safe', font: 'arial_black', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original' } },
-  { value: 'mcv_branded', label: 'MCV Branded', desc: 'Mars Cats red highlight and watermark-ready', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'sora', size: 'medium', color: '#ffffff', highlightColor: '#ff4d4d', outlineThickness: 'thick', outlineColor: '#050505', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'original', watermarkEnabled: true } },
+  { value: 'mcv_branded', label: 'MCV Branded', desc: 'Mars Cats red highlight and watermark-ready', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'sora', size: 'medium', color: '#ffffff', highlightColor: '#ff4d4d', outlineThickness: 'thick', outlineColor: '#050505', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original', watermarkEnabled: true } },
   { value: 'meme_bold', label: 'Meme Bold', desc: 'Loud all-caps punchline style', options: { mode: 'word_pop', safeZone: 'center_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#00e5ff', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'scale', textCase: 'upper' } },
   { value: 'minimal_white', label: 'Minimal White', desc: 'Small clean captions for dialogue-heavy clips', options: { mode: 'phrase', safeZone: 'upper_safe', font: 'montserrat', size: 'small', color: '#ffffff', highlightColor: '#ffffff', outlineThickness: 'thin', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original' } },
 ]
@@ -899,7 +899,7 @@ export default function ClipPreviewEditor({
       )}
 
       {subtitleOptions.enabled && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-3 min-w-0">
@@ -1035,9 +1035,13 @@ export default function ClipPreviewEditor({
             </div>
           </div>
 
-          <div className="space-y-3 xl:pt-6">
+          <div className="space-y-4 xl:pt-6">
+            <div className="rounded-lg border border-red-500/15 bg-red-500/[0.06] px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-red-200/80">Workflow</div>
+              <div className="mt-1 text-sm leading-5 text-white/45">1. Color → 2. Background → 3. Outline. Off means no subtitle box or active-word pill.</div>
+            </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Text Color</label>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>1 · Text Color</label>
               <div className="flex items-center gap-4">
                 <input
                   type="color"
@@ -1053,7 +1057,7 @@ export default function ClipPreviewEditor({
             </div>
 
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Active Word Color</label>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>1 · Active Word Color</label>
               <div className="flex items-center gap-4">
                 <input
                   type="color"
@@ -1069,7 +1073,12 @@ export default function ClipPreviewEditor({
             </div>
 
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Subtitle Background</label>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <label className={`block ${sharedSectionLabelClass}`}>2 · Background</label>
+                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${backgroundEnabled ? 'bg-red-500/15 text-red-100' : 'bg-white/5 text-white/35'}`}>
+                  {backgroundEnabled ? 'Enabled' : 'Off'}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 {SUBTITLE_BACKGROUND_OPTIONS.map((option) => (
                   <button
@@ -1077,6 +1086,9 @@ export default function ClipPreviewEditor({
                     onClick={() => onSubtitleOptionsChange({
                       ...subtitleOptions,
                       background: option.value,
+                      activeWordStyle: option.value === 'none'
+                        ? ((subtitleOptions.activeWordStyle || 'pill') === 'pill' ? 'color' : subtitleOptions.activeWordStyle)
+                        : (option.value === 'active_word_pill' ? 'pill' : subtitleOptions.activeWordStyle),
                       backgroundColor: subtitleOptions.backgroundColor || DEFAULT_BACKGROUND_COLOR,
                       backgroundOpacity: subtitleOptions.backgroundOpacity ?? DEFAULT_BACKGROUND_OPACITY,
                     })}
@@ -1087,49 +1099,47 @@ export default function ClipPreviewEditor({
                   </button>
                 ))}
               </div>
-            </div>
 
-            <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${backgroundEnabled ? 'opacity-100' : 'opacity-45'}`}>
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Background Color</label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="color"
-                  value={subtitleBackgroundColor}
-                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundColor: e.target.value })}
-                  disabled={!backgroundEnabled}
-                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1 disabled:cursor-not-allowed"
-                />
-                <div>
-                  <div className="text-base font-semibold text-white">{subtitleBackgroundColor.toUpperCase()}</div>
-                  <div className="text-sm leading-5 text-white/40">Box / pill background color</div>
+              {backgroundEnabled ? (
+                <div className="mt-4 space-y-4 rounded-lg border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="color"
+                      value={subtitleBackgroundColor}
+                      onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundColor: e.target.value })}
+                      className="h-11 w-14 cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-white">{subtitleBackgroundColor.toUpperCase()}</div>
+                      <div className="text-xs leading-5 text-white/38">Box / pill color</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-white/38">Transparent</span>
+                      <span className="font-semibold text-white">{subtitleBackgroundOpacity}% opaque</span>
+                      <span className="text-white/38">Opaque</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={subtitleBackgroundOpacity}
+                      onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundOpacity: Number(e.target.value) })}
+                      className="w-full accent-red-500"
+                    />
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${backgroundEnabled ? 'opacity-100' : 'opacity-45'}`}>
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Background Transparency</label>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="text-white/45">Transparent</span>
-                  <span className="font-semibold text-white">{subtitleBackgroundOpacity}% opaque</span>
-                  <span className="text-white/45">Opaque</span>
+              ) : (
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-xs leading-5 text-white/35">
+                  No background, no box, no word pill. Outline/shadow can still improve readability.
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={subtitleBackgroundOpacity}
-                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundOpacity: Number(e.target.value) })}
-                  disabled={!backgroundEnabled}
-                  className="w-full accent-red-500 disabled:cursor-not-allowed"
-                />
-                <div className="text-xs leading-5 text-white/35">Move left for more transparent, right for more opaque.</div>
-              </div>
+              )}
             </div>
 
             <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${outlineEnabled ? 'opacity-100' : 'opacity-45'}`}>
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Outline Color</label>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>3 · Outline Color</label>
               <div className="flex items-center gap-4">
                 <input
                   type="color"
@@ -1146,7 +1156,7 @@ export default function ClipPreviewEditor({
             </div>
 
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Outline Thickness</label>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>3 · Outline Thickness</label>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {OUTLINE_THICKNESS_OPTIONS.map((option) => (
                   <button
