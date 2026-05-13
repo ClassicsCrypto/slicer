@@ -2015,7 +2015,7 @@ function getConcreteActionMatches(text, priorityProfile) {
 function passesGameplayPriorityGate(candidate, priorityProfile, effectiveDetectionMode) {
   if (!candidate) return false
 
-  const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
+  const gameplayStrict = isGameplayStrictMode(priorityProfile, effectiveDetectionMode)
   if (candidate.musicLike && gameplayStrict) return false
 
   const hardActionCount = candidate.hits?.hardAction?.length || 0
@@ -3712,11 +3712,39 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
+      if (result.length === 0) {
+        const rescueCandidates = [...topCandidates, ...scoredCandidates]
+          .filter((candidate) => candidate && candidate.startSec >= introSkipSec)
+          .sort((a, b) => {
+            const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+            if (rankDelta !== 0) return rankDelta
+            return (b.score || 0) - (a.score || 0)
+          })
+
+        for (const candidate of rescueCandidates) {
+          if (result.length >= Math.min(outputClipTarget, clipCount)) break
+          const payload = buildPriorityAwareClipPayload(
+            Math.max(0, Math.round(candidate.startSec)),
+            Math.max(5, mapCandidateScoreToVirality(candidate.score || 5)),
+            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, effectiveDetectionMode),
+            words,
+            clipLength,
+            effectiveDetectionMode,
+            priorityProfile,
+          )
+          if (!payload) continue
+          if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
+          selectedClips.push(payload.selectedWindow)
+          result.push(payload.clip)
+          backfilledClipsAdded += 1
+        }
+      }
+
       if (result.length < outputClipTarget) {
         if (result.length === 0) {
           clipShortfallReason = priorityProfile.gameplayRequested
-            ? `Targeted 10 clips, delivered 0. No strong gameplay moments matched the current source and priority hint.`
-            : `Targeted 10 clips, delivered 0. No strong distinct moments were found in the current source.`
+            ? `Targeted 10 clips, delivered 0. No candidate moments survived the source analysis. This should be rare; check transcript/cache quality.`
+            : `Targeted 10 clips, delivered 0. No candidate moments survived the source analysis.`
         } else {
           clipShortfallReason = `Targeted 10 clips, delivered ${result.length}. ${duplicateClipsRemoved > 0 ? `${duplicateClipsRemoved} near-duplicate moments were collapsed.` : 'Gemini returned fewer unique moments than requested.'}${backfilledClipsAdded > 0 ? ` Added ${backfilledClipsAdded} extra moments from local scoring, but the run still came up short.` : ''}${explicitActionDrops > 0 ? ` Removed ${explicitActionDrops} off-target moments after final action-priority filtering.` : ''}`
         }
