@@ -1446,7 +1446,30 @@ const GENRE_SIGNAL_PACKS = {
 }
 
 const KNOWN_GAME_HINTS = [
-  { game: 'Nifty Island', genrePack: 'general_gaming', signatures: ['nifty island', 'island raiders', 'cave fins', 'pirates', 'raid complete', 'wave cleared', 'wave survived', 'high five', 'checkpoint', 'checkpoints', 'palm logo', 'glove box', 'no friends'] },
+  {
+    game: 'Nifty Island',
+    genrePack: 'general_gaming',
+    signatures: [
+      'nifty island',
+      'island raiders',
+      'raiders rise',
+      'raiders ride',
+      'another raid is on deck',
+      'whiskerbeards rest',
+      'whiskerbeard',
+      'cave fins',
+      'pirates',
+      'raid complete',
+      'wave cleared',
+      'wave survived',
+      'high five',
+      'checkpoint',
+      'checkpoints',
+      'palm logo',
+      'glove box',
+      'no friends',
+    ],
+  },
   { game: 'Pixels', genrePack: 'social_sandbox', signatures: ['pixels', 'farm land', 'berry', 'task board', 'grinding pixels'] },
   // Avoid matching generic "raider/raiders" alone: MCV's Nifty show is called Island Raiders.
   { game: 'ARC Raiders', genrePack: 'extraction_shooter', signatures: ['arc raiders', 'arc raider', 'extract', 'exfil', 'wild zone'] },
