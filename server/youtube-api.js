@@ -2310,7 +2310,7 @@ function isDirectActionCandidate(candidate) {
   )
 }
 
-function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, effectiveDetectionMode) {
+function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, detectionMode) {
   const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
   const actionPriority = hasActionPriority(priorityProfile)
   return Math.max(80, Math.min(320, Math.max(clipCount * (gameplayStrict ? 18 : actionPriority ? 20 : 16), Math.round(videoDurationMin * (gameplayStrict ? 1.8 : actionPriority ? 1.7 : 1.55)))))
@@ -2322,7 +2322,7 @@ function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priori
   const eligible = [...(scoredCandidates || [])]
     .filter((candidate) => {
       if (gameplayStrict) {
-        return passesGameplayPriorityGate(candidate, priorityProfile, effectiveDetectionMode) || candidate.score >= (actionPriority ? 8 : 18)
+        return passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) || candidate.score >= (actionPriority ? 8 : 18)
       }
       if (actionPriority) {
         return candidate.score >= 8 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff || candidate.priorityMatches?.length > 0 || candidate.spikeHits > 0
