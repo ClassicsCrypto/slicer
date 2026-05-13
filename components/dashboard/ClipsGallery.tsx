@@ -1107,7 +1107,12 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
                 ...(job.progress ?? {}),
                 phase: 'queued',
                 progress: 'Retrying job...',
+                aiReturnedClipCount: 0,
+                duplicateClipsRemoved: 0,
+                deliveredClipCount: 0,
+                completedClips: [],
                 clipShortfallReason: undefined,
+                error: undefined,
               },
             }
           : job,
