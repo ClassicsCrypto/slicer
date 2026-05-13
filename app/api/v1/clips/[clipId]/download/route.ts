@@ -16,6 +16,8 @@ const DEFAULT_SUBTITLES: SubtitleOptions = {
   position: 'bottom',
   style: 'bold',
   background: 'none',
+  backgroundColor: '#000000',
+  backgroundOpacity: 45,
   font: 'impact',
   mode: 'active_word',
   preset: 'auto',

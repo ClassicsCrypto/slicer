@@ -120,6 +120,9 @@ export interface SubtitleOptions {
   safeZone?: SubtitleSafeZone
   style: SubtitleStyle
   background: SubtitleBackground
+  backgroundColor?: string
+  customBackgroundColor?: string
+  backgroundOpacity?: number
   font?: SubtitleFont
   mode?: SubtitleMode
   preset?: SubtitlePreset

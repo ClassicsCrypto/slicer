@@ -28,6 +28,18 @@ function applyTextCase(text: string, textCase: SubtitleOptions['textCase'] = 'or
   return text
 }
 
+function hexToRgba(hex: string | undefined, opacityPercent = 45) {
+  const normalized = (hex || '#000000').replace('#', '')
+  const fullHex = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized.padEnd(6, '0').slice(0, 6)
+  const r = parseInt(fullHex.slice(0, 2), 16)
+  const g = parseInt(fullHex.slice(2, 4), 16)
+  const b = parseInt(fullHex.slice(4, 6), 16)
+  const alpha = Math.max(0, Math.min(100, opacityPercent)) / 100
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 function normalizeSubtitleWords(words: SubtitleWord[] = []) {
   return [...words]
     .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
@@ -89,6 +101,12 @@ function SubtitleOverlay({
   const fontFamily = SUBTITLE_FONT_FAMILIES[options.font || 'impact'] || SUBTITLE_FONT_FAMILIES.impact
   const subtitleMode = options.mode || (options.style === 'karaoke' ? 'karaoke' : 'phrase')
   const animationPreset = options.animationPreset || 'none'
+  const backgroundMode = options.background || 'none'
+  const backgroundColor = options.backgroundColor && options.backgroundColor !== 'custom'
+    ? options.backgroundColor
+    : (options.customBackgroundColor ?? '#000000')
+  const backgroundOpacity = options.backgroundOpacity ?? 45
+  const backgroundRgba = hexToRgba(backgroundColor, backgroundOpacity)
   const normalizedWords = useMemo(() => normalizeSubtitleWords(words), [words])
   const cues = useMemo(() => buildSubtitleCues(normalizedWords), [normalizedWords])
 
@@ -139,6 +157,14 @@ function SubtitleOverlay({
   const cueKey = subtitleMode === 'phrase'
     ? `${subtitleMode}-${currentCue.start}`
     : `${subtitleMode}-${currentCue.start}-${Math.max(currentWordIndex, 0)}`
+  const cueBackgroundStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'blur'
+    ? {
+        backgroundColor: backgroundRgba,
+        borderRadius: backgroundMode === 'solid' ? '0.35em' : '0.72em',
+        padding: '0.22em 0.5em',
+        backdropFilter: backgroundMode === 'blur' ? 'blur(8px)' : undefined,
+      }
+    : undefined
 
   const getAnimatedStyle = (active: boolean) => {
     if (!active || animationPreset === 'none') {
@@ -190,13 +216,13 @@ function SubtitleOverlay({
       {currentCue.words.map((word, index) => {
         const isActive = index === currentWordIndex
         const animatedStyle = getAnimatedStyle(isActive)
-        const pillActive = isActive && (options.activeWordStyle || 'pill') === 'pill'
+        const pillActive = isActive && ((options.activeWordStyle || 'pill') === 'pill' || backgroundMode === 'active_word_pill')
         return (
           <span
             key={`${currentCue.start}-${index}`}
             style={{
               color: isActive ? highlightColor : activeColor,
-              background: pillActive ? 'rgba(255, 235, 59, 0.22)' : 'transparent',
+              background: pillActive ? (backgroundMode === 'active_word_pill' ? backgroundRgba : 'rgba(255, 235, 59, 0.22)') : 'transparent',
               borderRadius: pillActive ? '0.42em' : 0,
               padding: pillActive ? '0.02em 0.2em' : 0,
               textDecoration: isActive && options.activeWordStyle === 'underline' ? `underline ${highlightColor} 0.12em` : 'none',
@@ -282,7 +308,7 @@ function SubtitleOverlay({
 
   return (
     <div className={`absolute ${positionClass} left-0 right-0 flex justify-center pointer-events-none px-4`}>
-      <div className="max-w-[90%]">
+      <div className="max-w-[90%]" style={cueBackgroundStyle}>
         {subtitleMode === 'word_pop'
           ? renderWordPopMode()
           : subtitleMode === 'active_word'
@@ -311,6 +337,8 @@ const DEFAULT_SUB_OPTS: SubtitleOptions = {
   position: 'bottom',
   style: 'bold',
   background: 'none',
+  backgroundColor: '#000000',
+  backgroundOpacity: 45,
   font: 'impact',
   mode: 'active_word',
   preset: 'auto',

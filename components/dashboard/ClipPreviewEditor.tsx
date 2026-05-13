@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button'
 import {
   Clip,
   SubtitleAnimationPreset,
+  SubtitleBackground,
   SubtitleCase,
   SubtitleFont,
   SubtitleMode,
@@ -84,6 +85,14 @@ const OUTLINE_THICKNESS_OPTIONS: { value: NonNullable<SubtitleOptions['outlineTh
   { value: 'thick', label: 'Thick' },
 ]
 
+const SUBTITLE_BACKGROUND_OPTIONS: { value: SubtitleBackground; label: string; desc: string }[] = [
+  { value: 'none', label: 'Off', desc: 'No caption background' },
+  { value: 'solid', label: 'Box', desc: 'Solid readable caption box' },
+  { value: 'rounded_box', label: 'Rounded', desc: 'Rounded caption container' },
+  { value: 'blur', label: 'Blur', desc: 'Soft translucent backdrop' },
+  { value: 'active_word_pill', label: 'Word Pill', desc: 'Background only behind active words' },
+]
+
 const TIMELINE_PX_PER_SECOND = 72
 const TIMELINE_MIN_WIDTH = 900
 const TIMELINE_SEGMENT_MIN_WIDTH = 60
@@ -96,16 +105,18 @@ const MIN_SEGMENT_GAP = 0.05
 const DEFAULT_TEXT_COLOR = '#ffffff'
 const DEFAULT_OUTLINE_COLOR = '#000000'
 const DEFAULT_HIGHLIGHT_COLOR = '#ffeb3b'
+const DEFAULT_BACKGROUND_COLOR = '#000000'
+const DEFAULT_BACKGROUND_OPACITY = 45
 const BRAND_KIT_STORAGE_KEY = 'slicer.subtitleBrandKit.v1'
 
 const SUBTITLE_PRESETS: { value: SubtitlePreset; label: string; desc: string; options: Partial<SubtitleOptions> }[] = [
-  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'original' } },
-  { value: 'clean_tiktok', label: 'Clean TikTok', desc: 'Native-looking white text with strong outline', options: { mode: 'phrase', safeZone: 'bottom_safe', font: 'montserrat', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'medium', outlineColor: '#000000', shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
-  { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'upper' } },
-  { value: 'hormozi_highlight', label: 'Hormozi Highlight', desc: 'Phrase captions with active keyword emphasis', options: { mode: 'active_word', safeZone: 'center_safe', font: 'arial_black', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'color', textCase: 'original' } },
-  { value: 'mcv_branded', label: 'MCV Branded', desc: 'Mars Cats red highlight and watermark-ready', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'sora', size: 'medium', color: '#ffffff', highlightColor: '#ff4d4d', outlineThickness: 'thick', outlineColor: '#050505', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'original', watermarkEnabled: true } },
-  { value: 'meme_bold', label: 'Meme Bold', desc: 'Loud all-caps punchline style', options: { mode: 'word_pop', safeZone: 'center_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#00e5ff', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'scale', textCase: 'upper' } },
-  { value: 'minimal_white', label: 'Minimal White', desc: 'Small clean captions for dialogue-heavy clips', options: { mode: 'phrase', safeZone: 'upper_safe', font: 'montserrat', size: 'small', color: '#ffffff', highlightColor: '#ffffff', outlineThickness: 'thin', outlineColor: '#000000', shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
+  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'original' } },
+  { value: 'clean_tiktok', label: 'Clean TikTok', desc: 'Native-looking white text with strong outline', options: { mode: 'phrase', safeZone: 'bottom_safe', font: 'montserrat', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'medium', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
+  { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'upper' } },
+  { value: 'hormozi_highlight', label: 'Hormozi Highlight', desc: 'Phrase captions with active keyword emphasis', options: { mode: 'active_word', safeZone: 'center_safe', font: 'arial_black', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'pop', activeWordStyle: 'color', textCase: 'original' } },
+  { value: 'mcv_branded', label: 'MCV Branded', desc: 'Mars Cats red highlight and watermark-ready', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'sora', size: 'medium', color: '#ffffff', highlightColor: '#ff4d4d', outlineThickness: 'thick', outlineColor: '#050505', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'original', watermarkEnabled: true } },
+  { value: 'meme_bold', label: 'Meme Bold', desc: 'Loud all-caps punchline style', options: { mode: 'word_pop', safeZone: 'center_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#00e5ff', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'pop', activeWordStyle: 'scale', textCase: 'upper' } },
+  { value: 'minimal_white', label: 'Minimal White', desc: 'Small clean captions for dialogue-heavy clips', options: { mode: 'phrase', safeZone: 'upper_safe', font: 'montserrat', size: 'small', color: '#ffffff', highlightColor: '#ffffff', outlineThickness: 'thin', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
 ]
 
 const SAFE_ZONE_OPTIONS: { value: SubtitleSafeZone; label: string; desc: string }[] = [
@@ -237,6 +248,9 @@ function saveBrandKit(options: SubtitleOptions) {
     highlightColor: options.highlightColor,
     outlineColor: options.outlineColor,
     outlineThickness: options.outlineThickness,
+    background: options.background,
+    backgroundColor: options.backgroundColor,
+    backgroundOpacity: options.backgroundOpacity,
     shadow: options.shadow,
     animationPreset: options.animationPreset,
     activeWordStyle: options.activeWordStyle,
@@ -797,6 +811,11 @@ export default function ClipPreviewEditor({
     ? subtitleOptions.outlineColor
     : (subtitleOptions.customOutlineColor ?? DEFAULT_OUTLINE_COLOR)
   const subtitleHighlightColor = subtitleOptions.highlightColor || DEFAULT_HIGHLIGHT_COLOR
+  const subtitleBackgroundColor = subtitleOptions.backgroundColor && subtitleOptions.backgroundColor !== 'custom'
+    ? subtitleOptions.backgroundColor
+    : (subtitleOptions.customBackgroundColor ?? DEFAULT_BACKGROUND_COLOR)
+  const subtitleBackgroundOpacity = Math.max(0, Math.min(100, subtitleOptions.backgroundOpacity ?? DEFAULT_BACKGROUND_OPACITY))
+  const backgroundEnabled = (subtitleOptions.background || 'none') !== 'none'
   const outlineEnabled = (subtitleOptions.outlineThickness || 'medium') !== 'none'
   const sharedChoiceButtonClass = (active: boolean, extra = '') => (
     `rounded-lg border transition-all ${active ? 'border-red-500/30 bg-red-500/10 text-white' : 'border-white/10 bg-black/20 text-white/70 hover:border-white/20 hover:text-white/90'} ${extra}`
@@ -1035,6 +1054,65 @@ export default function ClipPreviewEditor({
                   <div className="text-base font-semibold text-white">{subtitleHighlightColor.toUpperCase()}</div>
                   <div className="text-sm leading-5 text-white/40">Highlight active spoken words</div>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Subtitle Background</label>
+              <div className="grid grid-cols-2 gap-3">
+                {SUBTITLE_BACKGROUND_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => onSubtitleOptionsChange({
+                      ...subtitleOptions,
+                      background: option.value,
+                      backgroundColor: subtitleOptions.backgroundColor || DEFAULT_BACKGROUND_COLOR,
+                      backgroundOpacity: subtitleOptions.backgroundOpacity ?? DEFAULT_BACKGROUND_OPACITY,
+                    })}
+                    className={compactButtonClass((subtitleOptions.background || 'none') === option.value, 'min-w-0')}
+                    title={option.desc}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${backgroundEnabled ? 'opacity-100' : 'opacity-45'}`}>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Background Color</label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="color"
+                  value={subtitleBackgroundColor}
+                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundColor: e.target.value })}
+                  disabled={!backgroundEnabled}
+                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1 disabled:cursor-not-allowed"
+                />
+                <div>
+                  <div className="text-base font-semibold text-white">{subtitleBackgroundColor.toUpperCase()}</div>
+                  <div className="text-sm leading-5 text-white/40">Box / pill background color</div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${backgroundEnabled ? 'opacity-100' : 'opacity-45'}`}>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Background Transparency</label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-white/45">Opaque</span>
+                  <span className="font-semibold text-white">{100 - subtitleBackgroundOpacity}% transparent</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={subtitleBackgroundOpacity}
+                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundOpacity: Number(e.target.value) })}
+                  disabled={!backgroundEnabled}
+                  className="w-full accent-red-500 disabled:cursor-not-allowed"
+                />
+                <div className="text-xs leading-5 text-white/35">Higher value = more visible subtitle background.</div>
               </div>
             </div>
 

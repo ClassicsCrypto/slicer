@@ -813,6 +813,9 @@ async function handleClip(req, res) {
       const outlineHex = (opts.outlineColor || '#000000').replace('#', '')
       const oR = outlineHex.slice(0, 2), oG = outlineHex.slice(2, 4), oB = outlineHex.slice(4, 6)
       const outlineColour = `&H00${oB}${oG}${oR}`
+      const backgroundMode = opts.background || 'none'
+      const backColour = hexToAssColour(opts.backgroundColor || '#000000', opts.backgroundOpacity ?? 45)
+      const borderStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'blur' ? 3 : 1
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
       const safeZone = opts.safeZone || 'auto'
@@ -838,7 +841,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},&H80000000,-1,0,0,0,100,100,0,0,1,${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
+Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},${backColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1107,6 +1110,21 @@ function buildAssAnimationTag(animationPreset = 'none') {
   if (animationPreset === 'fade') return '{\\alpha&H88&\\t(0,220,\\alpha&H00&)}'
   if (animationPreset === 'none') return ''
   return '{\\fscx72\\fscy72\\t(0,170,\\fscx100\\fscy100)}'
+}
+
+function hexToAssColour(hex = '#000000', opacityPercent = 45) {
+  const normalized = String(hex || '#000000').replace('#', '')
+  const fullHex = normalized.length === 3
+    ? normalized.split('').map(char => `${char}${char}`).join('')
+    : normalized.padEnd(6, '0').slice(0, 6)
+  const r = fullHex.slice(0, 2)
+  const g = fullHex.slice(2, 4)
+  const b = fullHex.slice(4, 6)
+  const alpha = Math.max(0, Math.min(255, 255 - Math.round((Math.max(0, Math.min(100, opacityPercent)) / 100) * 255)))
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase()
+  return `&H${alpha}${b}${g}${r}`
 }
 
 function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'none', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill' } = {}) {

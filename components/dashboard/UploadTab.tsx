@@ -179,6 +179,8 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     position: 'bottom',
     style: 'bold',
     background: 'none',
+    backgroundColor: '#000000',
+    backgroundOpacity: 45,
     font: 'impact',
     mode: 'active_word',
     preset: 'auto',

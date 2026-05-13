@@ -53,7 +53,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
           subtitles: clip.subtitles || [],
           subtitleOptions: subtitleOptions || {
             enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
-            style: 'bold', background: 'none', font: 'impact', mode: 'active_word', preset: 'auto', animationPreset: 'none',
+            style: 'bold', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, font: 'impact', mode: 'active_word', preset: 'auto', animationPreset: 'none',
             highlightColor: '#ffeb3b', activeWordStyle: 'pill', safeZone: 'bottom_safe',
             outlineThickness: 'thick', outlineColor: '#000000', shadow: true, textCase: 'original', watermarkEnabled: true,
           },
@@ -724,6 +724,8 @@ function JobCard({
         position: 'bottom',
         style: 'bold',
         background: 'none',
+        backgroundColor: '#000000',
+        backgroundOpacity: 45,
         font: 'impact',
         mode: 'active_word',
         preset: 'auto',
