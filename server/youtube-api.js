@@ -787,20 +787,23 @@ async function handleClip(req, res) {
       
       // Build style parameters
       const fontSize = opts.size === 'small' ? 22 : opts.size === 'large' ? 40 : 30
-      const hexColor = (opts.color || '#ffffff').replace('#', '')
+      const resolvedTextColor = resolveSubtitleHex(opts.color, opts.customColor, '#ffffff')
+      const hexColor = resolvedTextColor.replace('#', '')
       const r = hexColor.slice(0, 2), g = hexColor.slice(2, 4), b = hexColor.slice(4, 6)
       const basePrimaryColour = `&H00${b}${g}${r}`
       const highlightHex = (opts.highlightColor || '#ffeb3b').replace('#', '')
       const hR = highlightHex.slice(0, 2), hG = highlightHex.slice(2, 4), hB = highlightHex.slice(4, 6)
       const highlightColour = `&H00${hB}${hG}${hR}`
-      const primaryColour = subtitleMode === 'karaoke' || subtitleMode === 'active_word' ? highlightColour : basePrimaryColour
-      const secondaryColour = subtitleMode === 'karaoke' ? basePrimaryColour : primaryColour
+      const primaryColour = basePrimaryColour
+      const secondaryColour = basePrimaryColour
       const fontsDir = path.join(__dirname, 'fonts')
       const fontNameMap = {
         'impact': 'Impact',
         'bebas': 'Bebas Neue',
         'montserrat': 'Montserrat',
-        'sora': 'Sora',
+        // Browser preview falls back to Montserrat because Sora is not loaded in app/layout.
+        // Keep export on the same visual fallback instead of letting libass choose Arial.
+        'sora': 'Montserrat',
         'arial_black': 'Arial Black',
         'trebuchet': 'Trebuchet MS',
         'verdana': 'Verdana',
@@ -816,13 +819,16 @@ async function handleClip(req, res) {
       const fontName = fontNameMap[opts.font] || 'Impact'
       const outlineThickness = opts.outlineThickness || 'medium'
       const outlineSize = outlineThickness === 'none' ? 0 : outlineThickness === 'thin' ? 1 : outlineThickness === 'thick' ? 3 : 2
-      const outlineHex = (opts.outlineColor || '#000000').replace('#', '')
+      const resolvedOutlineColor = resolveSubtitleHex(opts.outlineColor, opts.customOutlineColor, '#000000')
+      const outlineHex = resolvedOutlineColor.replace('#', '')
       const oR = outlineHex.slice(0, 2), oG = outlineHex.slice(2, 4), oB = outlineHex.slice(4, 6)
       const outlineColour = `&H00${oB}${oG}${oR}`
       const backgroundMode = opts.background || 'none'
-      const backColour = hexToAssColour(opts.backgroundColor || '#000000', opts.backgroundOpacity ?? 45)
-      const hasSubtitleBackground = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'active_word_pill'
-      const borderStyle = 1
+      const resolvedBackgroundColor = resolveSubtitleHex(opts.backgroundColor, opts.customBackgroundColor, '#000000')
+      const backColour = hexToAssColour(resolvedBackgroundColor, opts.backgroundOpacity ?? 45)
+      const hasSubtitleBackground = backgroundMode === 'solid' || backgroundMode === 'rounded_box'
+      const borderStyle = backgroundMode === 'active_word_pill' ? 3 : 1
+      const defaultBackColour = backgroundMode === 'active_word_pill' ? backColour : '&HFF000000'
       const backgroundBoxPadding = backgroundMode === 'active_word_pill' ? 9 : backgroundMode === 'rounded_box' ? 8 : 6
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
@@ -850,7 +856,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},${backColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
+Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},${defaultBackColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
 Style: CaptionBackground,${fontName},${fontSize},&HFF000000,&HFF000000,&HFF000000,${backColour},-1,0,0,0,100,100,0,0,3,${backgroundBoxPadding},0,${alignment},0,0,${marginV},1
 
 [Events]
@@ -1012,6 +1018,14 @@ function applySubtitleTextCase(text, textCase = 'original') {
   return text
 }
 
+function resolveSubtitleHex(value, customValue, fallback = '#ffffff') {
+  const candidate = value && value !== 'custom' ? value : customValue
+  const normalized = String(candidate || fallback).trim()
+  return /^#?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/.test(normalized)
+    ? (normalized.startsWith('#') ? normalized : `#${normalized}`)
+    : fallback
+}
+
 function escapeAssText(text = '') {
   return text
     .replace(/\\/g, '\\\\')
@@ -1140,6 +1154,8 @@ function hexToAssColour(hex = '#000000', opacityPercent = 45) {
 function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'none', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill', includeBackground = false } = {}) {
   const animationTag = buildAssAnimationTag(animationPreset)
   const orderedWords = normalizeSubtitleWords(words)
+  const spokenColour = '&H00E6E6E6'
+  const dimColour = '&HADFFFFFF'
   const highlightTag = activeWordStyle === 'underline'
     ? `{\\c${highlightColour}\\u1}`
     : activeWordStyle === 'scale'
@@ -1189,16 +1205,24 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
   }
 
   if (mode === 'karaoke') {
-    return groupedWords.flatMap((group) => {
-      const start = group[0].start
-      const end = group[group.length - 1].end
-      const plainText = group.map((word) => formatAssWordText(word.text || '', textCase)).join(' ')
-      const text = group.map((word) => {
-        const durationCs = Math.max(1, Math.round(Math.max(0.08, word.end - word.start) * 100))
-        return `{\\k${durationCs}}${formatAssWordText(word.text || '', textCase)}`
-      }).join(' ')
-      return withBackgroundLine(start, end, plainText, text)
-    })
+    const lines = []
+    for (const group of groupedWords) {
+      for (let index = 0; index < group.length; index += 1) {
+        const word = group[index]
+        const nextWord = group[index + 1]
+        const start = word.start
+        const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
+        const plainText = group.map((entry) => formatAssWordText(entry.text || '', textCase)).join(' ')
+        const text = group.map((entry, entryIndex) => {
+          const escaped = formatAssWordText(entry.text || '', textCase)
+          if (entryIndex === index) return `{\\c${highlightColour}}${escaped}${resetTag}`
+          if (entryIndex < index) return `{\\c${spokenColour}}${escaped}${resetTag}`
+          return `{\\c${dimColour}}${escaped}${resetTag}`
+        }).join(' ')
+        lines.push(...withBackgroundLine(start, end, plainText, text))
+      }
+    }
+    return lines
   }
 
   return groupedWords.flatMap((group) => {
