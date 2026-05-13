@@ -1036,45 +1036,46 @@ export default function ClipPreviewEditor({
           </div>
 
           <div className="space-y-4 xl:pt-6">
-            <div className="rounded-lg border border-red-500/15 bg-red-500/[0.06] px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-red-200/80">Workflow</div>
-              <div className="mt-1 text-sm leading-5 text-white/45">1. Color → 2. Background → 3. Outline. Off means no subtitle box or active-word pill.</div>
-            </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>1 · Text Color</label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="color"
-                  value={subtitleTextColor}
-                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, color: e.target.value })}
-                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
-                />
-                <div>
-                  <div className="text-base font-semibold text-white">{subtitleTextColor.toUpperCase()}</div>
-                  <div className="text-sm leading-5 text-white/40">Pick any text color</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>1 · Active Word Color</label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="color"
-                  value={subtitleHighlightColor}
-                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, highlightColor: e.target.value })}
-                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
-                />
-                <div>
-                  <div className="text-base font-semibold text-white">{subtitleHighlightColor.toUpperCase()}</div>
-                  <div className="text-sm leading-5 text-white/40">Highlight active spoken words</div>
-                </div>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Colors</label>
+              <div className="grid grid-cols-3 gap-3">
+                <label className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-white/35">Text</span>
+                  <input
+                    type="color"
+                    value={subtitleTextColor}
+                    onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, color: e.target.value })}
+                    className="h-10 w-full cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
+                  />
+                  <span className="mt-2 block truncate text-xs font-semibold text-white/65">{subtitleTextColor.toUpperCase()}</span>
+                </label>
+                <label className={`min-w-0 rounded-lg border border-white/10 bg-black/20 p-3 transition-opacity ${outlineEnabled ? 'opacity-100' : 'opacity-45'}`}>
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-white/35">Outline</span>
+                  <input
+                    type="color"
+                    value={subtitleOutlineColor}
+                    onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, outlineColor: e.target.value })}
+                    disabled={!outlineEnabled}
+                    className="h-10 w-full cursor-pointer rounded-md border border-white/10 bg-transparent p-1 disabled:cursor-not-allowed"
+                  />
+                  <span className="mt-2 block truncate text-xs font-semibold text-white/65">{subtitleOutlineColor.toUpperCase()}</span>
+                </label>
+                <label className={`min-w-0 rounded-lg border border-white/10 bg-black/20 p-3 transition-opacity ${backgroundEnabled ? 'opacity-100' : 'opacity-55'}`}>
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-white/35">Background</span>
+                  <input
+                    type="color"
+                    value={subtitleBackgroundColor}
+                    onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundColor: e.target.value })}
+                    className="h-10 w-full cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
+                  />
+                  <span className="mt-2 block truncate text-xs font-semibold text-white/65">{subtitleBackgroundColor.toUpperCase()}</span>
+                </label>
               </div>
             </div>
 
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <label className={`block ${sharedSectionLabelClass}`}>2 · Background</label>
+                <label className={`block ${sharedSectionLabelClass}`}>Background</label>
                 <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${backgroundEnabled ? 'bg-red-500/15 text-red-100' : 'bg-white/5 text-white/35'}`}>
                   {backgroundEnabled ? 'Enabled' : 'Off'}
                 </span>
@@ -1102,18 +1103,6 @@ export default function ClipPreviewEditor({
 
               {backgroundEnabled ? (
                 <div className="mt-4 space-y-4 rounded-lg border border-white/10 bg-black/20 p-3">
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="color"
-                      value={subtitleBackgroundColor}
-                      onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, backgroundColor: e.target.value })}
-                      className="h-11 w-14 cursor-pointer rounded-md border border-white/10 bg-transparent p-1"
-                    />
-                    <div>
-                      <div className="text-sm font-semibold text-white">{subtitleBackgroundColor.toUpperCase()}</div>
-                      <div className="text-xs leading-5 text-white/38">Box / pill color</div>
-                    </div>
-                  </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-white/38">Transparent</span>
@@ -1138,25 +1127,8 @@ export default function ClipPreviewEditor({
               )}
             </div>
 
-            <div className={`rounded-lg border border-white/10 bg-black/20 p-4 transition-opacity ${outlineEnabled ? 'opacity-100' : 'opacity-45'}`}>
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>3 · Outline Color</label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="color"
-                  value={subtitleOutlineColor}
-                  onChange={(e) => onSubtitleOptionsChange({ ...subtitleOptions, outlineColor: e.target.value })}
-                  disabled={!outlineEnabled}
-                  className="h-12 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent p-1 disabled:cursor-not-allowed"
-                />
-                <div>
-                  <div className="text-base font-semibold text-white">{subtitleOutlineColor.toUpperCase()}</div>
-                  <div className="text-sm leading-5 text-white/40">Pick any outline color</div>
-                </div>
-              </div>
-            </div>
-
             <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-              <label className={`mb-3 block ${sharedSectionLabelClass}`}>3 · Outline Thickness</label>
+              <label className={`mb-3 block ${sharedSectionLabelClass}`}>Outline Thickness</label>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {OUTLINE_THICKNESS_OPTIONS.map((option) => (
                   <button
