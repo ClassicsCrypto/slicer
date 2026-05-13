@@ -19,7 +19,7 @@ const DEFAULT_SUBTITLES: SubtitleOptions = {
   font: 'impact',
   mode: 'active_word',
   preset: 'auto',
-  animationPreset: 'pop',
+  animationPreset: 'none',
   highlightColor: '#ffeb3b',
   activeWordStyle: 'pill',
   safeZone: 'bottom_safe',

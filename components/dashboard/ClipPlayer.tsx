@@ -88,7 +88,7 @@ function SubtitleOverlay({
       : 'bottom-[18%]'
   const fontFamily = SUBTITLE_FONT_FAMILIES[options.font || 'impact'] || SUBTITLE_FONT_FAMILIES.impact
   const subtitleMode = options.mode || (options.style === 'karaoke' ? 'karaoke' : 'phrase')
-  const animationPreset = options.animationPreset || 'pop'
+  const animationPreset = options.animationPreset || 'none'
   const normalizedWords = useMemo(() => normalizeSubtitleWords(words), [words])
   const cues = useMemo(() => buildSubtitleCues(normalizedWords), [normalizedWords])
 
@@ -314,7 +314,7 @@ const DEFAULT_SUB_OPTS: SubtitleOptions = {
   font: 'impact',
   mode: 'active_word',
   preset: 'auto',
-  animationPreset: 'pop',
+  animationPreset: 'none',
   highlightColor: '#ffeb3b',
   activeWordStyle: 'pill',
   safeZone: 'bottom_safe',

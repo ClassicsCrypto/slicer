@@ -778,7 +778,7 @@ async function handleClip(req, res) {
       const opts = subtitleOptions || {}
       const textCase = opts.textCase || 'original'
       const subtitleMode = opts.mode || (opts.style === 'karaoke' ? 'karaoke' : 'phrase')
-      const animationPreset = opts.animationPreset || 'pop'
+      const animationPreset = opts.animationPreset || 'none'
 
       // Filter words that fall within the trimmed window and shift their timestamps
       const trimmedSubs = (opts.profanityFilter ? censorSubtitleWords(subtitles) : subtitles)
@@ -1103,13 +1103,13 @@ function groupSubtitleWords(words) {
   return groups
 }
 
-function buildAssAnimationTag(animationPreset = 'pop') {
+function buildAssAnimationTag(animationPreset = 'none') {
   if (animationPreset === 'fade') return '{\\alpha&H88&\\t(0,220,\\alpha&H00&)}'
   if (animationPreset === 'none') return ''
   return '{\\fscx72\\fscy72\\t(0,170,\\fscx100\\fscy100)}'
 }
 
-function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'pop', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill' } = {}) {
+function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'none', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill' } = {}) {
   const animationTag = buildAssAnimationTag(animationPreset)
   const orderedWords = normalizeSubtitleWords(words)
   const highlightTag = activeWordStyle === 'underline'

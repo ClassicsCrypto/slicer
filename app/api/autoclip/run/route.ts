@@ -25,7 +25,7 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
     background: 'none',
     font: 'impact',
     mode: 'word_pop',
-    animationPreset: 'pop',
+    animationPreset: 'none',
     outlineThickness: 'medium',
     outlineColor: '#000000',
     shadow: true,

@@ -99,7 +99,7 @@ const DEFAULT_HIGHLIGHT_COLOR = '#ffeb3b'
 const BRAND_KIT_STORAGE_KEY = 'slicer.subtitleBrandKit.v1'
 
 const SUBTITLE_PRESETS: { value: SubtitlePreset; label: string; desc: string; options: Partial<SubtitleOptions> }[] = [
-  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'original' } },
+  { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'none', activeWordStyle: 'pill', textCase: 'original' } },
   { value: 'clean_tiktok', label: 'Clean TikTok', desc: 'Native-looking white text with strong outline', options: { mode: 'phrase', safeZone: 'bottom_safe', font: 'montserrat', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'medium', outlineColor: '#000000', shadow: true, animationPreset: 'fade', activeWordStyle: 'color', textCase: 'original' } },
   { value: 'gaming_pop', label: 'Gaming Pop', desc: 'Big punchy action captions', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'large', color: '#ffffff', highlightColor: '#ff3b30', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'pill', textCase: 'upper' } },
   { value: 'hormozi_highlight', label: 'Hormozi Highlight', desc: 'Phrase captions with active keyword emphasis', options: { mode: 'active_word', safeZone: 'center_safe', font: 'arial_black', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', shadow: true, animationPreset: 'pop', activeWordStyle: 'color', textCase: 'original' } },
@@ -895,7 +895,7 @@ export default function ClipPreviewEditor({
                 <label className={`block ${sharedSectionLabelClass}`}>Animation</label>
                 <div className="grid gap-3">
                   {ANIMATION_PRESET_OPTIONS.map((option) => {
-                    const active = (subtitleOptions.animationPreset || 'pop') === option.value
+                    const active = (subtitleOptions.animationPreset || 'none') === option.value
                     return (
                       <button
                         key={option.value}
