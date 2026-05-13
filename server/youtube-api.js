@@ -1395,8 +1395,8 @@ function clusterAudioActionSpikes(spikes, gapSec = 9) {
 
 const GENRE_SIGNAL_PACKS = {
   general_gaming: {
-    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'fought him off', 'fought them off', 'got em', 'got him', 'got one', 'headshot', 'he is dead', "he's dead", 'killed', 'killing frenzy', 'killing spree', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
-    objective: ['captured', 'captured the flag', 'caps the flag', 'champion', 'defuse', 'exfil', 'final circle', 'first blood', 'flag secured', 'got our flag', 'payload', 'planted', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'],
+    hardAction: ['ace', 'beam', 'clutch', 'double kill', 'downed one', 'eliminated', 'first kill', 'fought him off', 'fought them off', 'got em', 'got him', 'got one', 'got two', 'headshot', 'he is dead', "he's dead", 'killed', 'killed right now', 'killing frenzy', 'killing spree', 'knocked', 'one down', 'one shot', 'outplayed', 'picked him', 'protect the boxes', 'save danny', 'shark', 'sharks', 'snipe', 'squad wipe', 'team wipe', 'triple kill', 'wiped'],
+    objective: ['captured', 'captured the flag', 'caps the flag', 'champion', 'defuse', 'dock', 'exfil', 'final circle', 'first blood', 'flag secured', 'get to the dock', 'got our flag', 'payload', 'planted', 'protecting', 'qualified', 'raid complete', 'round won', 'secured', 'victory', 'wave cleared', 'we won'], 
     reaction: ['clip that', 'holy', 'insane', 'let\'s go', 'no way', 'oh my god', 'oh shit', 'what just happened', 'yo'],
     funny: ['bruh', 'haha', 'i\'m dead', 'im dead', 'lmao', 'no shot', 'wtf'],
     negative: ['afk', 'audio settings', 'chat', 'follow the stream', 'loading', 'lobby', 'menu', 'queue', 'queueing', 'sensitivity', 'settings', 'sub goal', 'thanks for the follow', 'thanks for watching'],
@@ -2012,7 +2012,7 @@ function getConcreteActionMatches(text, priorityProfile) {
   }
 }
 
-function passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) {
+function passesGameplayPriorityGate(candidate, priorityProfile, effectiveDetectionMode) {
   if (!candidate) return false
 
   const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
@@ -2099,6 +2099,8 @@ function isLowPayoffClipWindow(clipText, priorityProfile, detectionMode) {
   const coordinationLike = /(i'll cover you|cover you|wait for me|come on|jump in|where are you|let'?s go to|lets go to)/.test(text)
   const workflowChatterLike = /(buttons in discord|export the x post|quest descriptions|raid descriptions|twitter post|trained with the|generations for the art)/.test(text)
   const fishingChatterLike = /\b(dark fish|first fish|fishing|caught a fish|caught fish|fish off)\b/.test(text)
+  const tutorialOrMetaLike = /(read the screen|how do i get back|how do i get down|what do i do now|slicer|website|animations|twitter post|x posts|lore could go|auto scaling|press y on the keyboard|avatar you want|make me a cool video)/.test(text)
+  const weakAlmostLike = /(almost got|almost killed|almost dead|almost had|nearly got|nearly killed)/.test(text)
   const passiveKillFeedLike = /\b(?:he|she|they|[a-z0-9_]{3,}) got killed by\b/.test(text)
   const concreteSignals = getConcreteActionMatches(text, priorityProfile)
   const payoffTerms = [...new Set([
@@ -2113,7 +2115,11 @@ function isLowPayoffClipWindow(clipText, priorityProfile, detectionMode) {
     return true
   }
 
-  if (hasExplicitActionPriority(priorityProfile) && (workflowChatterLike || fishingChatterLike) && concreteSignals.directActionTerms.length === 0) {
+  if (hasExplicitActionPriority(priorityProfile) && (workflowChatterLike || fishingChatterLike || tutorialOrMetaLike) && concreteSignals.directActionTerms.length === 0) {
+    return true
+  }
+
+  if (hasExplicitActionPriority(priorityProfile) && weakAlmostLike && concreteSignals.actionShotTerms.length === 0 && concreteSignals.objectiveTerms.length === 0) {
     return true
   }
 
@@ -2140,7 +2146,7 @@ function shouldDropExplicitActionClip(clip, priorityProfile) {
 
   if (/\bgot him trained\b/.test(text)) return true
   if (/\bgot one\s+(?:dark\s+fish|fish)\b/.test(text)) return true
-  if (/(buttons in discord|export the x post|quest descriptions|raid descriptions|twitter post|trained with the|generations for the art|dark fish|first fish|fishing|caught a fish|caught fish|fish off)/.test(text)) {
+  if (/(buttons in discord|export the x post|quest descriptions|raid descriptions|twitter post|trained with the|generations for the art|dark fish|first fish|fishing|caught a fish|caught fish|fish off|read the screen|how do i get back|slicer|website|animations|lore could go|auto scaling|avatar you want|make me a cool video)/.test(text)) {
     return true
   }
 
@@ -2304,7 +2310,7 @@ function isDirectActionCandidate(candidate) {
   )
 }
 
-function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, detectionMode) {
+function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, effectiveDetectionMode) {
   const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
   const actionPriority = hasActionPriority(priorityProfile)
   return Math.max(80, Math.min(320, Math.max(clipCount * (gameplayStrict ? 18 : actionPriority ? 20 : 16), Math.round(videoDurationMin * (gameplayStrict ? 1.8 : actionPriority ? 1.7 : 1.55)))))
@@ -2316,7 +2322,7 @@ function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priori
   const eligible = [...(scoredCandidates || [])]
     .filter((candidate) => {
       if (gameplayStrict) {
-        return passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) || candidate.score >= (actionPriority ? 8 : 18)
+        return passesGameplayPriorityGate(candidate, priorityProfile, effectiveDetectionMode) || candidate.score >= (actionPriority ? 8 : 18)
       }
       if (actionPriority) {
         return candidate.score >= 8 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff || candidate.priorityMatches?.length > 0 || candidate.spikeHits > 0
@@ -3278,6 +3284,11 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
       }
 
       const detectedGame = genreInfo.game || 'general gaming'
+      const niftyActionRun = /nifty island/i.test(detectedGame)
+      if (niftyActionRun && detectionMode === 'default') {
+        priorityProfile.gameplayRequested = true
+        priorityProfile.actionPriorityRequested = true
+      }
       const detectedGenrePack = normalizeGenrePack(genreInfo.genrePack)
       const detectedPackLabel = GENRE_PACK_LABELS[detectedGenrePack] || detectedGenrePack
       const streamContextLabel = detectedGame.toLowerCase() === detectedPackLabel.toLowerCase()
@@ -3292,6 +3303,7 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
         }, 'processing')
       }
 
+      const effectiveDetectionMode = niftyActionRun && detectionMode === 'default' ? 'gaming' : detectionMode
       const eventChunks = buildEventChunks(words, introSkipSec, totalSec)
       const fallbackChunks = segments.map((segment) => ({
         startSec: segment.startSec,
@@ -3307,7 +3319,7 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
         : mergeChunkSources([...audioActionChunks, ...actionCueChunks], fallbackChunks)
 
       let scoredCandidates = chunkSource
-        .map((chunk) => scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile))
+        .map((chunk) => scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, effectiveDetectionMode, priorityProfile))
         .filter((chunk) => {
           if (chunk.score > 0) return true
           if (hasActionPriority(priorityProfile)) {
@@ -3351,7 +3363,7 @@ ${scoutTranscript}`
             const scoutChunks = buildScoutChunksFromMoments(scoutParsed.moments || scoutParsed.clips || [], words, introSkipSec, totalSec, clipLength)
             const boostedScoutCandidates = scoutChunks
               .map((chunk) => {
-                const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, detectionMode, priorityProfile)
+                const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, effectiveDetectionMode, priorityProfile)
                 const scoutBoost = Math.max(20, Math.min(45, (chunk.scoutScore || 7) * 4))
                 return {
                   ...scored,
@@ -3376,9 +3388,9 @@ ${scoutTranscript}`
       scoredCandidates = scoredCandidates
         .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
 
-      const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
-      const targetCandidates = pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, detectionMode)
-      const topCandidates = buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, detectionMode).sort((a, b) => {
+      const gameplayStrict = isGameplayStrictMode(priorityProfile, effectiveDetectionMode)
+      const targetCandidates = pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, effectiveDetectionMode)
+      const topCandidates = buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, effectiveDetectionMode).sort((a, b) => {
         const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
         if (rankDelta !== 0) return rankDelta
         return a.startSec - b.startSec
@@ -3388,7 +3400,7 @@ ${scoutTranscript}`
         totalSec,
         Math.min(topCandidates.length, 64),
         priorityProfile,
-        detectionMode,
+        effectiveDetectionMode,
       )
       const shortlistCount = gameplayStrict
         ? Math.min(96, Math.max(clipCount * 9, 40))
@@ -3555,16 +3567,16 @@ Return ONLY compact JSON on ONE LINE:
         if (startSec === 0 && result.length > 0) continue
         if (score < 5) continue
 
-        const payload = buildPriorityAwareClipPayload(startSec, score, c.r || c.ai_reason, words, clipLength, detectionMode, priorityProfile)
+        const payload = buildPriorityAwareClipPayload(startSec, score, c.r || c.ai_reason, words, clipLength, effectiveDetectionMode, priorityProfile)
         if (!payload) continue
         const supportingCandidate = findSupportingCandidate(scoredCandidates, startSec, clipLength)
-        if (gameplayStrict && supportingCandidate && !passesGameplayPriorityGate(supportingCandidate, priorityProfile, detectionMode)) {
+        if (gameplayStrict && supportingCandidate && !passesGameplayPriorityGate(supportingCandidate, priorityProfile, effectiveDetectionMode)) {
           continue
         }
-        if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, detectionMode)) {
+        if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) {
           continue
         }
-        if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) {
+        if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) {
           continue
         }
         if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) {
@@ -3585,22 +3597,22 @@ Return ONLY compact JSON on ONE LINE:
         for (const candidate of scoredCandidates) {
           if (result.length >= outputClipTarget) break
           if (candidate.score < backfillThreshold) continue
-          if (!passesGameplayPriorityGate(candidate, priorityProfile, detectionMode)) continue
+          if (!passesGameplayPriorityGate(candidate, priorityProfile, effectiveDetectionMode)) continue
           if (!candidate.hasGameplayPayoff && candidate.signalDensity < 1 && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
 
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
             mapCandidateScoreToVirality(candidate.score),
-            buildClipReasonFromWindow(candidate.text, detectionMode),
+            buildClipReasonFromWindow(candidate.text, effectiveDetectionMode),
             words,
             clipLength,
-            detectionMode,
+            effectiveDetectionMode,
             priorityProfile,
           )
 
           if (!payload) continue
-          if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
-          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
+          if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) continue
+          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) continue
           if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
 
@@ -3618,16 +3630,16 @@ Return ONLY compact JSON on ONE LINE:
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
             mapCandidateScoreToVirality(Math.max(candidate.score, 8)),
-            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, detectionMode),
+            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, effectiveDetectionMode),
             words,
             clipLength,
-            detectionMode,
+            effectiveDetectionMode,
             priorityProfile,
           )
 
           if (!payload) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
-          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode) && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
+          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode) && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
 
           selectedClips.push(payload.selectedWindow)
           result.push(payload.clip)
@@ -3645,16 +3657,16 @@ Return ONLY compact JSON on ONE LINE:
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
             mapCandidateScoreToVirality(candidate.score),
-            buildClipReasonFromWindow(candidate.text, detectionMode),
+            buildClipReasonFromWindow(candidate.text, effectiveDetectionMode),
             words,
             clipLength,
-            detectionMode,
+            effectiveDetectionMode,
             priorityProfile,
           )
 
           if (!payload) continue
-          if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
-          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, detectionMode)) continue
+          if (!clipTextMatchesGameplayAsk(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) continue
+          if (isLowPayoffClipWindow(payload.selectedWindow.text, priorityProfile, effectiveDetectionMode)) continue
           if (shouldSkipPriorityAdjacentSetup(selectedClips, payload.selectedWindow, priorityProfile)) continue
           if (shouldSkipDuplicateClip(selectedClips, payload.selectedWindow.startSec, payload.selectedWindow.endSec, payload.selectedWindow.text, clipLength)) continue
 
@@ -3686,10 +3698,10 @@ Return ONLY compact JSON on ONE LINE:
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
             Math.max(5, mapCandidateScoreToVirality(candidate.score || 5)),
-            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, detectionMode),
+            candidate.scoutReason || buildClipReasonFromWindow(candidate.text, effectiveDetectionMode),
             words,
             clipLength,
-            detectionMode,
+            effectiveDetectionMode,
             priorityProfile,
           )
           if (!payload) continue
