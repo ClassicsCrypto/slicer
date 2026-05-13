@@ -779,14 +779,16 @@ async function handleClip(req, res) {
       const textCase = opts.textCase || 'original'
       const subtitleMode = opts.mode || (opts.style === 'karaoke' ? 'karaoke' : 'phrase')
       const animationPreset = opts.animationPreset || 'none'
+      const fontSize = getAssSubtitleFontSize(opts.size, subtitleMode)
 
       // Filter words that fall within the trimmed window and shift their timestamps
       const trimmedSubs = (opts.profanityFilter ? censorSubtitleWords(subtitles) : subtitles)
         .map(w => ({ ...w, start: w.start - trimOffset, end: w.end - trimOffset }))
         .filter(w => w.end > 0 && w.start < clipDuration)
       
-      // Build style parameters
-      const fontSize = opts.size === 'small' ? 22 : opts.size === 'large' ? 40 : 30
+      // Build style parameters. Keep ASS font sizes aligned to the browser preview's
+      // actual Tailwind pixel sizes at the 720p player breakpoint. Word-pop is
+      // intentionally larger in preview, so it keeps its own scale.
       const resolvedTextColor = resolveSubtitleHex(opts.color, opts.customColor, '#ffffff')
       const hexColor = resolvedTextColor.replace('#', '')
       const r = hexColor.slice(0, 2), g = hexColor.slice(2, 4), b = hexColor.slice(4, 6)
@@ -834,7 +836,7 @@ async function handleClip(req, res) {
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
       const safeZone = opts.safeZone || 'auto'
       const alignment = safeZone === 'upper_safe' || opts.position === 'top' ? 8 : safeZone === 'center_safe' || opts.position === 'center' ? 5 : 2
-      const marginV = safeZone === 'upper_safe' || opts.position === 'top' ? 86 : safeZone === 'center_safe' || opts.position === 'center' ? 0 : 120
+      const marginV = safeZone === 'upper_safe' || opts.position === 'top' ? 86 : safeZone === 'center_safe' || opts.position === 'center' ? 0 : 130
 
       // Generate proper ASS file (reliable alignment vs SRT+force_style)
       const assFile = srtFile.replace('.srt', '.ass')
@@ -857,7 +859,7 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},${defaultBackColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
-Style: CaptionBackground,${fontName},${fontSize},&HFF000000,&HFF000000,&HFF000000,${backColour},-1,0,0,0,100,100,0,0,3,${backgroundBoxPadding},0,${alignment},0,0,${marginV},1
+Style: CaptionBackground,${fontName},${fontSize},${backColour},${backColour},${backColour},${backColour},-1,0,0,0,100,100,0,0,3,${backgroundBoxPadding},0,${alignment},0,0,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1024,6 +1026,17 @@ function resolveSubtitleHex(value, customValue, fallback = '#ffffff') {
   return /^#?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/.test(normalized)
     ? (normalized.startsWith('#') ? normalized : `#${normalized}`)
     : fallback
+}
+
+function getAssSubtitleFontSize(size = 'medium', mode = 'phrase') {
+  if (mode === 'word_pop') {
+    if (size === 'small') return 22
+    if (size === 'large') return 40
+    return 30
+  }
+  if (size === 'small') return 18
+  if (size === 'large') return 30
+  return 22
 }
 
 function escapeAssText(text = '') {
