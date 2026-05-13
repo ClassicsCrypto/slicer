@@ -116,6 +116,24 @@ export default function OptionsModal({
           </div>
         </div>
 
+        {/* Game Context */}
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+          <label className="mb-2 block text-sm font-bold text-white">
+            Game / Context <span className="text-white/30">optional</span>
+          </label>
+          <input
+            type="text"
+            value={options.customGame || ''}
+            maxLength={60}
+            onChange={(e) => onChange({ ...options, customGame: e.target.value })}
+            placeholder="Example: Nifty Island, Battle Pawss, Pixels…"
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-red-500 focus:outline-none"
+          />
+          <div className="mt-1 text-[11px] text-white/25">
+            Locks the stream context when auto-detection is too generic.
+          </div>
+        </div>
+
         {/* Keywords */}
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           <label className="mb-2 block text-sm font-bold text-white">

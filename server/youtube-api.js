@@ -1684,13 +1684,23 @@ function formatClock(sec) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
+const ACTION_SOUND_TOKENS = new Set(['gunshot', 'gunshots', 'gunfire', 'shots', 'shooting', 'explosion', 'explosions', 'screaming', 'cheering', 'applause'])
+
 function sanitizeTranscriptToken(text) {
-  const token = (text || '').trim()
-  if (!token || token.startsWith('[') || token.startsWith('(')) return ''
-  return token
+  const raw = (text || '').trim()
+  if (!raw) return ''
+  const bracketed = raw.match(/^[\[(]([^\])]+)[\])]$/)
+  if (bracketed) {
+    const cue = bracketed[1].trim().toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')
+    const cueTokens = cue.split(/\s+/).filter(Boolean)
+    if (cueTokens.some((token) => ACTION_SOUND_TOKENS.has(token))) return cueTokens.join(' ')
+    return ''
+  }
+  return raw
 }
 
-function buildTranscriptSegments(words, segmentSec = 10) {
+function buildTranscriptSegments(words, segmentSec = 30) {
+  const safeSegmentSec = Math.max(10, Math.min(90, Number(segmentSec) || 30))
   const segments = []
   let segStart = 0
   let segWords = []
@@ -1700,11 +1710,16 @@ function buildTranscriptSegments(words, segmentSec = 10) {
     if (!token) continue
 
     const wordSec = word.start / 1000
-    if (wordSec >= segStart + segmentSec) {
+    if (wordSec >= segStart + safeSegmentSec) {
       if (segWords.length > 0) {
-        segments.push({ startSec: segStart, text: segWords.join(' ') })
+        segments.push({
+          startSec: segStart,
+          endSec: segStart + safeSegmentSec,
+          durationSec: safeSegmentSec,
+          text: segWords.join(' '),
+        })
       }
-      segStart = Math.floor(wordSec / segmentSec) * segmentSec
+      segStart = Math.floor(wordSec / safeSegmentSec) * safeSegmentSec
       segWords = []
     }
 
@@ -1712,7 +1727,12 @@ function buildTranscriptSegments(words, segmentSec = 10) {
   }
 
   if (segWords.length > 0) {
-    segments.push({ startSec: segStart, text: segWords.join(' ') })
+    segments.push({
+      startSec: segStart,
+      endSec: segStart + safeSegmentSec,
+      durationSec: safeSegmentSec,
+      text: segWords.join(' '),
+    })
   }
 
   return segments
@@ -1906,21 +1926,21 @@ function scoreEventChunk(chunk, volumeSpikes, genrePack, detectionMode, priority
   const actionPriorityBias = hasActionPriority(priorityProfile)
   const musicLike = isMusicLikeChunk(text)
   const aftermathLike = isCelebrationAftermathLike(text)
-  const reactionOnlyPenalty = !hasGameplayPayoff && hits.reaction.length > 0 ? 8 : 0
-  const aftermathPenalty = aftermathLike && hits.hardAction.length === 0 && actionShotMatches.length === 0 ? 10 : 0
-  const calibrationPenalty = hits.negative.length * 11 + reactionOnlyPenalty
+  const reactionOnlyPenalty = !hasGameplayPayoff && hits.reaction.length > 0 ? 4 : 0
+  const aftermathPenalty = aftermathLike && hits.hardAction.length === 0 && actionShotMatches.length === 0 ? 5 : 0
+  const calibrationPenalty = hits.negative.length * 5 + reactionOnlyPenalty
   const actionCoverage = hits.hardAction.length + hits.objective.length + hits.modeBoost.length + actionShotMatches.length
   const funnyCoverage = hits.funny.length
   const reactionCoverage = hits.reaction.length
   const signalDensity = actionCoverage + funnyCoverage + reactionCoverage + spikeHits
   const introLikeChunk = /(what's up|welcome back|today we're|stream today|we are live|starting soon|all right chat|alright chat)/.test(text)
-  const weakPayoffPenalty = !hasGameplayPayoff && spikeHits === 0 ? 10 : 0
-  const chatterPenalty = density < 1.6 && signalDensity < 2 ? 6 : 0
-  const durationBonus = chunk.durationSec >= 9 && chunk.durationSec <= 22 ? 6 : chunk.durationSec >= 6 && chunk.durationSec <= 28 ? 3 : -2
-  const strictGameplayPenalty = priorityProfile?.gameplayRequested && !hasGameplayPayoff && hits.modeBoost.length === 0 ? 18 : 0
-  const softActionPenalty = actionPriorityBias && detectionMode !== 'gaming' && !hasGameplayPayoff && funnyCoverage === 0 && reactionCoverage === 0 && spikeHits === 0 ? 6 : 0
+  const weakPayoffPenalty = !hasGameplayPayoff && spikeHits === 0 ? 4 : 0
+  const chatterPenalty = density < 1.6 && signalDensity < 2 ? 3 : 0
+  const durationBonus = chunk.durationSec >= 9 && chunk.durationSec <= 22 ? 6 : chunk.durationSec >= 6 && chunk.durationSec <= 60 ? 3 : -2
+  const strictGameplayPenalty = priorityProfile?.gameplayRequested && !hasGameplayPayoff && hits.modeBoost.length === 0 ? 8 : 0
+  const softActionPenalty = actionPriorityBias && detectionMode !== 'gaming' && !hasGameplayPayoff && funnyCoverage === 0 && reactionCoverage === 0 && spikeHits === 0 ? 3 : 0
   const actionPriorityBonus = actionPriorityBias && hasGameplayPayoff ? 6 : 0
-  const musicPenalty = musicLike && (priorityProfile?.gameplayRequested || detectionMode === 'gaming') && !hasGameplayPayoff ? 24 : 0
+  const musicPenalty = musicLike && (priorityProfile?.gameplayRequested || detectionMode === 'gaming') && !hasGameplayPayoff ? 10 : 0
 
   let score = 0
   score += hits.hardAction.length * 18
@@ -2291,61 +2311,25 @@ function pickCandidatePoolSize(videoDurationMin, clipCount, priorityProfile, det
 }
 
 function buildCandidatePool(scoredCandidates, totalSec, targetCandidates, priorityProfile, detectionMode) {
-  if (scoredCandidates.length <= targetCandidates) return scoredCandidates
-
   const gameplayStrict = isGameplayStrictMode(priorityProfile, detectionMode)
   const actionPriority = hasActionPriority(priorityProfile)
-  const pool = []
-  const buckets = Math.max(5, Math.min(10, Math.ceil(totalSec / 720)))
-  const bucketDuration = Math.max(1, totalSec / buckets)
-  const perBucket = Math.max(actionPriority ? 8 : 6, Math.ceil(targetCandidates / buckets))
-  const seen = new Set()
+  const eligible = [...(scoredCandidates || [])]
+    .filter((candidate) => {
+      if (gameplayStrict) {
+        return passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) || candidate.score >= (actionPriority ? 8 : 18)
+      }
+      if (actionPriority) {
+        return candidate.score >= 8 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff || candidate.priorityMatches?.length > 0 || candidate.spikeHits > 0
+      }
+      return candidate.score >= 3 || candidate.signalDensity >= 1 || candidate.hasGameplayPayoff || candidate.spikeHits > 0 || candidate.wholeTranscriptScout
+    })
+    .sort((a, b) => {
+      const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+      if (rankDelta !== 0) return rankDelta
+      return b.score - a.score
+    })
 
-  for (let bucketIndex = 0; bucketIndex < buckets; bucketIndex += 1) {
-    const bucketStart = bucketIndex * bucketDuration
-    const bucketEnd = bucketStart + bucketDuration
-    const bucketCandidates = scoredCandidates
-      .filter((candidate) => candidate.startSec >= bucketStart && candidate.startSec < bucketEnd)
-      .filter((candidate) => {
-        if (gameplayStrict) {
-          return passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) || candidate.score >= (actionPriority ? 8 : 18)
-        }
-        if (actionPriority) {
-          return candidate.score >= 8 || candidate.signalDensity >= 2 || candidate.hasGameplayPayoff || candidate.priorityMatches?.length > 0 || candidate.spikeHits > 0
-        }
-        return candidate.score >= 3 || candidate.signalDensity >= 1 || candidate.hasGameplayPayoff || candidate.spikeHits > 0 || candidate.wholeTranscriptScout
-      })
-      .slice(0, perBucket)
-
-    for (const candidate of bucketCandidates) {
-      if (seen.has(candidate.startSec)) continue
-      pool.push(candidate)
-      seen.add(candidate.startSec)
-    }
-  }
-
-  if (actionPriority) {
-    const reservedActionCandidates = scoredCandidates
-      .filter((candidate) => isDirectActionCandidate(candidate) || candidate.priorityMatches?.length > 0)
-      .filter((candidate) => passesGameplayPriorityGate(candidate, priorityProfile, detectionMode) || candidate.score >= 8)
-      .slice(0, Math.min(targetCandidates, Math.max(12, Math.ceil(targetCandidates * 0.35))))
-
-    for (const candidate of reservedActionCandidates) {
-      if (pool.length >= targetCandidates) break
-      if (seen.has(candidate.startSec)) continue
-      pool.push(candidate)
-      seen.add(candidate.startSec)
-    }
-  }
-
-  for (const candidate of scoredCandidates) {
-    if (pool.length >= targetCandidates) break
-    if (seen.has(candidate.startSec)) continue
-    pool.push(candidate)
-    seen.add(candidate.startSec)
-  }
-
-  return pool
+  return eligible.slice(0, targetCandidates)
 }
 
 function getCandidateBucketIndex(candidate, totalSec, bucketCount) {
@@ -2357,54 +2341,20 @@ function getCandidateBucketIndex(candidate, totalSec, bucketCount) {
 function selectPromptCandidatesWithCoverage(topCandidates, totalSec, limit, priorityProfile, detectionMode) {
   if (!Array.isArray(topCandidates) || topCandidates.length <= limit) return topCandidates
 
-  const bucketCount = Math.max(6, Math.min(12, Math.ceil((totalSec || 0) / 600)))
-  const minPerBucket = isGameplayStrictMode(priorityProfile, detectionMode) ? 2 : 3
-  const selected = []
-  const seen = new Set()
-
-  const addCandidate = (candidate) => {
-    if (!candidate || seen.has(candidate.startSec) || selected.length >= limit) return false
-    selected.push(candidate)
-    seen.add(candidate.startSec)
-    return true
-  }
-
-  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
-    const bucketCandidates = topCandidates
-      .filter((candidate) => getCandidateBucketIndex(candidate, totalSec, bucketCount) === bucket)
-      .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
-
-    let added = 0
-    for (const candidate of bucketCandidates) {
-      if (added >= minPerBucket) break
-      if (addCandidate(candidate)) added += 1
-    }
-  }
-
-  for (const candidate of topCandidates) {
-    if (selected.length >= limit) break
-    addCandidate(candidate)
-  }
-
-  return selected.sort((a, b) => {
-    const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
-    if (rankDelta !== 0) return rankDelta
-    return a.startSec - b.startSec
-  })
+  return [...topCandidates]
+    .sort((a, b) => {
+      const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
+      if (rankDelta !== 0) return rankDelta
+      return b.score - a.score
+    })
+    .slice(0, limit)
 }
 
 function sortCandidatesForCoverageBackfill(candidates, selectedClips, totalSec, priorityProfile) {
-  const bucketCount = Math.max(6, Math.min(12, Math.ceil((totalSec || 0) / 600)))
-  const usedBuckets = new Set((selectedClips || []).map((clip) => getCandidateBucketIndex(clip, totalSec, bucketCount)))
-
   return [...(candidates || [])].sort((a, b) => {
-    const aBucketUsed = usedBuckets.has(getCandidateBucketIndex(a, totalSec, bucketCount)) ? 1 : 0
-    const bBucketUsed = usedBuckets.has(getCandidateBucketIndex(b, totalSec, bucketCount)) ? 1 : 0
-    if (aBucketUsed !== bBucketUsed) return aBucketUsed - bBucketUsed
-
     const rankDelta = getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile)
     if (rankDelta !== 0) return rankDelta
-    return a.startSec - b.startSec
+    return b.score - a.score
   })
 }
 
@@ -3242,13 +3192,14 @@ async function handleScoreClips(req, res) {
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
-      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || 'openrouter').toLowerCase()
+      const FULL_TRANSCRIPT_SCOUT = (process.env.FULL_TRANSCRIPT_SCOUT || 'off').toLowerCase()
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
       const introSkipMin = totalSec > 1800 ? 7 : 2
       const videoDurationMin = Math.round(totalSec / 60)
       const introSkipSec = introSkipMin * 60
+      const analysisSegmentSec = Math.max(10, Math.min(90, Number.parseInt(clipLength, 10) || 30))
       const customGameHint = customGame?.trim() ? `\nUser override hint: ${customGame}` : ''
       const priorityHintText = typeof priorityHint === 'string' ? priorityHint.trim().slice(0, 180) : ''
       const priorityProfile = buildPriorityProfile(priorityHintText, detectionMode)
@@ -3270,7 +3221,7 @@ async function handleScoreClips(req, res) {
       }
       const clipFocus = modeInstructions[detectionMode] || modeInstructions.default
 
-      const segments = buildTranscriptSegments(words, 10)
+      const segments = buildTranscriptSegments(words, analysisSegmentSec)
       const sampled = sampleSegmentsEvenly(segments)
       if (sampled.length !== segments.length) {
         console.log(`[score-clips] Transcript sampled: ${segments.length} → ${sampled.length} segments for genre detection`)
@@ -3344,8 +3295,8 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
       const eventChunks = buildEventChunks(words, introSkipSec, totalSec)
       const fallbackChunks = segments.map((segment) => ({
         startSec: segment.startSec,
-        endSec: Math.min(totalSec, segment.startSec + 10),
-        durationSec: Math.min(10, Math.max(4, totalSec - segment.startSec)),
+        endSec: Math.min(totalSec, segment.endSec || (segment.startSec + analysisSegmentSec)),
+        durationSec: Math.min(analysisSegmentSec, Math.max(4, totalSec - segment.startSec)),
         words: segment.text.split(/\s+/),
         text: segment.text,
       }))
@@ -3370,7 +3321,7 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
         })
 
       let scoutCandidatesAdded = 0
-      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY && !priorityHintText) {
+      if (FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
         try {
           const scoutTranscript = buildWholeTranscriptForScout(segments)
           const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
@@ -3475,13 +3426,12 @@ Genre pack used for pre-scoring: ${detectedPackLabel}.${customGameHint}
 ${priorityHintBlock}
 
 Task: Rank the best candidate moments from the list below.
-Return a broad ranked list, not just the obvious safest picks. Aim for at least ${Math.max(clipCount * 3, 24)} candidates and up to ${shortlistCount}; the app will dedupe and keep the best ${clipCount}.
-Only return fewer than ${clipCount * 2} if the source is truly empty of usable moments.
+Return a broad ranked list, not just the obvious safest picks. Aim for at least ${Math.max(clipCount * 3, 24)} candidates and up to ${shortlistCount}; the app will dedupe and build the best 10.
+Only return fewer than 10 if the source is truly empty of usable moments.
 ${clipFocus}
 ${scoringRubric}
 
 Important selection rules:
-- Skip the first ${introSkipMin} minutes.
 - Prefer real payoff over setup chatter.
 - You MAY keep close timestamps when they are distinct beats of the same fight or sequence.
 - Do NOT return duplicate angles of the exact same moment.
@@ -3532,9 +3482,21 @@ Return ONLY compact JSON on ONE LINE:
           geminiContent = geminiContent || await callGeminiText(GEMINI_API_KEY, GEMINI_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000, retries: 1, timeoutMs: 30000 })
           content = geminiContent
         } catch (geminiError) {
-          console.warn(`[score-clips] Gemini scorer timed out/failed for ${jobId}; falling back to local candidate scoring: ${geminiError.message}`)
-          content = '{"clips":[]}'
-          scorerUsed = 'local_fallback'
+          console.warn(`[score-clips] Gemini scorer timed out/failed for ${jobId}: ${geminiError.message}`)
+          if (OPENROUTER_API_KEY) {
+            try {
+              openRouterContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, aiPrompt, { temperature: 0.2, maxOutputTokens: 4000 })
+              content = openRouterContent
+              scorerUsed = 'openrouter_fallback'
+            } catch (openRouterError) {
+              console.warn(`[score-clips] OpenRouter fallback failed for ${jobId}; using local candidate scoring: ${openRouterError.message}`)
+              content = '{"clips":[]}'
+              scorerUsed = 'local_fallback'
+            }
+          } else {
+            content = '{"clips":[]}'
+            scorerUsed = 'local_fallback'
+          }
         }
       }
 
@@ -3574,7 +3536,8 @@ Return ONLY compact JSON on ONE LINE:
         console.log(`[score-clips] Partial parse: clips=${gemParsed.clips.length}`)
       }
 
-      const clips = gemParsed.clips ?? []
+      const clips = (gemParsed.clips ?? []).sort((a, b) => (Number(b.v ?? b.virality_score ?? 0) - Number(a.v ?? a.virality_score ?? 0)))
+      const outputClipTarget = 10
       console.log(`[score-clips] ${scorerUsed} returned ${clips.length} clips for ${detectedGame}`)
 
       if (clips.length === 0) {
@@ -3614,13 +3577,13 @@ Return ONLY compact JSON on ONE LINE:
         }
         selectedClips.push(payload.selectedWindow)
         result.push(payload.clip)
-        if (result.length >= clipCount) break
+        if (result.length >= outputClipTarget) break
       }
 
-      if (result.length < clipCount) {
+      if (result.length < outputClipTarget) {
         const backfillThreshold = hasActionPriority(priorityProfile) ? 6 : gameplayStrict ? 8 : 10
         for (const candidate of scoredCandidates) {
-          if (result.length >= clipCount) break
+          if (result.length >= outputClipTarget) break
           if (candidate.score < backfillThreshold) continue
           if (!passesGameplayPriorityGate(candidate, priorityProfile, detectionMode)) continue
           if (!candidate.hasGameplayPayoff && candidate.signalDensity < 1 && !candidate.wholeTranscriptScout && candidate.spikeHits < 1) continue
@@ -3647,9 +3610,9 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
-      if (result.length < clipCount) {
+      if (result.length < outputClipTarget) {
         for (const candidate of topCandidates) {
-          if (result.length >= clipCount) break
+          if (result.length >= outputClipTarget) break
           if (candidate.score < 3 && !candidate.wholeTranscriptScout && candidate.signalDensity < 1 && candidate.spikeHits < 1) continue
 
           const payload = buildPriorityAwareClipPayload(
@@ -3673,9 +3636,9 @@ Return ONLY compact JSON on ONE LINE:
       }
 
       let clipShortfallReason
-      if (result.length < clipCount && hasActionPriority(priorityProfile)) {
+      if (result.length < outputClipTarget && hasActionPriority(priorityProfile)) {
         for (const candidate of scoredCandidates) {
-          if (result.length >= clipCount) break
+          if (result.length >= outputClipTarget) break
           if (!isDirectActionCandidate(candidate)) continue
           if (candidate.score < 10) continue
 
@@ -3711,7 +3674,7 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
-      if (result.length < clipCount) {
+      if (result.length < outputClipTarget) {
         const coverageCandidates = sortCandidatesForCoverageBackfill(
           topCandidates.filter((candidate) => candidate.startSec >= introSkipSec),
           selectedClips,
@@ -3719,7 +3682,7 @@ Return ONLY compact JSON on ONE LINE:
           priorityProfile,
         )
         for (const candidate of coverageCandidates) {
-          if (result.length >= clipCount) break
+          if (result.length >= outputClipTarget) break
           const payload = buildPriorityAwareClipPayload(
             Math.max(0, Math.round(candidate.startSec)),
             Math.max(5, mapCandidateScoreToVirality(candidate.score || 5)),
@@ -3737,13 +3700,13 @@ Return ONLY compact JSON on ONE LINE:
         }
       }
 
-      if (result.length < clipCount) {
+      if (result.length < outputClipTarget) {
         if (result.length === 0) {
           clipShortfallReason = priorityProfile.gameplayRequested
-            ? `Requested ${clipCount}, delivered 0. No strong gameplay moments matched the current source and priority hint.`
-            : `Requested ${clipCount}, delivered 0. No strong distinct moments were found in the current source.`
+            ? `Targeted 10 clips, delivered 0. No strong gameplay moments matched the current source and priority hint.`
+            : `Targeted 10 clips, delivered 0. No strong distinct moments were found in the current source.`
         } else {
-          clipShortfallReason = `Requested ${clipCount}, delivered ${result.length}. ${duplicateClipsRemoved > 0 ? `${duplicateClipsRemoved} near-duplicate moments were collapsed.` : 'Gemini returned fewer unique moments than requested.'}${backfilledClipsAdded > 0 ? ` Added ${backfilledClipsAdded} extra moments from local scoring, but the run still came up short.` : ''}${explicitActionDrops > 0 ? ` Removed ${explicitActionDrops} off-target moments after final action-priority filtering.` : ''}`
+          clipShortfallReason = `Targeted 10 clips, delivered ${result.length}. ${duplicateClipsRemoved > 0 ? `${duplicateClipsRemoved} near-duplicate moments were collapsed.` : 'Gemini returned fewer unique moments than requested.'}${backfilledClipsAdded > 0 ? ` Added ${backfilledClipsAdded} extra moments from local scoring, but the run still came up short.` : ''}${explicitActionDrops > 0 ? ` Removed ${explicitActionDrops} off-target moments after final action-priority filtering.` : ''}`
         }
       }
 
@@ -3879,13 +3842,9 @@ async function handleJobStart(req, res) {
       const transcribeData = await transcribeRes.json()
       const transcriptionEntry = await waitForTranscriptionEntry(transcribeData.transcribeId)
 
-      const filteredWords = (transcriptionEntry.result?.words || []).filter((word) => {
-        const token = (word.text || '').trim()
-        if (!token) return false
-        if (token.startsWith('[') && token.endsWith(']')) return false
-        if (token.startsWith('(') && token.endsWith(')')) return false
-        return true
-      })
+      const filteredWords = (transcriptionEntry.result?.words || [])
+        .map((word) => ({ ...word, text: sanitizeTranscriptToken(word.text) }))
+        .filter((word) => Boolean((word.text || '').trim()))
 
       await mergeJobProgress(jobId, {
         phase: 'analyzing',

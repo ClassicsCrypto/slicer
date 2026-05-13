@@ -170,6 +170,7 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
   detectionMode: 'default',
   aiFocus: ['funny_moments', 'hype_moments', 'intense_action'],
   priorityHint: '',
+  customGame: '',
   outputQuality: '720p',
   platformFormat: 'twitter',
   subtitles: {
@@ -287,6 +288,7 @@ export default function UploadTab({ onJobCreated, onViewClips }: UploadTabProps)
       const normalizedOptions: ProcessingOptions = {
         ...options,
         priorityHint: options.priorityHint?.trim().slice(0, 180) || undefined,
+        customGame: options.customGame?.trim().slice(0, 60) || undefined,
       }
       const rawInputUrl = url.trim()
       let sourceUrl = rawInputUrl
