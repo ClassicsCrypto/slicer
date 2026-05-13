@@ -821,7 +821,9 @@ async function handleClip(req, res) {
       const outlineColour = `&H00${oB}${oG}${oR}`
       const backgroundMode = opts.background || 'none'
       const backColour = hexToAssColour(opts.backgroundColor || '#000000', opts.backgroundOpacity ?? 45)
-      const borderStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'active_word_pill' ? 3 : 1
+      const hasSubtitleBackground = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'active_word_pill'
+      const borderStyle = 1
+      const backgroundBoxPadding = backgroundMode === 'active_word_pill' ? 9 : backgroundMode === 'rounded_box' ? 8 : 6
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
       const safeZone = opts.safeZone || 'auto'
@@ -837,6 +839,7 @@ async function handleClip(req, res) {
         baseColour: basePrimaryColour,
         highlightColour,
         activeWordStyle: opts.activeWordStyle || 'pill',
+        includeBackground: hasSubtitleBackground,
       })
       const assEvents = assEventLines.join('\n')
       const assContent = `[Script Info]
@@ -848,6 +851,7 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,${fontName},${fontSize},${primaryColour},${secondaryColour},${outlineColour},${backColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadowSize},${alignment},0,0,${marginV},1
+Style: CaptionBackground,${fontName},${fontSize},&HFF000000,&HFF000000,&HFF000000,${backColour},-1,0,0,0,100,100,0,0,3,${backgroundBoxPadding},0,${alignment},0,0,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1133,7 +1137,7 @@ function hexToAssColour(hex = '#000000', opacityPercent = 45) {
   return `&H${alpha}${b}${g}${r}`
 }
 
-function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'none', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill' } = {}) {
+function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', animationPreset = 'none', baseColour = '&H00FFFFFF', highlightColour = '&H0000EBFF', activeWordStyle = 'pill', includeBackground = false } = {}) {
   const animationTag = buildAssAnimationTag(animationPreset)
   const orderedWords = normalizeSubtitleWords(words)
   const highlightTag = activeWordStyle === 'underline'
@@ -1144,14 +1148,22 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
         ? `{\\c${highlightColour}}`
         : `{\\c${highlightColour}\\3c&H00333333&\\bord4\\fscx112\\fscy112}`
   const resetTag = `{\\rDefault\\c${baseColour}}`
+  const withBackgroundLine = (start, end, plainText, foregroundText) => {
+    const lines = []
+    if (includeBackground) {
+      lines.push(`Dialogue: 0,${toAssTime(start)},${toAssTime(end)},CaptionBackground,,0,0,0,,${animationTag}${plainText}`)
+    }
+    lines.push(`Dialogue: 1,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${foregroundText}`)
+    return lines
+  }
 
   if (mode === 'word_pop') {
-    return orderedWords.map((word, index) => {
+    return orderedWords.flatMap((word, index) => {
       const nextWord = orderedWords[index + 1]
       const start = word.start
       const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
       const text = formatAssWordText(word.text || '', textCase)
-      return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
+      return withBackgroundLine(start, end, text, text)
     })
   }
 
@@ -1165,33 +1177,35 @@ function buildAssDialogueLines(words, { textCase = 'original', mode = 'phrase', 
         const nextWord = group[index + 1]
         const start = word.start
         const end = getAssCueEnd(start, word.end + 0.18, nextWord?.start)
+        const plainText = group.map((entry) => formatAssWordText(entry.text || '', textCase)).join(' ')
         const text = group.map((entry, entryIndex) => {
           const escaped = formatAssWordText(entry.text || '', textCase)
           return entryIndex === index ? `${highlightTag}${escaped}${resetTag}` : escaped
         }).join(' ')
-        lines.push(`Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`)
+        lines.push(...withBackgroundLine(start, end, plainText, text))
       }
     }
     return lines
   }
 
   if (mode === 'karaoke') {
-    return groupedWords.map((group) => {
+    return groupedWords.flatMap((group) => {
       const start = group[0].start
       const end = group[group.length - 1].end
+      const plainText = group.map((word) => formatAssWordText(word.text || '', textCase)).join(' ')
       const text = group.map((word) => {
         const durationCs = Math.max(1, Math.round(Math.max(0.08, word.end - word.start) * 100))
         return `{\\k${durationCs}}${formatAssWordText(word.text || '', textCase)}`
       }).join(' ')
-      return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
+      return withBackgroundLine(start, end, plainText, text)
     })
   }
 
-  return groupedWords.map((group) => {
+  return groupedWords.flatMap((group) => {
     const start = group[0].start
     const end = group[group.length - 1].end
     const text = group.map((word) => formatAssWordText(word.text || '', textCase)).join(' ')
-    return `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Default,,0,0,0,,${animationTag}${text}`
+    return withBackgroundLine(start, end, text, text)
   })
 }
 
