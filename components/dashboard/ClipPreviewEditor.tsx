@@ -54,6 +54,12 @@ const FONT_OPTIONS: { value: SubtitleFont; label: string }[] = [
   { value: 'verdana', label: 'Verdana' },
   { value: 'georgia', label: 'Georgia' },
   { value: 'times_new_roman', label: 'Times New Roman' },
+  { value: 'comic_sans', label: 'Comic Sans' },
+  { value: 'cooper_black', label: 'Cooper Black' },
+  { value: 'arial_rounded', label: 'Arial Rounded' },
+  { value: 'lucida_handwriting', label: 'Lucida Handwriting' },
+  { value: 'brush_script', label: 'Brush Script' },
+  { value: 'papyrus', label: 'Papyrus' },
 ]
 
 const PLATFORM_OPTIONS: { value: SocialPlatform; label: string }[] = [
@@ -89,8 +95,7 @@ const SUBTITLE_BACKGROUND_OPTIONS: { value: SubtitleBackground; label: string; d
   { value: 'none', label: 'Off', desc: 'No caption background' },
   { value: 'solid', label: 'Box', desc: 'Solid readable caption box' },
   { value: 'rounded_box', label: 'Rounded', desc: 'Rounded caption container' },
-  { value: 'blur', label: 'Blur', desc: 'Soft translucent backdrop' },
-  { value: 'active_word_pill', label: 'Word Pill', desc: 'Background only behind active words' },
+  { value: 'active_word_pill', label: 'Word Pill', desc: 'Small background pill behind each subtitle word' },
 ]
 
 const TIMELINE_PX_PER_SECOND = 72
@@ -1099,8 +1104,9 @@ export default function ClipPreviewEditor({
               <label className={`mb-3 block ${sharedSectionLabelClass}`}>Background Transparency</label>
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-white/45">Transparent</span>
+                  <span className="font-semibold text-white">{subtitleBackgroundOpacity}% opaque</span>
                   <span className="text-white/45">Opaque</span>
-                  <span className="font-semibold text-white">{100 - subtitleBackgroundOpacity}% transparent</span>
                 </div>
                 <input
                   type="range"
@@ -1112,7 +1118,7 @@ export default function ClipPreviewEditor({
                   disabled={!backgroundEnabled}
                   className="w-full accent-red-500 disabled:cursor-not-allowed"
                 />
-                <div className="text-xs leading-5 text-white/35">Higher value = more visible subtitle background.</div>
+                <div className="text-xs leading-5 text-white/35">Move left for more transparent, right for more opaque.</div>
               </div>
             </div>
 

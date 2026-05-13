@@ -806,6 +806,12 @@ async function handleClip(req, res) {
         'verdana': 'Verdana',
         'georgia': 'Georgia',
         'times_new_roman': 'Times New Roman',
+        'comic_sans': 'Comic Sans MS',
+        'cooper_black': 'Cooper Black',
+        'arial_rounded': 'Arial Rounded MT Bold',
+        'lucida_handwriting': 'Lucida Handwriting',
+        'brush_script': 'Brush Script MT',
+        'papyrus': 'Papyrus',
       }
       const fontName = fontNameMap[opts.font] || 'Impact'
       const outlineThickness = opts.outlineThickness || 'medium'
@@ -815,7 +821,7 @@ async function handleClip(req, res) {
       const outlineColour = `&H00${oB}${oG}${oR}`
       const backgroundMode = opts.background || 'none'
       const backColour = hexToAssColour(opts.backgroundColor || '#000000', opts.backgroundOpacity ?? 45)
-      const borderStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'blur' ? 3 : 1
+      const borderStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'active_word_pill' ? 3 : 1
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
       const safeZone = opts.safeZone || 'auto'

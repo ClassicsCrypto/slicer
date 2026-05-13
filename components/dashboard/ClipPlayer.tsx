@@ -20,6 +20,12 @@ const SUBTITLE_FONT_FAMILIES: Record<string, string> = {
   verdana: 'Verdana, Geneva, sans-serif',
   georgia: 'Georgia, serif',
   times_new_roman: '"Times New Roman", serif',
+  comic_sans: '"Comic Sans MS", "Comic Sans", cursive',
+  cooper_black: '"Cooper Black", Impact, serif',
+  arial_rounded: '"Arial Rounded MT Bold", Arial, sans-serif',
+  lucida_handwriting: '"Lucida Handwriting", "Brush Script MT", cursive',
+  brush_script: '"Brush Script MT", "Lucida Handwriting", cursive',
+  papyrus: 'Papyrus, fantasy',
 }
 
 function applyTextCase(text: string, textCase: SubtitleOptions['textCase'] = 'original') {
@@ -157,12 +163,18 @@ function SubtitleOverlay({
   const cueKey = subtitleMode === 'phrase'
     ? `${subtitleMode}-${currentCue.start}`
     : `${subtitleMode}-${currentCue.start}-${Math.max(currentWordIndex, 0)}`
-  const cueBackgroundStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box' || backgroundMode === 'blur'
+  const cueBackgroundStyle = backgroundMode === 'solid' || backgroundMode === 'rounded_box'
     ? {
         backgroundColor: backgroundRgba,
         borderRadius: backgroundMode === 'solid' ? '0.35em' : '0.72em',
         padding: '0.22em 0.5em',
-        backdropFilter: backgroundMode === 'blur' ? 'blur(8px)' : undefined,
+      }
+    : undefined
+  const wordPillStyle = backgroundMode === 'active_word_pill'
+    ? {
+        background: backgroundRgba,
+        borderRadius: '0.42em',
+        padding: '0.02em 0.2em',
       }
     : undefined
 
@@ -192,6 +204,7 @@ function SubtitleOverlay({
           key={`${currentCue.start}-${index}`}
           style={{
             color: activeColor,
+            ...wordPillStyle,
             textShadow,
             textTransform: textTransform as any,
           }}
@@ -216,15 +229,15 @@ function SubtitleOverlay({
       {currentCue.words.map((word, index) => {
         const isActive = index === currentWordIndex
         const animatedStyle = getAnimatedStyle(isActive)
-        const pillActive = isActive && ((options.activeWordStyle || 'pill') === 'pill' || backgroundMode === 'active_word_pill')
+        const pillActive = isActive && (options.activeWordStyle || 'pill') === 'pill'
         return (
           <span
             key={`${currentCue.start}-${index}`}
             style={{
               color: isActive ? highlightColor : activeColor,
-              background: pillActive ? (backgroundMode === 'active_word_pill' ? backgroundRgba : 'rgba(255, 235, 59, 0.22)') : 'transparent',
-              borderRadius: pillActive ? '0.42em' : 0,
-              padding: pillActive ? '0.02em 0.2em' : 0,
+              background: wordPillStyle?.background ?? (pillActive ? 'rgba(255, 235, 59, 0.22)' : 'transparent'),
+              borderRadius: wordPillStyle?.borderRadius ?? (pillActive ? '0.42em' : 0),
+              padding: wordPillStyle?.padding ?? (pillActive ? '0.02em 0.2em' : 0),
               textDecoration: isActive && options.activeWordStyle === 'underline' ? `underline ${highlightColor} 0.12em` : 'none',
               textShadow,
               textTransform: textTransform as any,
@@ -263,6 +276,7 @@ function SubtitleOverlay({
             key={`${currentCue.start}-${index}`}
             style={{
               color: isActive ? highlightColor : isSpoken ? spokenColor : dimColor,
+              ...wordPillStyle,
               textShadow,
               textTransform: textTransform as any,
               opacity: isActive ? animatedStyle.opacity : 1,
@@ -292,6 +306,7 @@ function SubtitleOverlay({
           fontWeight: 800,
           letterSpacing: '0.045em',
           color: activeColor,
+          ...(backgroundMode === 'active_word_pill' ? wordPillStyle : undefined),
           textShadow,
           textTransform: textTransform as any,
           transform: animatedStyle.transform,
