@@ -173,8 +173,10 @@ function SubtitleOverlay({
   const wordPillStyle = backgroundMode === 'active_word_pill'
     ? {
         background: backgroundRgba,
-        borderRadius: '0.42em',
-        padding: '0.02em 0.2em',
+        borderRadius: '0.8em',
+        padding: '0.16em 0.52em',
+        boxDecorationBreak: 'clone' as const,
+        WebkitBoxDecorationBreak: 'clone' as const,
       }
     : undefined
 
