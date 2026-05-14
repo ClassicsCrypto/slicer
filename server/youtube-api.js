@@ -61,6 +61,7 @@ const videoCache = new Map()
 // Active downloads: downloadId → { status, publicUrl, title, error, progress }
 const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+const MIN_REUSABLE_SOURCE_HEIGHT = 720
 const activeJobRuns = new Set()
 const PARTIAL_FILE_RE = /\.(part|ytdl)$/i
 
@@ -314,14 +315,27 @@ function isTwitchUrl(rawUrl) {
 
 function getDownloadFormat(rawUrl) {
   if (isXBroadcastUrl(rawUrl)) {
-    return 'bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b[height<=720]/best'
+    return 'bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best'
   }
 
   if (isTwitchUrl(rawUrl)) {
-    return 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/b[height<=720]/bv*[height<=720]+ba/best[ext=mp4]/best'
+    return 'bv*[height<=1080]+ba/b[height<=1080]/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best'
   }
 
-  return 'b[height<=360]/b[height<=480]/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/best'
+  return 'bv*[height<=1080]+ba/b[height<=1080]/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best'
+}
+
+function getVideoStreamMeta(filePath) {
+  try {
+    const raw = execSync(
+      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,bit_rate -of csv=p=0 "${String(filePath).replace(/"/g, '\\"')}"`,
+      { timeout: 10000, encoding: 'utf8' }
+    ).trim()
+    const [width, height, bitRate] = raw.split(',').map((value) => parseInt(value, 10) || 0)
+    return { width, height, bitRate }
+  } catch {
+    return { width: 0, height: 0, bitRate: 0 }
+  }
 }
 
 function canonicalizeSourceInputUrl(rawUrl) {
@@ -436,16 +450,21 @@ async function ensureDownloadedSource(rawUrl) {
 
   const reusable = findReusableDownloadedFile(info.id)
   if (reusable) {
-    const payload = {
-      publicUrl: getServeUrl(reusable.fileName),
-      duration: info.duration || getMediaDuration(reusable.absolute),
-      title: info.title,
-      videoId: info.id,
-      filePath: reusable.absolute,
+    const reusableMeta = getVideoStreamMeta(reusable.absolute)
+    if (reusableMeta.height && reusableMeta.height < MIN_REUSABLE_SOURCE_HEIGHT) {
+      console.log(`[cache] SKIP_LOW_RES_DISK: ${info.id} → ${reusable.fileName} (${reusableMeta.width}x${reusableMeta.height})`)
+    } else {
+      const payload = {
+        publicUrl: getServeUrl(reusable.fileName),
+        duration: info.duration || getMediaDuration(reusable.absolute),
+        title: info.title,
+        videoId: info.id,
+        filePath: reusable.absolute,
+      }
+      setCache(rawUrl, payload)
+      console.log(`[cache] REUSE_DISK: ${info.id} → ${reusable.fileName}${reusableMeta.width ? ` (${reusableMeta.width}x${reusableMeta.height})` : ''}`)
+      return { ...payload, cached: true }
     }
-    setCache(rawUrl, payload)
-    console.log(`[cache] REUSE_DISK: ${info.id} → ${reusable.fileName}`)
-    return { ...payload, cached: true }
   }
 
   const fileId = crypto.randomBytes(8).toString('hex')
@@ -887,16 +906,20 @@ ${assEvents}`
       subtitleFilter = `-vf "ass='${escapedAss}'${fontsDirOption}"`
     }
 
-    // Aspect ratio crop filter
+    // Aspect/export filter. These produce platform-ready dimensions instead of
+    // exporting tiny cropped frames such as 405x720 or 270x480.
     let cropFilter = ''
     if (aspectRatio === 'tiktok') {
-      // 9:16 vertical - center crop
-      cropFilter = 'crop=trunc(ih*9/16/2)*2:ih'
+      // 9:16 vertical
+      cropFilter = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
     } else if (aspectRatio === 'youtube_shorts') {
-      // 1:1 square - center crop
-      cropFilter = 'crop=min(iw\\,ih):min(iw\\,ih)'
+      // 1:1 square
+      cropFilter = 'scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080'
+    } else if (aspectRatio === 'twitter') {
+      // 16:9 landscape
+      cropFilter = 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720'
     }
-    // 'twitter' = 16:9 (usually already native), 'custom' = no crop
+    // 'custom' = original frame, no crop/resize
 
     // Build complete filter chain: crop → subtitles → watermark
     const watermarkPath = path.join(__dirname, 'watermark.png')
@@ -974,7 +997,7 @@ ${assEvents}`
     }
 
     await new Promise((resolve, reject) => {
-      const cmd = `ffmpeg -ss ${startTime} -i "${clipInput}" -t ${duration} ${filterChain} -c:v libx264 -c:a aac -movflags +faststart -y "${outputFile}"`
+      const cmd = `ffmpeg -ss ${startTime} -i "${clipInput}" -t ${duration} ${filterChain} -c:v libx264 -preset slow -crf 18 -c:a aac -b:a 192k -movflags +faststart -y "${outputFile}"`
       console.log(`[clip] ffmpeg: ${cmd}`)
 
       exec(cmd, { timeout: 180000 }, (err, stdout, stderr) => {
