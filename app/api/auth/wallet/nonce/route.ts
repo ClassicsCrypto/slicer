@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createWalletNonce } from '@/lib/auth'
+import { getPublicBaseUrl } from '@/lib/public-url'
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as { walletAddress?: string }
@@ -7,5 +8,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Valid walletAddress is required' }, { status: 400 })
   }
 
-  return NextResponse.json(createWalletNonce(body.walletAddress, request.nextUrl.origin))
+  return NextResponse.json(createWalletNonce(body.walletAddress, getPublicBaseUrl(request.nextUrl, request.headers)))
 }

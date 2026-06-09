@@ -143,7 +143,22 @@ function getDiskFreeBytes(targetPath) {
 
 async function loadJobs() {
   if (getJobStoreKind() === 'sqlite') {
-    return sqliteShadowStore.listShadowJobs(5000)
+    return sqliteShadowStore.listShadowJobs(5000).map((row) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      completed_at: row.completed_at,
+      expires_at: row.expires_at,
+      deleted_at: row.deleted_at,
+      raw_input_url: row.raw_input_url,
+      source_url: row.source_url,
+      source_path: row.source_path,
+      source_cache_key: row.source_cache_key,
+      options: JSON.parse(row.options_json || '{}'),
+      progress: JSON.parse(row.progress_json || '{}'),
+    }))
   }
 
   const supabaseUrl = getEnvValue('NEXT_PUBLIC_SUPABASE_URL', '')

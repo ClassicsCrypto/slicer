@@ -25,7 +25,7 @@ Slicer now supports Resend for email login codes without adding a package depend
 AUTH_EMAIL_PROVIDER=resend
 RESEND_API_KEY=...
 AUTH_EMAIL_FROM="Slicer <login@marscatsvoyage.com>"
-NEXT_PUBLIC_APP_URL=https://mc.marscatsvoyage.com
+NEXT_PUBLIC_APP_URL=https://slicer.marscatsvoyage.com
 ```
 
 If those vars are missing, email login keeps using debug mode and returns `devCode` for preview testing.
@@ -44,8 +44,8 @@ If those vars are missing, email login keeps using debug mode and returns `devCo
 Use the deployed Slicer URL as the base.
 
 ```text
-Google callback:  https://mc.marscatsvoyage.com/api/auth/callback/google
-Discord callback: https://mc.marscatsvoyage.com/api/auth/callback/discord
+Google callback:  https://slicer.marscatsvoyage.com/api/auth/callback/google
+Discord callback: https://slicer.marscatsvoyage.com/api/auth/callback/discord
 ```
 
 For local testing:

@@ -1,7 +1,8 @@
 /**
  * Stable Cloudflare named tunnel for the Slicer dashboard.
  *
- * Existing Cloudflare route:
+ * Existing Cloudflare routes:
+ *   https://slicer.marscatsvoyage.com -> http://localhost:3000
  *   https://mc.marscatsvoyage.com -> http://localhost:3000
  *
  * This avoids sharing rotating *.trycloudflare.com quick-tunnel URLs.
@@ -14,7 +15,7 @@ const os = require('os')
 const CLOUDFLARED = 'c:\\Program Files (x86)\\cloudflared\\cloudflared.exe'
 const CONFIG = path.join(os.homedir(), '.cloudflared', 'config.yml')
 const STABLE_URL_FILE = path.join(__dirname, 'stable-dashboard-url.txt')
-const STABLE_URL = 'https://mc.marscatsvoyage.com'
+const STABLE_URL = 'https://slicer.marscatsvoyage.com'
 
 if (!fs.existsSync(CLOUDFLARED)) {
   console.error(`[stable-dashboard-tunnel] cloudflared not found: ${CLOUDFLARED}`)

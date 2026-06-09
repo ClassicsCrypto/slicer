@@ -1,6 +1,6 @@
 /**
- * Cloudflare Quick Tunnel for Slicer API
- * Creates a *.trycloudflare.com URL that proxies to localhost:3001
+ * Stable Cloudflare named tunnel for Slicer API.
+ * Uses https://slicer-api.marscatsvoyage.com -> http://localhost:3001
  * Saves URL to tunnel-url.txt AND to Supabase Storage for frontend discovery
  * 
  * Uses an empty config to prevent cloudflared from loading the default config.yml
@@ -8,10 +8,13 @@
 const { spawn } = require('child_process')
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
 
 const CLOUDFLARED = 'c:\\Program Files (x86)\\cloudflared\\cloudflared.exe'
 const URL_FILE = path.join(__dirname, 'tunnel-url.txt')
 const EMPTY_CONFIG = path.join(__dirname, 'tunnel-config-empty.yml')
+const CONFIG = path.join(os.homedir(), '.cloudflared', 'slicer-config.yml')
+const STABLE_API_URL = 'https://slicer-api.marscatsvoyage.com'
 
 // Create an empty config so cloudflared doesn't load the default one
 fs.writeFileSync(EMPTY_CONFIG, '# empty config for quick tunnel\n', 'utf8')
@@ -59,11 +62,17 @@ async function saveTunnelUrl(url) {
   }
 }
 
+fs.writeFileSync(URL_FILE, STABLE_API_URL, 'utf8')
+console.log(`[tunnel] Stable API URL: ${STABLE_API_URL}`)
+console.log(`[tunnel] Saved to: ${URL_FILE}`)
+saveTunnelUrl(STABLE_API_URL)
+
 const proc = spawn(CLOUDFLARED, [
-  '--config', EMPTY_CONFIG,
-  'tunnel', '--url', 'http://localhost:3001', '--no-autoupdate'
+  '--config', CONFIG,
+  'tunnel', '--no-autoupdate', 'run',
 ], {
   stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
 })
 
 let urlFound = false

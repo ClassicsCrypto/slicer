@@ -1,6 +1,21 @@
-export function getPublicBaseUrl(requestUrl?: string | URL) {
+type HeaderLike = {
+  get(name: string): string | null
+}
+
+function cleanHeaderValue(value?: string | null) {
+  return value?.split(',')[0]?.trim()
+}
+
+export function getPublicBaseUrl(requestUrl?: string | URL, headers?: HeaderLike) {
   const configured = process.env.SLICER_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL
   if (configured) return configured.replace(/\/+$/, '')
+
+  const forwardedHost = cleanHeaderValue(headers?.get('x-forwarded-host'))
+  const host = forwardedHost || cleanHeaderValue(headers?.get('host'))
+  if (host && !host.startsWith('localhost:') && !host.startsWith('127.0.0.1:')) {
+    const forwardedProto = cleanHeaderValue(headers?.get('x-forwarded-proto')) || 'https'
+    return `${forwardedProto}://${host}`.replace(/\/+$/, '')
+  }
 
   if (requestUrl) {
     const url = typeof requestUrl === 'string' ? new URL(requestUrl) : requestUrl

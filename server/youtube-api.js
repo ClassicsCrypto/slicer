@@ -4221,7 +4221,8 @@ async function handleThumbnail(req, res) {
     if (!sourceUrl) return sendJson(res, 400, { error: 'sourceUrl required' })
 
     const ts = Math.max(0, parseFloat(timestamp || 0) || 0)
-    const thumbHash = crypto.createHash('sha1').update(`${sourceUrl}|${ts.toFixed(2)}`).digest('hex').slice(0, 20)
+    const thumbVersion = 'clip-thumb-v2-640w'
+    const thumbHash = crypto.createHash('sha1').update(`${sourceUrl}|${ts.toFixed(2)}|${thumbVersion}`).digest('hex').slice(0, 20)
     const thumbFile = path.join(THUMB_CACHE_DIR, `thumb-${thumbHash}.jpg`)
 
     if (fs.existsSync(thumbFile)) {
@@ -4232,7 +4233,7 @@ async function handleThumbnail(req, res) {
 
     const inputPath = resolveServedInputPath(sourceUrl)
 
-    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -q:v 2 -y "${tempThumbFile}"`
+    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -vf "scale='min(640,iw)':-2" -q:v 5 -y "${tempThumbFile}"`
     console.log(`[thumb] extracting frame at ${ts}s`)
 
     execSync(cmd, { timeout: 15000 })

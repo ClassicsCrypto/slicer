@@ -1,14 +1,7 @@
 'use client'
 
-import { FormEvent, useMemo, useState } from 'react'
-
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<any>
-    }
-  }
-}
+import { FormEvent, useEffect, useState } from 'react'
+import { getWalletAddress, getWalletProvider, signWalletMessage } from '@/lib/wallet-client'
 
 export default function LoginPanel() {
   const [email, setEmail] = useState('')
@@ -19,7 +12,11 @@ export default function LoginPanel() {
   const [codeRequested, setCodeRequested] = useState(false)
   const [walletStatus, setWalletStatus] = useState<string>('')
   const [walletBusy, setWalletBusy] = useState(false)
-  const walletAvailable = useMemo(() => typeof window !== 'undefined' && Boolean(window.ethereum), [])
+  const [walletAvailable, setWalletAvailable] = useState(false)
+
+  useEffect(() => {
+    setWalletAvailable(Boolean(getWalletProvider()))
+  }, [])
 
   const requestEmailCode = async (event: FormEvent) => {
     event.preventDefault()
@@ -71,13 +68,12 @@ export default function LoginPanel() {
     setWalletBusy(true)
     setWalletStatus('')
     try {
-      if (!window.ethereum) {
+      const provider = getWalletProvider()
+      if (!provider) {
         setWalletStatus('No wallet found. Install MetaMask/Rabby or use email sign-in.')
         return
       }
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[]
-      const walletAddress = accounts?.[0]
-      if (!walletAddress) throw new Error('No wallet selected')
+      const walletAddress = await getWalletAddress(provider)
 
       const nonceResponse = await fetch('/api/auth/wallet/nonce', {
         method: 'POST',
@@ -87,10 +83,7 @@ export default function LoginPanel() {
       const noncePayload = await nonceResponse.json()
       if (!nonceResponse.ok) throw new Error(noncePayload?.error || 'Failed to create wallet nonce')
 
-      const signature = await window.ethereum.request({
-        method: 'personal_sign',
-        params: [noncePayload.message, walletAddress],
-      }) as `0x${string}`
+      const signature = await signWalletMessage(provider, noncePayload.message, walletAddress)
 
       const verifyResponse = await fetch('/api/auth/wallet/verify', {
         method: 'POST',
