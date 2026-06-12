@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getJobRecord, updateJobRecord } from '@/lib/job-store/store'
-import { getServerApiUrl } from '@/lib/api-url-server'
+import { getServerApiUrl, backendAuthHeaders } from '@/lib/api-url-server'
 import { Job, JobInputKind, JobProgress, ProcessingOptions } from '@/types'
 import { requireAuth } from '@/lib/auth'
 import { isTrustedInternalRequest } from '@/lib/internal-request'
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
       const apiBase = await getServerApiUrl()
       const startResponse = await fetch(`${apiBase}/job-start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...backendAuthHeaders() },
         body: JSON.stringify({
           jobId,
           title: updatedJob.title,

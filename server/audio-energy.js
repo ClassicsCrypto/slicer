@@ -4,82 +4,142 @@
  * Returns an array of { time, energy } objects.
  */
 
-const { spawnSync } = require('child_process')
+const { spawn } = require('child_process')
+
+// Bounded concurrency for ALL media-tool child processes (shared with
+// youtube-api.js frame analysis via the runMediaToolLimited export).
+// Keeps heavy ffmpeg fleets from starving the box while never blocking
+// the event loop the way spawnSync did.
+const MEDIA_TOOL_CONCURRENCY = 3
+let activeMediaTools = 0
+const mediaToolQueue = []
+
+function acquireMediaToolSlot() {
+  return new Promise((resolve) => {
+    if (activeMediaTools < MEDIA_TOOL_CONCURRENCY) {
+      activeMediaTools += 1
+      resolve()
+    } else {
+      mediaToolQueue.push(resolve)
+    }
+  })
+}
+
+function releaseMediaToolSlot() {
+  const next = mediaToolQueue.shift()
+  if (next) next()
+  else activeMediaTools -= 1
+}
 
 function runMediaTool(command, args, timeout) {
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    timeout,
-    windowsHide: true,
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { windowsHide: true })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      proc.kill()
+      reject(new Error(`${command} timed out after ${timeout}ms`))
+    }, timeout)
+
+    proc.stdout.on('data', (chunk) => { stdout += chunk })
+    proc.stderr.on('data', (chunk) => { stderr += chunk })
+
+    proc.on('error', (err) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(err)
+    })
+
+    proc.on('close', (status) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (typeof status === 'number' && status !== 0) {
+        const detail = `${stderr || stdout}`.trim()
+        reject(new Error(detail || `${command} exited with status ${status}`))
+      } else {
+        resolve(`${stdout}${stderr}`)
+      }
+    })
   })
+}
 
-  if (result.error) throw result.error
-  if (typeof result.status === 'number' && result.status !== 0) {
-    const detail = (result.stderr || result.stdout || '').trim()
-    throw new Error(detail || `${command} exited with status ${result.status}`)
+async function runMediaToolLimited(command, args, timeout) {
+  await acquireMediaToolSlot()
+  try {
+    return await runMediaTool(command, args, timeout)
+  } finally {
+    releaseMediaToolSlot()
   }
-
-  return `${result.stdout || ''}${result.stderr || ''}`
 }
 
 /**
  * Get audio volume levels per segment using FFmpeg's volumedetect + astats
  * @param {string} filePath - Path to video/audio file
  * @param {number} segmentSec - Segment duration in seconds (default 10)
- * @returns {Array<{startSec: number, endSec: number, meanVolume: number, maxVolume: number}>}
+ * @returns {Promise<Array<{startSec: number, endSec: number, meanVolume: number, maxVolume: number}>>}
  */
-function analyzeAudioEnergy(filePath, segmentSec = 10) {
+async function analyzeAudioEnergy(filePath, segmentSec = 10) {
   try {
     // Get duration first
-    const durationStr = runMediaTool('ffprobe', [
+    const durationStr = (await runMediaToolLimited('ffprobe', [
       '-v', 'quiet',
       '-show_entries', 'format=duration',
       '-of', 'csv=p=0',
       filePath,
-    ], 15000).trim()
+    ], 15000)).trim()
     const duration = parseFloat(durationStr) || 0
     if (duration <= 0) return []
 
-    const segments = []
     const numSegments = Math.ceil(duration / segmentSec)
 
     // Sample segments (don't analyze every single one for very long videos)
     const maxSegments = 200
     const step = Math.max(1, Math.floor(numSegments / maxSegments))
 
+    const tasks = []
     for (let i = 0; i < numSegments; i += step) {
       const startSec = i * segmentSec
       const segDuration = Math.min(segmentSec, duration - startSec)
       if (segDuration < 1) continue
 
-      try {
-        const result = runMediaTool('ffmpeg', [
-          '-ss', String(startSec),
-          '-t', String(segDuration),
-          '-i', filePath,
-          '-af', 'volumedetect',
-          '-f', 'null',
-          '-',
-        ], 10000)
+      tasks.push((async () => {
+        try {
+          const result = await runMediaToolLimited('ffmpeg', [
+            '-ss', String(startSec),
+            '-t', String(segDuration),
+            '-i', filePath,
+            '-af', 'volumedetect',
+            '-f', 'null',
+            '-',
+          ], 10000)
 
-        // Parse mean_volume and max_volume from output
-        const meanMatch = result.match(/mean_volume:\s*([-\d.]+)\s*dB/)
-        const maxMatch = result.match(/max_volume:\s*([-\d.]+)\s*dB/)
+          // Parse mean_volume and max_volume from output
+          const meanMatch = result.match(/mean_volume:\s*([-\d.]+)\s*dB/)
+          const maxMatch = result.match(/max_volume:\s*([-\d.]+)\s*dB/)
 
-        const meanVolume = meanMatch ? parseFloat(meanMatch[1]) : -100
-        const maxVolume = maxMatch ? parseFloat(maxMatch[1]) : -100
+          const meanVolume = meanMatch ? parseFloat(meanMatch[1]) : -100
+          const maxVolume = maxMatch ? parseFloat(maxMatch[1]) : -100
 
-        segments.push({
-          startSec,
-          endSec: startSec + segDuration,
-          meanVolume,
-          maxVolume,
-        })
-      } catch {
-        // Skip failed segments
-      }
+          return {
+            startSec,
+            endSec: startSec + segDuration,
+            meanVolume,
+            maxVolume,
+          }
+        } catch {
+          // Skip failed segments
+          return null
+        }
+      })())
     }
 
+    const segments = (await Promise.all(tasks)).filter(Boolean)
     return segments
   } catch (err) {
     console.error('[audio-energy] Error:', err.message)
@@ -113,4 +173,4 @@ function findVolumeSpikes(segments, threshold = 6) {
     .sort((a, b) => b.spikeLevel - a.spikeLevel)
 }
 
-module.exports = { analyzeAudioEnergy, findVolumeSpikes }
+module.exports = { analyzeAudioEnergy, findVolumeSpikes, runMediaToolLimited }
