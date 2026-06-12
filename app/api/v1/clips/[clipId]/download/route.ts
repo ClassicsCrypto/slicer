@@ -5,32 +5,12 @@ import { getClipStableId } from '@/lib/clip-id'
 import { requireSlicerApiAuth } from '@/lib/slicer-api-auth'
 import { normalizeJobForApi } from '@/lib/slicer-api-response'
 import { SubtitleOptions } from '@/types'
+import { DEFAULT_SUBTITLE_OPTIONS } from '@/lib/subtitle-core'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const DEFAULT_SUBTITLES: SubtitleOptions = {
-  enabled: true,
-  size: 'medium',
-  color: '#ffffff',
-  position: 'bottom',
-  style: 'bold',
-  background: 'none',
-  backgroundColor: '#000000',
-  backgroundOpacity: 45,
-  font: 'impact',
-  mode: 'active_word',
-  preset: 'auto',
-  animationPreset: 'none',
-  highlightColor: '#ffeb3b',
-  activeWordStyle: 'pill',
-  safeZone: 'bottom_safe',
-  outlineThickness: 'thick',
-  outlineColor: '#000000',
-  shadow: true,
-  textCase: 'original',
-  watermarkEnabled: true,
-}
+const DEFAULT_SUBTITLES: SubtitleOptions = { ...DEFAULT_SUBTITLE_OPTIONS, outlineThickness: 'thick' }
 
 function validFormat(value: string | null) {
   if (value === 'twitter' || value === 'tiktok' || value === 'youtube_shorts' || value === 'custom') return value

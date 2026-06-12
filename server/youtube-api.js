@@ -26,6 +26,7 @@ const { Readable } = require('stream')
 const { pipeline } = require('stream/promises')
 const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 const retentionSweeper = require('./lib/retention-sweeper.js')
+const { normalizeSubtitleWords, censorSubtitleWords, groupSubtitleWords } = require('../lib/subtitle-core.js')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -1111,75 +1112,9 @@ function getAssCueEnd(start, fallbackEnd, nextStart = null) {
   return Math.max(start + minDuration, end)
 }
 
-function normalizeSubtitleWords(words = []) {
-  return [...words]
-    .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
-    .map((word) => ({
-      ...word,
-      start: Math.max(0, word.start),
-      end: Math.max(0, word.end),
-    }))
-    .filter((word) => word.end > word.start)
-    .sort((a, b) => (a.start - b.start) || (a.end - b.end))
-}
-
-const CURSE_EMOJIS = ['🤬', '😼', '💥', '🙀']
-const PROFANITY_PATTERNS = [
-  /^f+u*c+k+(?:er|ers|ed|ing)?$/i,
-  /^s+h+i+t+(?:ty|ting|ted)?$/i,
-  /^b+i+t+c+h+(?:es|ing)?$/i,
-  /^a+s+s+(?:hole|holes)?$/i,
-  /^d+a+m+n+(?:ed|ing)?$/i,
-  /^c+r+a+p+$/i,
-  /^b+a+s+t+a+r+d+s?$/i,
-  /^d+i+c+k+s?$/i,
-  /^p+i+s+s+(?:ed|ing)?$/i,
-  /^c+u+n+t+s?$/i,
-  /^m+o+t+h+e+r+f+u*c+k+e*r*s?$/i,
-]
-
-function isProfaneSubtitleToken(text = '') {
-  const normalized = String(text).toLowerCase().replace(/[^a-z0-9]/g, '')
-  return Boolean(normalized) && PROFANITY_PATTERNS.some((pattern) => pattern.test(normalized))
-}
-
-function censorSubtitleWords(words = []) {
-  let hitIndex = 0
-  return words.map((word) => {
-    if (!isProfaneSubtitleToken(word.text || '')) return word
-    const text = CURSE_EMOJIS[hitIndex % CURSE_EMOJIS.length]
-    hitIndex += 1
-    return { ...word, text }
-  })
-}
-
-function groupSubtitleWords(words) {
-  const orderedWords = normalizeSubtitleWords(Array.isArray(words) ? words : [])
-  if (orderedWords.length === 0) return []
-
-  const groups = []
-  let cursor = 0
-
-  while (cursor < orderedWords.length) {
-    const group = [orderedWords[cursor]]
-    const groupStart = orderedWords[cursor].start
-    cursor += 1
-
-    while (cursor < orderedWords.length) {
-      const previous = group[group.length - 1]
-      const next = orderedWords[cursor]
-      const gap = next.start - previous.end
-      const duration = next.end - groupStart
-      if (previous.breakAfter || group.length >= 6 || gap > 0.75 || duration > 3.2) break
-      group.push(next)
-      cursor += 1
-    }
-
-    groups.push(group)
-  }
-
-  return groups
-}
+// normalizeSubtitleWords / censorSubtitleWords / groupSubtitleWords now live
+// in lib/subtitle-core.js (required at the top of this file) — that module is
+// the single source of truth shared with the browser preview and editor.
 
 function buildAssAnimationTag(animationPreset = 'none') {
   if (animationPreset === 'fade') return '{\\alpha&H88&\\t(0,220,\\alpha&H00&)}'

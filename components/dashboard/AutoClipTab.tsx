@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Button from '@/components/ui/Button'
 import { ProcessingOptions } from '@/types'
+import { DEFAULT_SUBTITLE_OPTIONS } from '@/lib/subtitle-core'
 
 type Subscription = {
   id: string
@@ -28,28 +29,8 @@ const DEFAULT_AUTOCUT_OPTIONS: Partial<ProcessingOptions> = {
   aiFocus: ['intense_action', 'big_plays', 'hype_moments', 'funny_moments'],
   outputQuality: '720p',
   platformFormat: 'twitter',
-  subtitles: {
-    enabled: true,
-    size: 'medium',
-    color: '#ffffff',
-    position: 'bottom',
-    style: 'bold',
-    background: 'none',
-    backgroundColor: '#000000',
-    backgroundOpacity: 45,
-    font: 'impact',
-    mode: 'active_word',
-    preset: 'auto',
-    animationPreset: 'none',
-    highlightColor: '#ffeb3b',
-    activeWordStyle: 'pill',
-    safeZone: 'bottom_safe',
-    outlineThickness: 'thick',
-    outlineColor: '#000000',
-    shadow: true,
-    textCase: 'original',
-    watermarkEnabled: true,
-  },
+  // Deliberate AutoClip delta from the shared default: heavier outline.
+  subtitles: { ...DEFAULT_SUBTITLE_OPTIONS, outlineThickness: 'thick' },
 }
 
 function normalizeHandle(input: string) {

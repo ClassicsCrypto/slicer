@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Job, Clip, SubtitleOptions, ProofFrame } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
 import { getClipStableId } from '@/lib/clip-id'
+import { DEFAULT_SUBTITLE_OPTIONS } from '@/lib/subtitle-core'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Modal from '@/components/ui/Modal'
@@ -51,12 +52,7 @@ function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRat
           endTime: trimEnd ?? clip.end_time,
           title: `${title}-clip-${(trimStart ?? clip.start_time).toFixed(0)}s`,
           subtitles: clip.subtitles || [],
-          subtitleOptions: subtitleOptions || {
-            enabled: true, size: 'medium', color: '#ffffff', position: 'bottom',
-            style: 'bold', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, font: 'impact', mode: 'active_word', preset: 'auto', animationPreset: 'none',
-            highlightColor: '#ffeb3b', activeWordStyle: 'pill', safeZone: 'bottom_safe',
-            outlineThickness: 'thick', outlineColor: '#000000', shadow: true, textCase: 'original', watermarkEnabled: true,
-          },
+          subtitleOptions: subtitleOptions || { ...DEFAULT_SUBTITLE_OPTIONS, outlineThickness: 'thick' },
           aspectRatio: selectedAspectRatio,
           originalStartTime: originalStartTime ?? clip.start_time,
         }),
@@ -717,28 +713,7 @@ function JobCard({
 
   const defaultSubtitleOptions: SubtitleOptions = job.options?.subtitles
     ? { ...job.options.subtitles }
-    : {
-        enabled: true,
-        size: 'medium',
-        color: '#ffffff',
-        position: 'bottom',
-        style: 'bold',
-        background: 'none',
-        backgroundColor: '#000000',
-        backgroundOpacity: 45,
-        font: 'impact',
-        mode: 'active_word',
-        preset: 'auto',
-        animationPreset: 'none',
-        highlightColor: '#ffeb3b',
-        activeWordStyle: 'pill',
-        safeZone: 'bottom_safe',
-        outlineThickness: 'thick',
-        outlineColor: '#000000',
-        shadow: true,
-        textCase: 'original',
-        watermarkEnabled: true,
-      }
+    : { ...DEFAULT_SUBTITLE_OPTIONS, outlineThickness: 'thick' }
 
   const getClipSubtitleOptions = (clipId: string): SubtitleOptions => (
     clipSubtitleOptions[clipId] ? { ...clipSubtitleOptions[clipId] } : { ...defaultSubtitleOptions }

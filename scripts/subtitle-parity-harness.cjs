@@ -17,28 +17,11 @@ if (!clip) throw new Error('Latest job has no completed clips');
 const sourcePath = job.source_path;
 if (!sourcePath || !fs.existsSync(sourcePath)) throw new Error(`Missing source path: ${sourcePath}`);
 
+const { DEFAULT_SUBTITLE_OPTIONS } = require('../lib/subtitle-core.js');
 const baseOptions = {
-  enabled: true,
-  size: 'medium',
-  color: '#ffffff',
-  position: 'bottom',
-  style: 'bold',
-  background: 'none',
-  backgroundColor: '#000000',
-  backgroundOpacity: 45,
-  font: 'impact',
-  mode: 'active_word',
-  preset: 'auto',
-  animationPreset: 'none',
-  highlightColor: '#ffeb3b',
-  activeWordStyle: 'pill',
-  safeZone: 'bottom_safe',
-  outlineThickness: 'medium',
-  outlineColor: '#000000',
-  shadow: true,
-  textCase: 'original',
-  watermarkEnabled: false,
+  ...DEFAULT_SUBTITLE_OPTIONS,
   ...(job.options?.subtitles || {}),
+  // Deliberate harness overrides: deterministic frames, no watermark noise.
   animationPreset: 'none',
   watermarkEnabled: false,
 };
@@ -65,29 +48,13 @@ const cases = [
   ['active-color', { mode: 'active_word', activeWordStyle: 'color' }],
 ];
 
-function normalizeWords(words = []) {
-  return [...words].filter(w => typeof w?.start === 'number' && typeof w?.end === 'number' && typeof w?.text === 'string').sort((a,b)=>(a.start-b.start)||(a.end-b.end));
-}
-function groupWords(words) {
-  const ordered = normalizeWords(words);
-  const groups = [];
-  let cursor = 0;
-  while (cursor < ordered.length) {
-    const group = [ordered[cursor]];
-    const groupStart = ordered[cursor].start;
-    cursor += 1;
-    while (cursor < ordered.length) {
-      const previous = group[group.length - 1];
-      const next = ordered[cursor];
-      const gap = next.start - previous.end;
-      const duration = next.end - groupStart;
-      if (previous.breakAfter || group.length >= 6 || gap > 0.75 || duration > 3.2) break;
-      group.push(next); cursor += 1;
-    }
-    groups.push(group);
-  }
-  return groups;
-}
+// Shared implementations — the whole point of a PARITY harness is to render
+// with the exact functions the app uses. (The old local normalizeWords lacked
+// the Math.max(0,...) clamp and the end>start filter: drift, now gone.)
+const {
+  normalizeSubtitleWords: normalizeWords,
+  groupSubtitleWords: groupWords,
+} = require('../lib/subtitle-core.js');
 function applyCase(text, textCase) {
   if (textCase === 'upper') return text.toUpperCase();
   if (textCase === 'title') return text.replace(/\b\w/g, c => c.toUpperCase());
