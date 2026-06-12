@@ -5,9 +5,8 @@ import fs from 'fs'
 import path from 'path'
 import Database from 'better-sqlite3'
 import { NextRequest, NextResponse } from 'next/server'
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
 
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
 const KEY_PREFIX = 'sk_slicer_'
 const DEFAULT_SCOPES = ['jobs:read', 'clips:read', 'clips:export']
 

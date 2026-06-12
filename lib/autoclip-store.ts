@@ -2,8 +2,8 @@ import path from 'path'
 import Database from 'better-sqlite3'
 import { v4 as uuidv4 } from 'uuid'
 import { AutoclipSubscription, AutoclipSubscriptionInput, AutoclipSubscriptionStatus } from '@/types/autoclip'
+import { DB_PATH } from '@/lib/data-dir'
 
-const DB_PATH = path.join(process.cwd(), 'server', 'data', 'slicer.sqlite')
 let db: Database.Database | null = null
 
 export type AutoclipScope = {

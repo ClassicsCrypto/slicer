@@ -2,8 +2,13 @@ const fs = require('fs')
 const path = require('path')
 const Database = require('better-sqlite3')
 
-const DATA_DIR = path.join(__dirname, '..', 'data')
-const LOG_DIR = path.join(__dirname, '..', 'logs')
+// Env-first, mirroring lib/data-dir.ts on the Next side — both processes
+// MUST resolve the same directory or one of them silently creates a second
+// empty database. SLICER_DATA_DIR must be an absolute path in production.
+const DATA_DIR = process.env.SLICER_DATA_DIR && process.env.SLICER_DATA_DIR.trim()
+  ? path.resolve(process.env.SLICER_DATA_DIR.trim())
+  : path.join(__dirname, '..', 'data')
+const LOG_DIR = path.join(DATA_DIR, '..', 'logs')
 const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
 const PARITY_LOG_PATH = path.join(LOG_DIR, 'sqlite-shadow-parity.jsonl')
 const COMPLETE_RETENTION_DAYS = Number(process.env.SLICER_JOB_RETENTION_DAYS || 7)
@@ -19,6 +24,10 @@ function ensureDir(dirPath) {
 function getDb() {
   if (db) return db
   ensureDir(DATA_DIR)
+  if (!fs.existsSync(DB_PATH)) {
+    console.warn(`[job-store] Creating a NEW empty SQLite database at ${DB_PATH} — if you expected existing data, SLICER_DATA_DIR points at the wrong place.`)
+  }
+  console.log(`[job-store] opening ${DB_PATH}`)
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
