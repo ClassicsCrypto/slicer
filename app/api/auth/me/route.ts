@@ -4,9 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { getAuthContext } from '@/lib/auth'
 import { resolveEnsNameForAddress } from '@/lib/ens'
-
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
 
 function getLinkedAccountsForUser(userId: string) {
   try {

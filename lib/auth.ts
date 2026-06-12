@@ -6,8 +6,8 @@ import path from 'path'
 import Database from 'better-sqlite3'
 import { NextRequest, NextResponse } from 'next/server'
 
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
+
 const SESSION_COOKIE = 'slicer_session'
 const SESSION_DAYS = 30
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
@@ -66,6 +66,9 @@ let db: Database.Database | null = null
 function getDb() {
   if (db) return db
   fs.mkdirSync(DATA_DIR, { recursive: true })
+  if (!fs.existsSync(DB_PATH)) {
+    console.warn(`[auth] Creating a NEW empty SQLite database at ${DB_PATH} — if you expected existing users/sessions, SLICER_DATA_DIR points at the wrong place.`)
+  }
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')

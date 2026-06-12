@@ -14,7 +14,11 @@ const LOW_DISK_HARD_STOP_GB = Number(process.env.SLICER_LOW_DISK_HARD_STOP_GB ||
 
 const SERVER_DIR = path.join(__dirname, '..')
 const TEMP_DIR = path.join(SERVER_DIR, 'temp')
-const DATA_DIR = path.join(SERVER_DIR, 'data')
+// Follows SLICER_DATA_DIR (absolute) so cache cleanup and the managed-roots
+// safety check stay colocated with the database when it moves off-repo.
+const DATA_DIR = process.env.SLICER_DATA_DIR && process.env.SLICER_DATA_DIR.trim()
+  ? path.resolve(process.env.SLICER_DATA_DIR.trim())
+  : path.join(SERVER_DIR, 'data')
 const REPORT_DIR = path.join(SERVER_DIR, 'cleanup-reports')
 const LOG_DIR = path.join(SERVER_DIR, 'logs')
 const SUMMARY_LOG_PATH = path.join(LOG_DIR, 'retention-sweeper.jsonl')

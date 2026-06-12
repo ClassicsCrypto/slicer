@@ -5,10 +5,9 @@ import path from 'path'
 import Database from 'better-sqlite3'
 
 import type { JobInputKind, JobProgress } from '@/types'
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
 
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const LOG_DIR = path.join(process.cwd(), 'server', 'logs')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+const LOG_DIR = path.join(DATA_DIR, '..', 'logs')
 const PARITY_LOG_PATH = path.join(LOG_DIR, 'sqlite-shadow-parity.jsonl')
 const COMPLETE_RETENTION_DAYS = Number(process.env.SLICER_JOB_RETENTION_DAYS || 7)
 const FAILED_RETENTION_HOURS = Number(process.env.SLICER_FAILED_RETENTION_HOURS || 48)
@@ -82,6 +81,10 @@ function getDb() {
   if (db) return db
 
   ensureDir(DATA_DIR)
+  if (!fs.existsSync(DB_PATH)) {
+    console.warn(`[job-store] Creating a NEW empty SQLite database at ${DB_PATH} — if you expected existing data, SLICER_DATA_DIR points at the wrong place.`)
+  }
+  console.log(`[job-store] opening ${DB_PATH}`)
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
