@@ -3120,7 +3120,15 @@ async function handleTranscribeLocal(req, res) {
   if (cached) {
     const transcribeId = crypto.randomBytes(8).toString('hex')
     const filePath = resolveServedFilePath(audioUrl, audioPath)
-    const volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 80)
+    let volumeSpikes
+    if (Array.isArray(cached.volumeSpikes)) {
+      volumeSpikes = cached.volumeSpikes.slice(0, 80)
+    } else {
+      // Legacy cache entry without spikes — compute once and upgrade the
+      // entry so later hits skip the ~200-process ffmpeg re-scan.
+      volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 80)
+      setCachedTranscription(cacheSource, { ...cached, volumeSpikes })
+    }
     const cacheKey = getTranscriptionCacheKey(cacheSource)
     setTranscription(transcribeId, { status: 'complete', result: cached, volumeSpikes, cached: true, cacheKey })
     console.log(`[transcribe-local] Cache hit! ${cached.words?.length} words. Skipping Groq, using cached result directly.`)
@@ -3229,7 +3237,6 @@ async function handleTranscribeLocal(req, res) {
           console.log(`[transcribe-local] ${transcribeId} complete: ${result.words?.length} words, ${result.duration}s, ${result.realtime_factor}x realtime`)
           
           const cacheKey = audioUrl || audioPath
-          if (cacheKey) setCachedTranscription(cacheKey, result)
 
           let volumeSpikes = []
           try {
@@ -3245,6 +3252,9 @@ async function handleTranscribeLocal(req, res) {
           } catch (e) {
             console.error(`[transcribe-local] Audio energy analysis failed:`, e.message)
           }
+
+          // Cache spikes alongside the transcript so cache hits never re-scan.
+          if (cacheKey) setCachedTranscription(cacheKey, { ...result, volumeSpikes })
 
           setTranscription(transcribeId, {
             status: 'complete',
