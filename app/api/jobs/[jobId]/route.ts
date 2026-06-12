@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteJobRecord, getJobRecord, updateJobRecord } from '@/lib/job-store/store'
+import { deleteJobRecord, getJobRecord, mutateJobRecord } from '@/lib/job-store/store'
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job } from '@/types'
@@ -49,26 +49,37 @@ export async function PATCH(request: NextRequest, { params }: { params: { jobId:
       return NextResponse.json({ error: fetchError?.message || 'Job not found' }, { status: 404 })
     }
 
-    const patch: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    }
+    const hasSupportedField =
+      typeof body.status === 'string' ||
+      (body.progress && typeof body.progress === 'object') ||
+      typeof body.title === 'string' ||
+      (body.options && typeof body.options === 'object') ||
+      typeof body.sourceUrl === 'string'
 
-    if (typeof body.status === 'string') patch.status = body.status
-    if (body.progress && typeof body.progress === 'object') {
-      patch.progress = {
-        ...(existingJob.progress ?? {}),
-        ...body.progress,
-      }
-    }
-    if (typeof body.title === 'string') patch.title = body.title
-    if (body.options && typeof body.options === 'object') patch.options = body.options
-    if (typeof body.sourceUrl === 'string') patch.source_url = body.sourceUrl
-
-    if (Object.keys(patch).length === 1) {
+    if (!hasSupportedField) {
       return NextResponse.json({ error: 'No supported fields to update' }, { status: 400 })
     }
 
-    const data = await updateJobRecord(params.jobId, patch, 'api/jobs/[jobId] PATCH')
+    // The progress merge spreads the FRESH row inside the store transaction,
+    // not the pre-read above (which is only used for the ownership check).
+    const data = await mutateJobRecord(params.jobId, (existing) => {
+      const patch: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      }
+
+      if (typeof body.status === 'string') patch.status = body.status
+      if (body.progress && typeof body.progress === 'object') {
+        patch.progress = {
+          ...(existing.progress ?? {}),
+          ...body.progress,
+        }
+      }
+      if (typeof body.title === 'string') patch.title = body.title
+      if (body.options && typeof body.options === 'object') patch.options = body.options
+      if (typeof body.sourceUrl === 'string') patch.source_url = body.sourceUrl
+
+      return { ...existing, ...patch }
+    }, 'api/jobs/[jobId] PATCH')
     const error = !data ? new Error('Job not found') : null
 
     if (error || !data) {

@@ -319,6 +319,32 @@ function getShadowJob(jobId) {
   }
 }
 
+/**
+ * Transactional read-merge-write. The mutator runs inside BEGIN IMMEDIATE so
+ * no other writer (this process or the Next process — both open the same
+ * DB file) can interleave between the fresh read and the upsert.
+ * Mutators MUST be synchronous (better-sqlite3 rejects async transaction
+ * functions) and may return null/undefined to skip the write entirely.
+ * Returns the fresh row after the transaction, or null if the job is gone.
+ */
+function mutateShadowJob(jobId, mutator) {
+  const tx = getDb().transaction((id) => {
+    const job = getShadowJob(id)
+    if (!job) return null
+    const next = mutator(job)
+    if (next) upsertShadowJob(next)
+    return getShadowJob(id)
+  })
+  try {
+    return tx.immediate(jobId)
+  } catch (error) {
+    // One retry on busy: WAL allows a single writer; a competing immediate
+    // transaction in the other process can momentarily hold the lock.
+    if (error && error.code === 'SQLITE_BUSY') return tx.immediate(jobId)
+    throw error
+  }
+}
+
 function listShadowJobs(limit = 50) {
   return getDb().prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?').all(limit)
 }
@@ -332,5 +358,6 @@ module.exports = {
   verifyShadowJobParity,
   verifyShadowJobDeleted,
   getShadowJob,
+  mutateShadowJob,
   listShadowJobs,
 }

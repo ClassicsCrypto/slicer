@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { createServerClient } from '@/lib/supabase'
-import { deleteShadowJob, getShadowJob, listShadowJobs, upsertShadowJob } from '@/lib/job-store/sqlite'
+import { deleteShadowJob, getShadowJob, listShadowJobs, mutateShadowJob, upsertShadowJob } from '@/lib/job-store/sqlite'
 import { mirrorJobToShadowSqlite, mirrorJobsToShadowSqlite, removeJobFromShadowSqlite } from '@/lib/job-store/shadow'
 
 export type JobStoreKind = 'supabase' | 'sqlite'
@@ -72,9 +72,9 @@ export async function createJobRecord(job: Record<string, any>, context = 'job-s
 
 export async function updateJobRecord(jobId: string, patch: Record<string, any>, context = 'job-store/update') {
   if (isSqliteJobStore()) {
-    const existing = getShadowJob(jobId)
-    if (!existing) return null
-    const nextJob = {
+    // Same merge as before, but the read now happens inside the transaction
+    // so a concurrent writer can't be overwritten with a stale spread.
+    return mutateShadowJob(jobId, (existing) => ({
       ...existing,
       ...patch,
       id: existing.id,
@@ -85,9 +85,7 @@ export async function updateJobRecord(jobId: string, patch: Record<string, any>,
       source_url: patch.source_url ?? existing.source_url,
       created_at: patch.created_at ?? existing.created_at,
       updated_at: patch.updated_at ?? existing.updated_at ?? new Date().toISOString(),
-    }
-    upsertShadowJob(nextJob)
-    return getShadowJob(jobId)
+    }))
   }
 
   const supabase = createServerClient()
@@ -101,6 +99,31 @@ export async function updateJobRecord(jobId: string, patch: Record<string, any>,
   if (error || !data) return null
   await mirrorJobToShadowSqlite(data, `${context} mirror`)
   return data
+}
+
+/**
+ * Read-merge-write where the merge itself needs the freshest row (votes,
+ * clip edits, stale recovery). In sqlite mode the mutator runs inside a
+ * BEGIN IMMEDIATE transaction; mutators must be synchronous and may return
+ * null to skip the write (e.g. a stale-recovery re-check that no longer
+ * applies). In supabase mode this degrades to the existing get→update
+ * pattern (rollback store only).
+ */
+export async function mutateJobRecord(
+  jobId: string,
+  mutator: (existing: Record<string, any>) => Record<string, any> | null | undefined,
+  context = 'job-store/mutate',
+) {
+  if (isSqliteJobStore()) {
+    return mutateShadowJob(jobId, mutator)
+  }
+
+  const existing = await getJobRecord(jobId, `${context} fetch`)
+  if (!existing) return null
+  const next = mutator(existing)
+  if (!next) return existing
+  const { id: _id, ...patch } = next
+  return updateJobRecord(jobId, patch, context)
 }
 
 export async function deleteJobRecord(jobId: string, context = 'job-store/delete') {
