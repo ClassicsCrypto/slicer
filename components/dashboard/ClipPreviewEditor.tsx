@@ -16,6 +16,7 @@ import {
   SubtitleSize,
   SubtitleWord,
 } from '@/types'
+import { groupSubtitleWords, normalizeSubtitleWords } from '@/lib/subtitle-core'
 
 type SocialPlatform = 'x' | 'instagram' | 'tiktok' | 'youtube_shorts'
 type ExportAspectRatio = 'twitter' | 'tiktok' | 'youtube_shorts' | 'custom'
@@ -309,52 +310,23 @@ function getClipTranscriptText(clip: Clip) {
     .trim()
 }
 
-function normalizeSubtitleWords(words: SubtitleWord[] = []) {
-  return [...words]
-    .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
-    .map((word) => ({
-      ...word,
-      start: Math.max(0, word.start),
-      end: Math.max(0, word.end),
-    }))
-    .filter((word) => word.end > word.start)
-    .sort((a, b) => (a.start - b.start) || (a.end - b.end))
-}
-
 function buildTranscriptSegments(clip: Clip): TranscriptSegment[] {
-  const subtitles = normalizeSubtitleWords(clip.subtitles ?? [])
-  if (subtitles.length === 0) return []
-
-  const segments: TranscriptSegment[] = []
-  let cursor = 0
-
-  while (cursor < subtitles.length) {
-    const startIndex = cursor
-    const chunk: typeof subtitles = [subtitles[cursor]]
-    cursor += 1
-
-    while (cursor < subtitles.length && chunk.length < 6) {
-      const previous = chunk[chunk.length - 1]
-      const next = subtitles[cursor]
-      const gap = next.start - previous.end
-      const duration = next.end - chunk[0].start
-      if (previous.breakAfter || gap > 0.75 || duration > 3.2) break
-      chunk.push(next)
-      cursor += 1
-    }
-
-    segments.push({
+  // Shared grouping partitions the normalized array in order, so the running
+  // word index stays valid for replaceTranscriptSegment's slicing below.
+  let wordIndex = 0
+  return groupSubtitleWords(clip.subtitles ?? []).map((chunk) => {
+    const segment: TranscriptSegment = {
       start: chunk[0].start,
       end: chunk[chunk.length - 1].end,
       text: chunk.map((word) => word.text).join(' '),
-      wordStartIndex: startIndex,
-      wordEndIndex: startIndex + chunk.length - 1,
+      wordStartIndex: wordIndex,
+      wordEndIndex: wordIndex + chunk.length - 1,
       wordCount: chunk.length,
       endsWithManualBreak: Boolean(chunk[chunk.length - 1]?.breakAfter),
-    })
-  }
-
-  return segments
+    }
+    wordIndex += chunk.length
+    return segment
+  })
 }
 
 function replaceTranscriptSegment(clip: Clip, segment: TranscriptSegment, draft: string): Clip {

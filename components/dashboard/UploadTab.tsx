@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingOptions, Job } from '@/types'
 import { getApiUrl } from '@/lib/api-url'
+import { DEFAULT_SUBTITLE_OPTIONS } from '@/lib/subtitle-core'
 import Button from '@/components/ui/Button'
 import OptionsModal from '@/components/dashboard/OptionsModal'
 
@@ -173,28 +174,7 @@ const DEFAULT_OPTIONS: ProcessingOptions = {
   customGame: '',
   outputQuality: '720p',
   platformFormat: 'twitter',
-  subtitles: {
-    enabled: true,
-    size: 'medium',
-    color: '#ffffff',
-    position: 'bottom',
-    style: 'bold',
-    background: 'none',
-    backgroundColor: '#000000',
-    backgroundOpacity: 45,
-    font: 'impact',
-    mode: 'active_word',
-    preset: 'auto',
-    animationPreset: 'none',
-    highlightColor: '#ffeb3b',
-    activeWordStyle: 'pill',
-    safeZone: 'bottom_safe',
-    outlineThickness: 'medium',
-    outlineColor: '#000000',
-    shadow: true,
-    textCase: 'original',
-    watermarkEnabled: true,
-  },
+  subtitles: { ...DEFAULT_SUBTITLE_OPTIONS },
 }
 
 interface UploadTabProps {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clip, SubtitleWord, SubtitleOptions } from '@/types'
 import { censorSubtitleWords } from '@/lib/subtitle-censor'
+import { DEFAULT_SUBTITLE_OPTIONS, groupSubtitleWords, normalizeSubtitleWords } from '@/lib/subtitle-core'
 
 interface SubtitleCue {
   start: number
@@ -46,48 +47,14 @@ function hexToRgba(hex: string | undefined, opacityPercent = 45) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-function normalizeSubtitleWords(words: SubtitleWord[] = []) {
-  return [...words]
-    .filter((word) => typeof word?.start === 'number' && typeof word?.end === 'number' && typeof word?.text === 'string')
-    .map((word) => ({
-      ...word,
-      start: Math.max(0, word.start),
-      end: Math.max(0, word.end),
-    }))
-    .filter((word) => word.end > word.start)
-    .sort((a, b) => (a.start - b.start) || (a.end - b.end))
-}
-
 function buildSubtitleCues(words: SubtitleWord[]): SubtitleCue[] {
-  const orderedWords = normalizeSubtitleWords(words)
-  if (orderedWords.length === 0) return []
-
-  const cues: SubtitleCue[] = []
-  let cursor = 0
-
-  while (cursor < orderedWords.length) {
-    const cueWords: SubtitleWord[] = [orderedWords[cursor]]
-    const cueStart = orderedWords[cursor].start
-    cursor += 1
-
-    while (cursor < orderedWords.length) {
-      const previous = cueWords[cueWords.length - 1]
-      const next = orderedWords[cursor]
-      const gap = next.start - previous.end
-      const duration = next.end - cueStart
-      if (previous.breakAfter || cueWords.length >= 6 || gap > 0.75 || duration > 3.2) break
-      cueWords.push(next)
-      cursor += 1
-    }
-
-    cues.push({
-      start: cueWords[0].start,
-      end: cueWords[cueWords.length - 1].end,
-      words: cueWords,
-    })
-  }
-
-  return cues
+  // Shared grouping (normalizes internally) — same cue boundaries the server
+  // burns into exported video.
+  return groupSubtitleWords(words).map((cueWords) => ({
+    start: cueWords[0].start,
+    end: cueWords[cueWords.length - 1].end,
+    words: cueWords,
+  }))
 }
 
 function SubtitleOverlay({
@@ -353,25 +320,7 @@ interface ClipPlayerProps {
   externalSeekTime?: number | null
 }
 
-const DEFAULT_SUB_OPTS: SubtitleOptions = {
-  enabled: true,
-  size: 'medium',
-  color: '#ffffff',
-  position: 'bottom',
-  style: 'bold',
-  background: 'none',
-  backgroundColor: '#000000',
-  backgroundOpacity: 45,
-  font: 'impact',
-  mode: 'active_word',
-  preset: 'auto',
-  animationPreset: 'none',
-  highlightColor: '#ffeb3b',
-  activeWordStyle: 'pill',
-  safeZone: 'bottom_safe',
-  textCase: 'original',
-  watermarkEnabled: true,
-}
+const DEFAULT_SUB_OPTS: SubtitleOptions = { ...DEFAULT_SUBTITLE_OPTIONS }
 
 export default function ClipPlayer({
   clip,
