@@ -1,8 +1,9 @@
 import 'server-only'
 
 import { createServerClient } from '@/lib/supabase'
-import { deleteShadowJob, getShadowJob, listShadowJobs, upsertShadowJob } from '@/lib/job-store/sqlite'
+import { deleteShadowJob, getShadowJob, listShadowJobs, listShadowJobsForUsers, upsertShadowJob } from '@/lib/job-store/sqlite'
 import { mirrorJobToShadowSqlite, mirrorJobsToShadowSqlite, removeJobFromShadowSqlite } from '@/lib/job-store/shadow'
+import { getClipStableId } from '@/lib/clip-id'
 
 export type JobStoreKind = 'supabase' | 'sqlite'
 
@@ -33,6 +34,46 @@ export async function listJobRecords(limit = 50, context = 'job-store/list') {
   if (error) throw error
   await mirrorJobsToShadowSqlite(data ?? [], `${context} seed`)
   return data ?? []
+}
+
+/**
+ * Owner-scoped listing: the predicate runs in the database, so a user's jobs
+ * can't be pushed out of view by other users' newer jobs (the old pattern
+ * fetched the global newest N and filtered in JS).
+ */
+export async function listJobRecordsForUsers(userIds: string[], limit = 50, context = 'job-store/list-for-users') {
+  if (!userIds.length) return []
+
+  if (isSqliteJobStore()) {
+    return listShadowJobsForUsers(userIds, limit)
+  }
+
+  const supabase = createServerClient()
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('*')
+    .in('user_id', userIds)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  await mirrorJobsToShadowSqlite(data ?? [], `${context} seed`)
+  return data ?? []
+}
+
+/**
+ * Locate the job owning a clip, scanning only the given users' most-recent
+ * jobs. The predicate is a strict superset of both prior route variants
+ * (stable-id match over normalized clips, and stable-id-or-raw-id match).
+ */
+export async function findJobByClipId(userIds: string[], clipId: string, scanLimit = 200, context = 'job-store/find-clip') {
+  const jobs = await listJobRecordsForUsers(userIds, scanLimit, context)
+  for (const job of jobs) {
+    const clips = (job?.progress?.completedClips ?? []) as Array<Record<string, any>>
+    const clip = clips.find((entry) => getClipStableId(entry as any) === clipId || entry?.id === clipId)
+    if (clip) return { job, clip }
+  }
+  return null
 }
 
 export async function getJobRecord(jobId: string, context = 'job-store/get') {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { createJobRecord, listJobRecords, updateJobRecord } from '@/lib/job-store/store'
+import { createJobRecord, listJobRecordsForUsers, updateJobRecord } from '@/lib/job-store/store'
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job, JobProgress } from '@/types'
@@ -78,12 +78,10 @@ export async function GET(request: NextRequest) {
 
   let jobsData: any[] = []
   try {
-    jobsData = await listJobRecords(50, 'api/jobs GET')
+    jobsData = await listJobRecordsForUsers([auth.user.id], 50, 'api/jobs GET')
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? 'Failed to list jobs' }, { status: 500 })
   }
-
-  jobsData = (jobsData ?? []).filter((job) => job.user_id === auth.user.id)
   const recoveredJobs = await Promise.all(jobsData.map((job) => recoverStaleJob(job)))
   const normalizedJobs = await Promise.all(recoveredJobs.map((job) => normalizeJob(job)))
   return NextResponse.json({ jobs: normalizedJobs })

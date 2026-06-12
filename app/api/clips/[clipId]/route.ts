@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getClipStableId, normalizeClips } from '@/lib/clip-id'
-import { listJobRecords, updateJobRecord } from '@/lib/job-store/store'
+import { findJobByClipId, updateJobRecord } from '@/lib/job-store/store'
 import { Clip } from '@/types'
 import { requireAuth } from '@/lib/auth'
 
@@ -14,21 +14,10 @@ export async function DELETE(
   const { clipId } = params
 
   try {
-    const jobs = await listJobRecords(200, 'api/clips/[clipId] DELETE scan')
-
-    if (!Array.isArray(jobs)) {
-      return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 })
-    }
-
-    // Find which job contains this clip
-    let targetJob: Record<string, any> | null = null
-    for (const job of jobs.filter((candidate) => candidate.user_id === auth.user.id)) {
-      const completedClips = normalizeClips((job.progress?.completedClips || []) as Clip[])
-      if (completedClips.some((c) => getClipStableId(c) === clipId)) {
-        targetJob = job
-        break
-      }
-    }
+    // Owner-scoped lookup: scans only this user's 200 most-recent jobs in the
+    // database instead of the global newest 200 filtered in JS.
+    const found = await findJobByClipId([auth.user.id], clipId, 200, 'api/clips/[clipId] DELETE scan')
+    const targetJob = found?.job ?? null
 
     if (!targetJob) {
       return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
