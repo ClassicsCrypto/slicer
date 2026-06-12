@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInternalServerApiUrl } from '@/lib/api-url-server'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
+
   const sourceUrl = request.nextUrl.searchParams.get('sourceUrl')
   const timestamp = request.nextUrl.searchParams.get('timestamp')
 
@@ -38,8 +42,10 @@ export async function GET(request: NextRequest) {
     if (value) headers.set(name, value)
   }
 
-  const upstreamCache = stillResponse.headers.get('cache-control')
-  headers.set('cache-control', upstreamCache || 'public, max-age=86400, stale-while-revalidate=604800')
+  // Always private: this response is auth-gated, and the backend's own
+  // /still header says public — passing that through would let a shared
+  // cache serve one user's still to another.
+  headers.set('cache-control', 'private, max-age=86400, stale-while-revalidate=604800')
 
   return new NextResponse(stillResponse.body, { status: 200, headers })
 }
