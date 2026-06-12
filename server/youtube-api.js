@@ -43,6 +43,20 @@ if (fs.existsSync(envPath)) {
 }
 
 const PORT = parseInt(process.env.SLICER_YT_PORT || '3001')
+
+// Shared secret gating server-called endpoints. Loopback-IP trust is NOT a
+// substitute: cloudflared forwards all public tunnel traffic to this process
+// from 127.0.0.1, so auth must be purely token-based.
+const INTERNAL_TOKEN = (process.env.SLICER_INTERNAL_TOKEN || '').trim()
+
+function isAuthorizedInternal(req) {
+  return Boolean(INTERNAL_TOKEN) && req.headers['authorization'] === `Bearer ${INTERNAL_TOKEN}`
+}
+
+function internalAuthHeaders() {
+  return INTERNAL_TOKEN ? { Authorization: `Bearer ${INTERNAL_TOKEN}` } : {}
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const TEMP_DIR = path.join(__dirname, 'temp')
@@ -3966,7 +3980,7 @@ async function handleJobStart(req, res) {
 
       const transcribeRes = await fetch(`http://127.0.0.1:${PORT}/transcribe-local`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...internalAuthHeaders() },
         body: JSON.stringify({ audioUrl: finalSourceUrl, jobId }),
       })
       if (!transcribeRes.ok) {
@@ -3989,7 +4003,7 @@ async function handleJobStart(req, res) {
 
       const scoreRes = await fetch(`http://127.0.0.1:${PORT}/score-clips`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...internalAuthHeaders() },
         body: JSON.stringify({
           words: filteredWords,
           clipCount: options.clipCount,
@@ -4450,6 +4464,20 @@ async function handleInfo(req, res) {
     return res.end()
   }
 
+  // Endpoints whose only legitimate callers are server-side (Next routes or
+  // this process itself). Browser-called endpoints (/info, /upload, /clip,
+  // /thumbnail, /serve, /health) stay open — see SLICER_BACKEND_PROTECTION.md.
+  const needsInternalAuth =
+    (req.method === 'POST' && ['/download-start', '/download', '/transcribe-local', '/score-clips', '/job-start'].includes(req.url)) ||
+    (req.method === 'GET' && (
+      req.url?.startsWith('/download-poll/') ||
+      req.url?.startsWith('/transcribe-poll/') ||
+      req.url?.startsWith('/still')
+    ))
+  if (needsInternalAuth && INTERNAL_TOKEN && !isAuthorizedInternal(req)) {
+    return sendJson(res, 401, { error: 'Unauthorized' })
+  }
+
   if (req.method === 'POST' && req.url === '/download-start') {
     handleDownloadStart(req, res)
   } else if (req.method === 'GET' && req.url?.startsWith('/download-poll/')) {
@@ -4492,6 +4520,13 @@ server.listen(PORT, () => {
     retentionSweeper.scheduleRetentionSweeps({ runImmediately: true })
   } else {
     console.log('[retention-sweeper] skipped (SLICER_JOB_STORE != sqlite or sweeper disabled)')
+  }
+  if (!INTERNAL_TOKEN) {
+    console.warn('\n⚠️  ⚠️  ⚠️  SLICER_INTERNAL_TOKEN is NOT set ⚠️  ⚠️  ⚠️')
+    console.warn('   Server-called endpoints (/job-start, /download*, /transcribe*, /score-clips, /still)')
+    console.warn('   are accepting UNAUTHENTICATED requests. Anyone with the tunnel URL can run')
+    console.warn('   yt-dlp/ffmpeg jobs and spend paid transcription/scoring credits on this box.')
+    console.warn('   Set SLICER_INTERNAL_TOKEN in .env.local (see SLICER_BACKEND_PROTECTION.md) and restart.\n')
   }
   console.log(`\n🎬 Slicer Local API running on http://localhost:${PORT}`)
   console.log(`   POST /download  - Download YouTube/Twitch video`)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerApiUrl } from '@/lib/api-url-server'
+import { getServerApiUrl, backendAuthHeaders } from '@/lib/api-url-server'
 import { listJobRecords } from '@/lib/job-store/store'
 import { getClipStableId } from '@/lib/clip-id'
 import { requireSlicerApiAuth } from '@/lib/slicer-api-auth'
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest, { params }: { params: { clipId: 
   const apiBase = await getServerApiUrl()
   const clipResponse = await fetch(`${apiBase}/clip`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...backendAuthHeaders() },
     body: JSON.stringify({
       sourceUrl: found.job.source_url,
       startTime,
