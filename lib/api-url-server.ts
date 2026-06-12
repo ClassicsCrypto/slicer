@@ -9,6 +9,27 @@ function cleanUrl(url: string) {
   return url.replace(/\/$/, '')
 }
 
+/**
+ * Headers Next server routes must attach when calling the compute backend
+ * (server/youtube-api.js). Intentionally does NOT reuse getInternalRequestHeaders():
+ * that helper prefers AUTOCLIP_POLL_SECRET, which guards Next's own internal
+ * routes and may legitimately differ from the backend's SLICER_INTERNAL_TOKEN.
+ * Also attaches Cloudflare Access service-token headers when configured, so the
+ * tunnel hostname can be put behind Cloudflare Access without code changes.
+ */
+export function backendAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const token = (process.env.SLICER_INTERNAL_TOKEN || '').trim()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const cfId = process.env.CF_ACCESS_CLIENT_ID
+  const cfSecret = process.env.CF_ACCESS_CLIENT_SECRET
+  if (cfId && cfSecret) {
+    headers['CF-Access-Client-Id'] = cfId
+    headers['CF-Access-Client-Secret'] = cfSecret
+  }
+  return headers
+}
+
 export function getInternalServerApiUrl(): string {
   const internalUrl = process.env.SLICER_INTERNAL_API_URL || process.env.SLICER_API_INTERNAL_URL
   if (internalUrl) return cleanUrl(internalUrl)
