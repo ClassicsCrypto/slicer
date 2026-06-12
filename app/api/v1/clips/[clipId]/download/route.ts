@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerApiUrl, backendAuthHeaders } from '@/lib/api-url-server'
-import { listJobRecords } from '@/lib/job-store/store'
+import { findJobByClipId } from '@/lib/job-store/store'
 import { getClipStableId } from '@/lib/clip-id'
 import { requireSlicerApiAuth } from '@/lib/slicer-api-auth'
 import { normalizeJobForApi } from '@/lib/slicer-api-response'
@@ -47,17 +47,16 @@ export async function GET(request: NextRequest, { params }: { params: { clipId: 
   const auth = requireSlicerApiAuth(request, 'clips:export')
   if (auth instanceof NextResponse) return auth
 
-  const rows = await listJobRecords(100, 'api/v1/clips/[clipId]/download')
-  const jobs = rows.map(normalizeJobForApi).filter((job) => auth.workspaceUserIds.includes(job.user_id))
-
-  let found: { job: any; clip: any } | null = null
-  for (const job of jobs) {
-    const clip = (job.clips || []).find((entry) => getClipStableId(entry) === params.clipId || entry.id === params.clipId)
-    if (clip) {
-      found = { job, clip }
-      break
-    }
-  }
+  // Owner-scoped lookup over the workspace's 100 most-recent jobs (DB-level
+  // predicate, same stable-id-or-raw-id match as before).
+  const rawFound = await findJobByClipId(auth.workspaceUserIds, params.clipId, 100, 'api/v1/clips/[clipId]/download')
+  const found = rawFound
+    ? (() => {
+        const job = normalizeJobForApi(rawFound.job)
+        const clip = (job.clips || []).find((entry: any) => getClipStableId(entry) === params.clipId || entry.id === params.clipId) ?? rawFound.clip
+        return { job, clip }
+      })()
+    : null
 
   if (!found) return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
   if (!found.job.source_url) return NextResponse.json({ error: 'Job has no source URL available for export' }, { status: 409 })

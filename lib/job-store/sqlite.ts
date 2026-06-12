@@ -107,6 +107,7 @@ function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_jobs_user_created ON jobs(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at);
     CREATE INDEX IF NOT EXISTS idx_jobs_source_cache_key ON jobs(source_cache_key);
     CREATE TABLE IF NOT EXISTS source_cache (
@@ -426,6 +427,15 @@ export function mutateShadowJob(jobId: string, mutator: (job: ShadowJob) => Reco
 
 export function listShadowJobs(limit = 50) {
   const rows = getDb().prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?').all(limit) as ShadowJobRow[]
+  return rows.map((row) => fromShadowRow(row))
+}
+
+export function listShadowJobsForUsers(userIds: string[], limit = 50) {
+  if (!userIds.length) return []
+  const placeholders = userIds.map(() => '?').join(',')
+  const rows = getDb()
+    .prepare(`SELECT * FROM jobs WHERE user_id IN (${placeholders}) ORDER BY created_at DESC LIMIT ?`)
+    .all(...userIds, limit) as ShadowJobRow[]
   return rows.map((row) => fromShadowRow(row))
 }
 
