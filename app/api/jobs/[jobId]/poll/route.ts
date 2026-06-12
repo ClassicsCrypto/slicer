@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getJobRecord, updateJobRecord } from '@/lib/job-store/store'
+import { getJobRecord, mutateJobRecord } from '@/lib/job-store/store'
+import { requireAuth } from '@/lib/auth'
 import { JobProgress } from '@/types'
 
 export const maxDuration = 30
@@ -8,8 +9,12 @@ const STALE_JOB_MS = 2 * 60 * 60 * 1000
 
 function getActivityTimestamp(job: any): number {
   const progress = (job?.progress ?? {}) as JobProgress
+  // For processing jobs, updated_at is the real activity signal: worker
+  // progress ticks bump it constantly, while processingStartedAt is written
+  // once at kickoff and never refreshed — anchoring on it falsely failed any
+  // job that legitimately ran longer than the stale window.
   const candidate = job?.status === 'processing'
-    ? (progress.processingStartedAt || job?.updated_at || job?.created_at)
+    ? (job?.updated_at || progress.processingStartedAt || job?.created_at)
     : (progress.completedAt || job?.updated_at || progress.processingStartedAt || job?.created_at)
   const ts = candidate ? new Date(candidate).getTime() : NaN
   return Number.isFinite(ts) ? ts : Date.now()
@@ -31,20 +36,33 @@ async function recoverStaleJob(job: any) {
   const ageMs = Date.now() - getActivityTimestamp(job)
   if (ageMs < STALE_JOB_MS) return job
 
-  const progress = buildTimedOutProgress((job.progress ?? {}) as JobProgress, ageMs)
-  return (await updateJobRecord(job.id, {
-    status: 'failed',
-    progress,
-    updated_at: new Date().toISOString(),
-  }, 'api/jobs/[jobId]/poll recoverStaleJob')) ?? { ...job, status: 'failed', progress }
+  // Re-check on the fresh row inside the transaction: the worker may have
+  // completed the job (or bumped activity) since our read above. Returning
+  // null skips the write entirely — this is what prevents the
+  // complete→failed stamp.
+  const updated = await mutateJobRecord(job.id, (existing) => {
+    if (existing?.status !== 'processing') return null
+    const freshAgeMs = Date.now() - getActivityTimestamp(existing)
+    if (freshAgeMs < STALE_JOB_MS) return null
+    return {
+      ...existing,
+      status: 'failed',
+      progress: buildTimedOutProgress((existing.progress ?? {}) as JobProgress, freshAgeMs),
+      updated_at: new Date().toISOString(),
+    }
+  }, 'api/jobs/[jobId]/poll recoverStaleJob')
+
+  return updated ?? job
 }
 
-export async function GET(_request: NextRequest, { params }: { params: { jobId: string } }) {
-  const data = await getJobRecord(params.jobId, 'api/jobs/[jobId]/poll GET fetch')
-  const error = !data ? new Error('Job not found') : null
+export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
+  const auth = requireAuth(request)
+  if (auth instanceof NextResponse) return auth
 
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message || 'Job not found' }, { status: 404 })
+  const data = await getJobRecord(params.jobId, 'api/jobs/[jobId]/poll GET fetch')
+
+  if (!data || data.user_id !== auth.user.id) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
   const job = await recoverStaleJob(data)

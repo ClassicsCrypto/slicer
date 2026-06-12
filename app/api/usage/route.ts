@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { getJobStoreKind, isSqliteJobStore, listJobRecords } from '@/lib/job-store/store'
+import { getJobStoreKind, isSqliteJobStore, listJobRecordsForUsers } from '@/lib/job-store/store'
 import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth
 
   try {
-    const allJobs = (await listJobRecords(1000, 'api/usage GET')).filter((job) => job.user_id === auth.user.id)
+    const allJobs = await listJobRecordsForUsers([auth.user.id], 1000, 'api/usage GET')
     const completedJobs = allJobs.filter((job) => job.status === 'complete')
 
     let totalClips = 0

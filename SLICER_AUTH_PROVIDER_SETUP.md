@@ -28,7 +28,7 @@ AUTH_EMAIL_FROM="Slicer <login@marscatsvoyage.com>"
 NEXT_PUBLIC_APP_URL=https://slicer.marscatsvoyage.com
 ```
 
-If those vars are missing, email login keeps using debug mode and returns `devCode` for preview testing.
+If those vars are missing, email login is **unavailable** (the request endpoint returns 503 and no code is minted). For local preview testing only, set `AUTH_EMAIL_DEBUG=true` in a non-production build to get the `devCode` response; the flag is ignored when `NODE_ENV=production`. Do **not** work around an unconfigured mailer with `SKIP_AUTH=true` — that disables auth entirely.
 
 ## Recommended Resend path
 

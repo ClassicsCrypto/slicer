@@ -5,10 +5,9 @@ import path from 'path'
 import Database from 'better-sqlite3'
 
 import type { JobInputKind, JobProgress } from '@/types'
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
 
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const LOG_DIR = path.join(process.cwd(), 'server', 'logs')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+const LOG_DIR = path.join(DATA_DIR, '..', 'logs')
 const PARITY_LOG_PATH = path.join(LOG_DIR, 'sqlite-shadow-parity.jsonl')
 const COMPLETE_RETENTION_DAYS = Number(process.env.SLICER_JOB_RETENTION_DAYS || 7)
 const FAILED_RETENTION_HOURS = Number(process.env.SLICER_FAILED_RETENTION_HOURS || 48)
@@ -82,6 +81,10 @@ function getDb() {
   if (db) return db
 
   ensureDir(DATA_DIR)
+  if (!fs.existsSync(DB_PATH)) {
+    console.warn(`[job-store] Creating a NEW empty SQLite database at ${DB_PATH} — if you expected existing data, SLICER_DATA_DIR points at the wrong place.`)
+  }
+  console.log(`[job-store] opening ${DB_PATH}`)
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -107,6 +110,7 @@ function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_jobs_user_created ON jobs(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_expires_at ON jobs(expires_at);
     CREATE INDEX IF NOT EXISTS idx_jobs_source_cache_key ON jobs(source_cache_key);
     CREATE TABLE IF NOT EXISTS source_cache (
@@ -396,8 +400,45 @@ export function getShadowJob(jobId: string) {
   return fromShadowRow(getShadowJobRow(jobId))
 }
 
+export type ShadowJob = NonNullable<ReturnType<typeof getShadowJob>>
+
+/**
+ * Transactional read-merge-write. The mutator runs inside BEGIN IMMEDIATE so
+ * no other writer (this process or server/youtube-api.js — both open the same
+ * DB file) can interleave between the fresh read and the upsert.
+ * Mutators MUST be synchronous (better-sqlite3 rejects async transaction
+ * functions) and may return null/undefined to skip the write entirely.
+ * Returns the fresh row after the transaction, or null if the job is gone.
+ */
+export function mutateShadowJob(jobId: string, mutator: (job: ShadowJob) => Record<string, any> | null | undefined) {
+  const tx = getDb().transaction((id: string) => {
+    const job = getShadowJob(id)
+    if (!job) return null
+    const next = mutator(job)
+    if (next) upsertShadowJob(next)
+    return getShadowJob(id)
+  })
+  try {
+    return tx.immediate(jobId)
+  } catch (error: any) {
+    // One retry on busy: WAL allows a single writer; a competing immediate
+    // transaction in the other process can momentarily hold the lock.
+    if (error?.code === 'SQLITE_BUSY') return tx.immediate(jobId)
+    throw error
+  }
+}
+
 export function listShadowJobs(limit = 50) {
   const rows = getDb().prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?').all(limit) as ShadowJobRow[]
+  return rows.map((row) => fromShadowRow(row))
+}
+
+export function listShadowJobsForUsers(userIds: string[], limit = 50) {
+  if (!userIds.length) return []
+  const placeholders = userIds.map(() => '?').join(',')
+  const rows = getDb()
+    .prepare(`SELECT * FROM jobs WHERE user_id IN (${placeholders}) ORDER BY created_at DESC LIMIT ?`)
+    .all(...userIds, limit) as ShadowJobRow[]
   return rows.map((row) => fromShadowRow(row))
 }
 

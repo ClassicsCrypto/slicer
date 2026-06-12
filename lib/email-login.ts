@@ -62,11 +62,24 @@ function renderHtml(code: string, expiresAt: string) {
   `
 }
 
+function configuredProvider() {
+  return (process.env.AUTH_EMAIL_PROVIDER || process.env.EMAIL_PROVIDER || '').trim().toLowerCase()
+}
+
+/**
+ * Shared by the request route (fail-closed gate) and the sender so the two
+ * can never drift — e.g. configuring via the EMAIL_PROVIDER alias must
+ * satisfy both the same way.
+ */
+export function isEmailDeliveryConfigured(): boolean {
+  return configuredProvider() === 'resend' && Boolean(process.env.RESEND_API_KEY?.trim())
+}
+
 export async function sendEmailLoginCode({ to, code, expiresAt }: SendLoginCodeInput): Promise<EmailDeliveryResult> {
-  const provider = (process.env.AUTH_EMAIL_PROVIDER || process.env.EMAIL_PROVIDER || '').trim().toLowerCase()
+  const provider = configuredProvider()
   const resendApiKey = process.env.RESEND_API_KEY?.trim()
 
-  if (provider !== 'resend' || !resendApiKey) {
+  if (!isEmailDeliveryConfigured() || !resendApiKey) {
     return {
       provider: 'debug',
       delivered: false,

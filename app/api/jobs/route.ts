@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { createJobRecord, listJobRecords, updateJobRecord } from '@/lib/job-store/store'
+import { createJobRecord, listJobRecordsForUsers, mutateJobRecord } from '@/lib/job-store/store'
 import { normalizeClips } from '@/lib/clip-id'
 import { normalizeSourceUrl } from '@/lib/source-url'
 import { Job, JobProgress } from '@/types'
@@ -64,12 +64,22 @@ async function recoverStaleJob(job: any) {
   const ageMs = Date.now() - getActivityTimestamp(job)
   if (ageMs < STALE_JOB_MS) return job
 
-  const progress = buildTimedOutProgress((job.progress ?? {}) as JobProgress, ageMs)
-  return (await updateJobRecord(job.id, {
-    status: 'failed',
-    progress,
-    updated_at: new Date().toISOString(),
-  }, 'api/jobs recoverStaleJob')) ?? { ...job, status: 'failed', progress }
+  // Re-check on the fresh row inside the transaction: the worker may have
+  // completed the job (or bumped activity) since the list read. Returning
+  // null skips the write — this prevents the complete→failed stamp.
+  const updated = await mutateJobRecord(job.id, (existing) => {
+    if (existing?.status !== 'processing') return null
+    const freshAgeMs = Date.now() - getActivityTimestamp(existing)
+    if (freshAgeMs < STALE_JOB_MS) return null
+    return {
+      ...existing,
+      status: 'failed',
+      progress: buildTimedOutProgress((existing.progress ?? {}) as JobProgress, freshAgeMs),
+      updated_at: new Date().toISOString(),
+    }
+  }, 'api/jobs recoverStaleJob')
+
+  return updated ?? job
 }
 
 export async function GET(request: NextRequest) {
@@ -78,12 +88,10 @@ export async function GET(request: NextRequest) {
 
   let jobsData: any[] = []
   try {
-    jobsData = await listJobRecords(50, 'api/jobs GET')
+    jobsData = await listJobRecordsForUsers([auth.user.id], 50, 'api/jobs GET')
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? 'Failed to list jobs' }, { status: 500 })
   }
-
-  jobsData = (jobsData ?? []).filter((job) => job.user_id === auth.user.id)
   const recoveredJobs = await Promise.all(jobsData.map((job) => recoverStaleJob(job)))
   const normalizedJobs = await Promise.all(recoveredJobs.map((job) => normalizeJob(job)))
   return NextResponse.json({ jobs: normalizedJobs })

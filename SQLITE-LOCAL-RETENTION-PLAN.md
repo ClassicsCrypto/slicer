@@ -610,14 +610,21 @@ This is why the migration must happen behind a store flag.
 ## Exact environment variables to add
 ```env
 SLICER_JOB_STORE=sqlite
-SLICER_DATA_DIR=server/data
+# MUST be an ABSOLUTE path (e.g. D:\slicer-data on the production box).
+# Relative values resolve against each process's cwd — the Next app and the
+# media server run from different directories, so a relative value makes one
+# of them silently create a second empty database.
+SLICER_DATA_DIR=
 SLICER_JOB_RETENTION_DAYS=7
 SLICER_FAILED_RETENTION_HOURS=48
 SLICER_SOURCE_CACHE_RETENTION_DAYS=7
 SLICER_THUMB_CACHE_RETENTION_DAYS=7
 SLICER_EXPORT_TEMP_RETENTION_HOURS=12
 SLICER_SWEEPER_INTERVAL_MIN=60
-SLICER_SHADOW_SQLITE=false
+# DO NOT set SLICER_SHADOW_SQLITE=false while SLICER_JOB_STORE=sqlite: in
+# sqlite-primary mode the "shadow" upsert/delete functions ARE the primary
+# write path, and disabling them silently drops every job write while reads
+# keep working.
 ```
 
 ---

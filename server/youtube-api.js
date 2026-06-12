@@ -18,7 +18,7 @@
  */
 
 const http = require('http')
-const { execSync, exec, spawn, spawnSync } = require('child_process')
+const { execSync, exec, execFile, execFileSync, spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -27,6 +27,7 @@ const { pipeline } = require('stream/promises')
 const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 const retentionSweeper = require('./lib/retention-sweeper.js')
 const { normalizeSubtitleWords, censorSubtitleWords, groupSubtitleWords } = require('../lib/subtitle-core.js')
+const { runMediaToolLimited } = require('./audio-energy')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -44,6 +45,20 @@ if (fs.existsSync(envPath)) {
 }
 
 const PORT = parseInt(process.env.SLICER_YT_PORT || '3001')
+
+// Shared secret gating server-called endpoints. Loopback-IP trust is NOT a
+// substitute: cloudflared forwards all public tunnel traffic to this process
+// from 127.0.0.1, so auth must be purely token-based.
+const INTERNAL_TOKEN = (process.env.SLICER_INTERNAL_TOKEN || '').trim()
+
+function isAuthorizedInternal(req) {
+  return Boolean(INTERNAL_TOKEN) && req.headers['authorization'] === `Bearer ${INTERNAL_TOKEN}`
+}
+
+function internalAuthHeaders() {
+  return INTERNAL_TOKEN ? { Authorization: `Bearer ${INTERNAL_TOKEN}` } : {}
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const TEMP_DIR = path.join(__dirname, 'temp')
@@ -57,6 +72,14 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 if (!fs.existsSync(THUMB_CACHE_DIR)) fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true })
 if (!fs.existsSync(STILL_CACHE_DIR)) fs.mkdirSync(STILL_CACHE_DIR, { recursive: true })
 
+// Transcription cache: keyed by source URL hash, persists across restarts
+const TRANSCRIPTION_CACHE_DIR = path.join(TEMP_DIR, 'transcription-cache')
+if (!fs.existsSync(TRANSCRIPTION_CACHE_DIR)) fs.mkdirSync(TRANSCRIPTION_CACHE_DIR, { recursive: true })
+
+// Active transcriptions: persisted to disk so they survive restarts
+const TRANSCRIPTION_DIR = path.join(TEMP_DIR, 'transcriptions')
+if (!fs.existsSync(TRANSCRIPTION_DIR)) fs.mkdirSync(TRANSCRIPTION_DIR, { recursive: true })
+
 // Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
 const videoCache = new Map()
 // Active downloads: downloadId → { status, publicUrl, title, error, progress }
@@ -64,6 +87,10 @@ const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 const MIN_REUSABLE_SOURCE_HEIGHT = 720
 const activeJobRuns = new Set()
+// Track in-progress scoring jobs to prevent duplicate calls. MUST live at
+// module scope: it previously sat inside the createServer callback, so a new
+// empty Set was created per request and the duplicate guard never fired.
+const scoringInProgress = new Set()
 const PARTIAL_FILE_RE = /\.(part|ytdl)$/i
 
 function getJobStoreKind() {
@@ -107,11 +134,9 @@ async function fetchJob(jobId) {
 
 async function updateJob(jobId, patch) {
   if (isSqlitePrimaryJobStore()) {
-    const existing = sqliteShadowStore.getShadowJob(jobId)
-    if (!existing) return null
-    const updatedJob = buildUpdatedSqliteJob(existing, patch)
-    sqliteShadowStore.upsertShadowJob(updatedJob)
-    return sqliteShadowStore.getShadowJob(jobId)
+    // Read-merge-write inside one transaction — the Next process writes the
+    // same rows, so an out-of-transaction read here loses concurrent updates.
+    return sqliteShadowStore.mutateShadowJob(jobId, (existing) => buildUpdatedSqliteJob(existing, patch))
   }
 
   if (!SUPABASE_URL || !SUPABASE_KEY) return null
@@ -147,6 +172,17 @@ async function updateJob(jobId, patch) {
 }
 
 async function mergeJobProgress(jobId, patch, statusOverride) {
+  if (isSqlitePrimaryJobStore()) {
+    // The progress spread happens INSIDE the transaction on the fresh row,
+    // so concurrent progress writers (votes, PATCH, this worker) can't
+    // clobber each other's keys.
+    const updated = sqliteShadowStore.mutateShadowJob(jobId, (existing) => buildUpdatedSqliteJob(existing, {
+      progress: { ...(existing.progress || {}), ...patch },
+      ...(statusOverride ? { status: statusOverride } : {}),
+    }))
+    return updated?.progress ?? { ...patch }
+  }
+
   const existing = await fetchJob(jobId)
   const nextProgress = { ...(existing?.progress || {}), ...patch }
   const payload = { progress: nextProgress }
@@ -199,9 +235,6 @@ async function reconcileInterruptedSqliteJobs() {
     const updatedMs = new Date(row.updated_at || row.created_at).getTime()
     if (Number.isFinite(updatedMs) && updatedMs > cutoffMs) continue
 
-    let progress = {}
-    try { progress = JSON.parse(row.progress_json || '{}') } catch {}
-
     const matchingComplete = completedRows.find((candidate) => (
       candidate.id !== row.id &&
       candidate.raw_input_url === row.raw_input_url &&
@@ -210,36 +243,56 @@ async function reconcileInterruptedSqliteJobs() {
     ))
 
     const nowIso = new Date().toISOString()
+
+    // Re-check on the FRESH row inside the transaction: another writer may
+    // have completed/failed the job (or bumped its activity) between the
+    // snapshot listing above and this write.
+    const stillInterrupted = (existing) => {
+      if (existing.status !== 'processing') return false
+      const freshMs = new Date(existing.updated_at || existing.created_at).getTime()
+      return !Number.isFinite(freshMs) || freshMs <= cutoffMs
+    }
+
     if (matchingComplete) {
       let sourceProgress = {}
       try { sourceProgress = JSON.parse(matchingComplete.progress_json || '{}') } catch {}
-      await updateJob(row.id, {
-        status: 'complete',
-        progress: {
-          ...progress,
-          ...sourceProgress,
-          phase: 'complete',
-          progress: 'Clip selection complete. Recovered from matching completed run after API restart interrupted final write.',
-          recoveredFromJobId: matchingComplete.id,
-          recoveredAt: nowIso,
-          completedAt: nowIso,
-        },
+      let wrote = false
+      sqliteShadowStore.mutateShadowJob(row.id, (existing) => {
+        if (!stillInterrupted(existing)) return null
+        wrote = true
+        return buildUpdatedSqliteJob(existing, {
+          status: 'complete',
+          progress: {
+            ...(existing.progress || {}),
+            ...sourceProgress,
+            phase: 'complete',
+            progress: 'Clip selection complete. Recovered from matching completed run after API restart interrupted final write.',
+            recoveredFromJobId: matchingComplete.id,
+            recoveredAt: nowIso,
+            completedAt: nowIso,
+          },
+        })
       })
-      recovered += 1
+      if (wrote) recovered += 1
       continue
     }
 
-    await updateJob(row.id, {
-      status: 'failed',
-      progress: {
-        ...progress,
-        phase: 'failed',
-        progress: `Processing was interrupted by an API restart and did not resume within ${staleMinutes} minutes. Please retry the job.`,
-        interruptedAt: nowIso,
-        completedAt: nowIso,
-      },
+    let wrote = false
+    sqliteShadowStore.mutateShadowJob(row.id, (existing) => {
+      if (!stillInterrupted(existing)) return null
+      wrote = true
+      return buildUpdatedSqliteJob(existing, {
+        status: 'failed',
+        progress: {
+          ...(existing.progress || {}),
+          phase: 'failed',
+          progress: `Processing was interrupted by an API restart and did not resume within ${staleMinutes} minutes. Please retry the job.`,
+          interruptedAt: nowIso,
+          completedAt: nowIso,
+        },
+      })
     })
-    failed += 1
+    if (wrote) failed += 1
   }
 
   if (recovered || failed) {
@@ -328,10 +381,13 @@ function getDownloadFormat(rawUrl) {
 
 function getVideoStreamMeta(filePath) {
   try {
-    const raw = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,bit_rate -of csv=p=0 "${String(filePath).replace(/"/g, '\\"')}"`,
-      { timeout: 10000, encoding: 'utf8' }
-    ).trim()
+    const raw = execFileSync('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height,bit_rate',
+      '-of', 'csv=p=0',
+      String(filePath),
+    ], { timeout: 10000, encoding: 'utf8' }).trim()
     const [width, height, bitRate] = raw.split(',').map((value) => parseInt(value, 10) || 0)
     return { width, height, bitRate }
   } catch {
@@ -366,13 +422,26 @@ function getDirectMediaMeta(rawUrl) {
   }
 }
 
+// Only plain http(s) URLs may reach yt-dlp/ffprobe/curl. Anything else
+// (file:, ytsearch:, data:, raw shell metacharacters posing as a "URL")
+// is rejected at the request boundary.
+function isAllowedRemoteUrl(value) {
+  try {
+    const parsed = new URL(String(value))
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 function getMediaDuration(input) {
   try {
-    const safeInput = String(input).replace(/"/g, '\\"')
-    const raw = execSync(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${safeInput}"`,
-      { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-    ).trim()
+    const raw = execFileSync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      String(input),
+    ], { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     const duration = Math.round(parseFloat(raw) || 0)
     return Number.isFinite(duration) ? duration : 0
   } catch (error) {
@@ -398,12 +467,13 @@ async function downloadDirectMedia(rawUrl, outputPath) {
     console.warn('[direct-download] fetch failed:', error.message)
   }
 
-  const safeUrl = String(rawUrl).replace(/"/g, '\\"')
-  const safePath = String(outputPath).replace(/"/g, '\\"')
-  execSync(
-    `curl.exe -L --fail --silent --show-error -A "${browserHeaders['user-agent']}" -H "Accept: ${browserHeaders.accept}" -o "${safePath}" "${safeUrl}"`,
-    { timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] },
-  )
+  execFileSync('curl.exe', [
+    '-L', '--fail', '--silent', '--show-error',
+    '-A', browserHeaders['user-agent'],
+    '-H', `Accept: ${browserHeaders.accept}`,
+    '-o', String(outputPath),
+    String(rawUrl),
+  ], { timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 async function ensureDownloadedSource(rawUrl) {
@@ -558,10 +628,13 @@ function getVideoInfo(url) {
   }
 
   try {
-    const raw = execSync(
-      `yt-dlp --js-runtimes node --remote-components ejs:github --no-download --print "%(duration)s|||%(title)s|||%(id)s" "${url}"`,
-      { timeout: 15000, encoding: 'utf8' }
-    ).trim()
+    const raw = execFileSync('yt-dlp', [
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--no-download',
+      '--print', '%(duration)s|||%(title)s|||%(id)s',
+      String(url),
+    ], { timeout: 15000, encoding: 'utf8' }).trim()
     const [duration, title, id] = raw.split('|||')
     return { duration: parseInt(duration) || 0, title: title || 'Untitled', id: id || 'unknown' }
   } catch (err) {
@@ -576,10 +649,18 @@ function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
     const format = getDownloadFormat(url)
-    const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
-    console.log(`[yt-dlp] downloading: ${cmd}`)
+    const args = [
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--socket-timeout', '20',
+      '-f', format,
+      '--merge-output-format', 'mp4',
+      '-o', String(outputPath),
+      String(url),
+    ]
+    console.log(`[yt-dlp] downloading: yt-dlp ${args.join(' ')}`)
 
-    exec(cmd, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('yt-dlp', args, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         console.error('[yt-dlp] error:', stderr?.slice(-500))
         reject(new Error(`Download failed: ${stderr?.slice(-200) || err.message}`))
@@ -642,6 +723,7 @@ async function handleDownload(req, res) {
 
   const { url } = parsed
   if (!url) return sendJson(res, 400, { error: 'url is required' })
+  if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
 
   console.log(`\n[download] request: ${url}`)
 
@@ -1247,10 +1329,6 @@ function generateSRT(words, clipStartTime = 0, textCase = 'original') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
-// Transcription cache: keyed by source URL hash, persists across restarts
-const TRANSCRIPTION_CACHE_DIR = path.join(TEMP_DIR, 'transcription-cache')
-if (!fs.existsSync(TRANSCRIPTION_CACHE_DIR)) fs.mkdirSync(TRANSCRIPTION_CACHE_DIR, { recursive: true })
-
 function getTranscriptionCacheKey(audioUrl) {
   // Strip session tokens so same broadcast always hits cache regardless of token rotation
   // YouTube: remove ?t=... &s=... params. X broadcasts: extract broadcast ID
@@ -1299,10 +1377,6 @@ function setCachedTranscription(audioUrl, result) {
   console.log(`[transcription-cache] SET: ${key} (${result.words?.length || 0} words)`)
 }
 
-// Active transcriptions: persisted to disk so they survive restarts
-const TRANSCRIPTION_DIR = path.join(TEMP_DIR, 'transcriptions')
-if (!fs.existsSync(TRANSCRIPTION_DIR)) fs.mkdirSync(TRANSCRIPTION_DIR, { recursive: true })
-
 function getTranscription(id) {
   const file = path.join(TRANSCRIPTION_DIR, `${id}.json`)
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -1325,11 +1399,11 @@ function resolveServedFilePath(audioUrl, explicitPath) {
   return null
 }
 
-function detectVolumeSpikesForFile(filePath) {
+async function detectVolumeSpikesForFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return []
   try {
     const { analyzeAudioEnergy, findVolumeSpikes } = require('./audio-energy')
-    const segments = analyzeAudioEnergy(filePath, 3)
+    const segments = await analyzeAudioEnergy(filePath, 3)
     const spikes = findVolumeSpikes(segments, 4)
     return clusterAudioActionSpikes(spikes, 9).slice(0, 80)
   } catch (error) {
@@ -2507,10 +2581,10 @@ function parseAverageSignalMetric(output, key) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function analyzeFrameMotion(inputPath, timestamp) {
+async function analyzeFrameMotion(inputPath, timestamp) {
   try {
     const start = Math.max(0, Number(timestamp || 0) - 0.45)
-    const result = spawnSync('ffmpeg', [
+    const output = await runMediaToolLimited('ffmpeg', [
       '-hide_banner',
       '-ss', String(start),
       '-i', inputPath,
@@ -2519,8 +2593,7 @@ function analyzeFrameMotion(inputPath, timestamp) {
       '-vf', 'fps=6,scale=160:-1,format=gray,tblend=all_mode=difference,signalstats,metadata=print',
       '-f', 'null',
       '-',
-    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
-    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    ], 12000)
     const motionYAvg = parseAverageSignalMetric(output, 'YAVG')
     if (motionYAvg == null) return { score: 0, reason: 'Motion metrics unavailable.' }
     return {
@@ -2567,12 +2640,12 @@ function scoreVisualMetrics(metrics, timestamp, totalSec, motion) {
   return brightnessScore + contrastScore + saturationScore + edgePenalty + motionScore
 }
 
-function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
+async function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
   const inputPath = resolveServedInputPath(sourceUrl)
   if (!inputPath) return { usable: true, score: 0, reason: 'No source available for visual scoring.' }
 
   try {
-    const result = spawnSync('ffmpeg', [
+    const output = await runMediaToolLimited('ffmpeg', [
       '-hide_banner',
       '-ss', String(Math.max(0, timestamp)),
       '-i', inputPath,
@@ -2581,11 +2654,10 @@ function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
       '-vf', 'scale=160:-1,signalstats,metadata=print',
       '-f', 'null',
       '-',
-    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
-    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    ], 12000)
     const metrics = parseSignalStats(output)
     if (!Object.keys(metrics).length) return { usable: true, score: 0, reason: 'Visual metrics unavailable.' }
-    const motion = analyzeFrameMotion(inputPath, timestamp)
+    const motion = await analyzeFrameMotion(inputPath, timestamp)
     const reject = visualRejectReason(metrics, timestamp, totalSec, motion)
     const visualScore = scoreVisualMetrics(metrics, timestamp, totalSec, motion)
     return {
@@ -2624,17 +2696,20 @@ function candidateProofFrameTimestamps(clip) {
 async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
   if (!sourceUrl || !clips?.length) return clips
 
-  return clips.map((clip) => {
+  const enriched = []
+  for (const clip of clips) {
     const baseScore = Number(clip.virality_score || 7)
-    const candidates = candidateProofFrameTimestamps(clip).map((timestamp) => {
-      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+    // Per-candidate ffmpeg probes run concurrently, bounded globally by the
+    // shared media-tool limiter so a 10-clip job can't spawn 200+ processes.
+    const candidates = await Promise.all(candidateProofFrameTimestamps(clip).map(async (timestamp) => {
+      const visual = await analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
       const peakBias = 2 - Math.abs(timestamp - (clip.start_time + ((clip.end_time - clip.start_time) * 0.58))) / Math.max(4, clip.duration || 30)
       return {
         timestamp,
         visual,
         score: baseScore + visual.score + peakBias,
       }
-    })
+    }))
 
     const usable = candidates.filter((candidate) => candidate.visual.usable)
     const ranked = (usable.length ? usable : candidates)
@@ -2642,7 +2717,7 @@ async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
       .slice(0, 3)
 
     const labels = ['best', 'action', 'clean']
-    return {
+    enriched.push({
       ...clip,
       proof_frames: ranked.map((candidate, index) => ({
         label: labels[index],
@@ -2650,8 +2725,9 @@ async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
         score: Math.max(1, Math.min(10, Math.round(candidate.score))),
         reason: `${candidate.visual.reason}${usable.length ? '' : ' Fallback used because all sampled frames looked weak.'}`,
       })),
-    }
-  })
+    })
+  }
+  return enriched
 }
 
 function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, words, detectionMode) {
@@ -3029,7 +3105,15 @@ async function handleTranscribeLocal(req, res) {
   if (cached) {
     const transcribeId = crypto.randomBytes(8).toString('hex')
     const filePath = resolveServedFilePath(audioUrl, audioPath)
-    const volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 80)
+    let volumeSpikes
+    if (Array.isArray(cached.volumeSpikes)) {
+      volumeSpikes = cached.volumeSpikes.slice(0, 80)
+    } else {
+      // Legacy cache entry without spikes — compute once and upgrade the
+      // entry so later hits skip the ~200-process ffmpeg re-scan.
+      volumeSpikes = (await detectVolumeSpikesForFile(filePath)).slice(0, 80)
+      setCachedTranscription(cacheSource, { ...cached, volumeSpikes })
+    }
     const cacheKey = getTranscriptionCacheKey(cacheSource)
     setTranscription(transcribeId, { status: 'complete', result: cached, volumeSpikes, cached: true, cacheKey })
     console.log(`[transcribe-local] Cache hit! ${cached.words?.length} words. Skipping Groq, using cached result directly.`)
@@ -3074,10 +3158,20 @@ async function handleTranscribeLocal(req, res) {
           filePath = path.join(TEMP_DIR, decodeURIComponent(fileName))
         } else {
           // Download the file first
+          if (!isAllowedRemoteUrl(audioUrl)) {
+            setTranscription(transcribeId, { status: 'error', error: 'audioUrl must be an http(s) URL' })
+            return
+          }
           const fileId = crypto.randomBytes(8).toString('hex')
           filePath = path.join(TEMP_DIR, `${fileId}-audio.mp4`)
-          const dlCmd = `yt-dlp -f "ba/b" -o "${filePath}" "${audioUrl}"`
-          execSync(dlCmd, { timeout: 30 * 60 * 1000 })
+          // Async so a long download can't freeze the event loop (this IIFE
+          // used to execSync for up to 30 minutes BEFORE the route responded).
+          await new Promise((resolve, reject) => {
+            execFile('yt-dlp', ['-f', 'ba/b', '-o', filePath, String(audioUrl)], {
+              timeout: 30 * 60 * 1000,
+              maxBuffer: 50 * 1024 * 1024,
+            }, (err) => (err ? reject(err) : resolve()))
+          })
         }
       }
 
@@ -3119,7 +3213,7 @@ async function handleTranscribeLocal(req, res) {
         setTranscription(transcribeId, { status: 'error', error: `Whisper failed: ${err.message}` })
       })
 
-      whisperProc.on('close', (code) => {
+      whisperProc.on('close', async (code) => {
         if (stderrTail.trim()) console.log(`[transcribe-local] ${transcribeId} stderr:`, stderrTail.trim().slice(-500))
 
         if (code !== 0) {
@@ -3135,7 +3229,6 @@ async function handleTranscribeLocal(req, res) {
           console.log(`[transcribe-local] ${transcribeId} complete: ${result.words?.length} words, ${result.duration}s, ${result.realtime_factor}x realtime`)
           
           const cacheKey = audioUrl || audioPath
-          if (cacheKey) setCachedTranscription(cacheKey, result)
 
           let volumeSpikes = []
           try {
@@ -3146,11 +3239,14 @@ async function handleTranscribeLocal(req, res) {
             if (audioFileForAnalysis !== filePath) {
               console.log(`[transcribe-local] ${transcribeId} using pre-extracted WAV for audio analysis (fast path)`)
             }
-            volumeSpikes = detectVolumeSpikesForFile(audioFileForAnalysis).slice(0, 80)
+            volumeSpikes = (await detectVolumeSpikesForFile(audioFileForAnalysis)).slice(0, 80)
             console.log(`[transcribe-local] ${transcribeId} found ${volumeSpikes.length} volume spikes`)
           } catch (e) {
             console.error(`[transcribe-local] Audio energy analysis failed:`, e.message)
           }
+
+          // Cache spikes alongside the transcript so cache hits never re-scan.
+          if (cacheKey) setCachedTranscription(cacheKey, { ...result, volumeSpikes })
 
           setTranscription(transcribeId, {
             status: 'complete',
@@ -3188,9 +3284,6 @@ async function handleTranscribeLocal(req, res) {
   sendJson(res, 200, { transcribeId })
 }
 
-// Track in-progress scoring jobs to prevent duplicate calls
-const scoringInProgress = new Set()
-
 // ─── Gemini clip scoring endpoint (runs locally, no Vercel timeout) ───
 async function handleScoreClips(req, res) {
   let raw = ''
@@ -3206,19 +3299,22 @@ async function handleScoreClips(req, res) {
     console.log(`[score-clips] Already scoring job ${jobId} — skipping duplicate request`)
     return sendJson(res, 200, { status: 'already_scoring', jobId })
   }
-  scoringInProgress.add(jobId)
-
   sendJson(res, 200, { status: 'scoring', jobId }) // Respond immediately
 
   // Run Gemini in background
   ;(async () => {
     try {
+      // Acquire the lock as the first statement inside the try so the finally
+      // below always releases it (adding before sendJson could leak the lock
+      // if writing to a destroyed socket threw). Race-free: this synchronous
+      // prefix runs in the same tick as the has() check above.
+      scoringInProgress.add(jobId)
+
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY
       const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview'
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
-      const FULL_TRANSCRIPT_SCOUT = 'off' // Disabled: redundant scout path caused retry confusion/hangs; Gemini/OpenRouter scorer fallback handles model-side review.
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
@@ -3351,59 +3447,6 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
           }
           return false
         })
-
-      let scoutCandidatesAdded = 0
-      if (false && FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
-        try {
-          const scoutTranscript = buildWholeTranscriptForScout(segments)
-          const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
-Detected game/context: ${detectedGame}.${customGameHint}
-${priorityHintText ? `User priority hint: ${priorityHintText}` : ''}
-
-Look across the WHOLE transcript and return a WIDE candidate set: ideally 30-60 possible moments.
-Include obvious viral moments, second-tier usable moments, and quiet gameplay payoffs the chunk scorer may miss: kills/clutches/objectives, funny failures, rage/laugh reactions, sudden audio spikes, quotable lines, or weird context shifts.
-Skip intros, pure setup chatter, music/lyrics, generic ROI talk, and weak vibes, but do not be too conservative. Gemini will judge later.
-Use absolute stream seconds from the timestamps.
-Return compact JSON only:
-{"moments":[{"s":1060,"v":8,"r":"SMG laser beam reaction with payoff"}]}
-
-FULL TRANSCRIPT:
-${scoutTranscript}`
-          const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.2, maxOutputTokens: 6000, timeoutMs: 90000 })
-          const scoutJson = extractJsonObject(scoutContent)
-          if (scoutJson) {
-            let scoutParsed
-            try {
-              scoutParsed = JSON.parse(scoutJson)
-            } catch (scoutParseError) {
-              const momentMatches = [...scoutJson.matchAll(/\{\s*\"s\"\s*:\s*(\d+)\s*,\s*\"v\"\s*:\s*(\d+)\s*,\s*\"r\"\s*:\s*\"([^\"\\]*)/g)]
-              scoutParsed = { moments: momentMatches.map((m) => ({ s: Number(m[1]), v: Number(m[2]), r: m[3] })) }
-              console.warn(`[score-clips] Whole-transcript scout JSON was malformed; recovered ${scoutParsed.moments.length} moments`)
-            }
-            const scoutChunks = buildScoutChunksFromMoments(scoutParsed.moments || scoutParsed.clips || [], words, introSkipSec, totalSec, clipLength)
-            const boostedScoutCandidates = scoutChunks
-              .map((chunk) => {
-                const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, effectiveDetectionMode, priorityProfile)
-                const scoutBoost = Math.max(20, Math.min(45, (chunk.scoutScore || 7) * 4))
-                return {
-                  ...scored,
-                  score: scored.score + scoutBoost,
-                  wholeTranscriptScout: true,
-                  scoutReason: chunk.scoutReason,
-                }
-              })
-              .filter((candidate) => candidate.score > -8 || candidate.signalDensity >= 1 || candidate.wholeTranscriptScout)
-
-            scoredCandidates = mergeChunkSources(boostedScoutCandidates, scoredCandidates)
-            scoutCandidatesAdded = boostedScoutCandidates.length
-            console.log(`[score-clips] Whole-transcript scout added ${scoutCandidatesAdded} candidates via ${OPENROUTER_CLIP_MODEL}`)
-          } else {
-            console.warn('[score-clips] Whole-transcript scout returned no JSON; continuing with local candidates')
-          }
-        } catch (scoutError) {
-          console.warn(`[score-clips] Whole-transcript scout failed: ${scoutError.message}`)
-        }
-      }
 
       scoredCandidates = scoredCandidates
         .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
@@ -3901,7 +3944,7 @@ async function handleJobStart(req, res) {
 
       const transcribeRes = await fetch(`http://127.0.0.1:${PORT}/transcribe-local`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...internalAuthHeaders() },
         body: JSON.stringify({ audioUrl: finalSourceUrl, jobId }),
       })
       if (!transcribeRes.ok) {
@@ -3924,7 +3967,7 @@ async function handleJobStart(req, res) {
 
       const scoreRes = await fetch(`http://127.0.0.1:${PORT}/score-clips`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...internalAuthHeaders() },
         body: JSON.stringify({
           words: filteredWords,
           clipCount: options.clipCount,
@@ -3981,6 +4024,7 @@ async function handleDownloadStart(req, res) {
 
   const { url } = parsed
   if (!url) return sendJson(res, 400, { error: 'url is required' })
+  if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
 
   // Check cache first
   const cached = getFromCache(url)
@@ -4168,10 +4212,16 @@ async function handleThumbnail(req, res) {
 
     const inputPath = resolveServedInputPath(sourceUrl)
 
-    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -vf "scale='min(640,iw)':-2" -q:v 5 -y "${tempThumbFile}"`
     console.log(`[thumb] extracting frame at ${ts}s`)
 
-    execSync(cmd, { timeout: 15000 })
+    await runMediaToolLimited('ffmpeg', [
+      '-ss', String(ts),
+      '-i', String(inputPath),
+      '-vframes', '1',
+      '-vf', "scale='min(640,iw)':-2",
+      '-q:v', '5',
+      '-y', tempThumbFile,
+    ], 15000)
 
     if (!fs.existsSync(tempThumbFile)) {
       return sendJson(res, 500, { error: 'Failed to extract frame' })
@@ -4222,21 +4272,21 @@ function buildStillOutputArgs({ crop, format, outputFile, preview = false }) {
   return `-filter_complex "[0:v]split=2[base][fg];[base]scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},boxblur=${preview ? '12:1' : '24:2'},eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=${target.w}:${target.h}:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
 }
 
-function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
+async function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
   const safeWindow = Math.max(0, Math.min(10, Number(windowSec) || 0))
   const baseOffsets = safeWindow > 0
     ? [-safeWindow, -safeWindow * 0.7, -safeWindow * 0.45, -safeWindow * 0.22, 0, safeWindow * 0.22, safeWindow * 0.45, safeWindow * 0.7, safeWindow]
     : [0]
   const maxTimestamp = totalSec ? Math.max(0, totalSec - 0.25) : Number.MAX_SAFE_INTEGER
-  const candidates = baseOffsets
+  const candidates = await Promise.all(baseOffsets
     .map((offset) => Math.max(0, Math.min(maxTimestamp, targetTimestamp + offset)))
     .filter((value, index, arr) => Number.isFinite(value) && arr.findIndex((other) => Math.abs(other - value) < 0.04) === index)
-    .map((timestamp) => {
-      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+    .map(async (timestamp) => {
+      const visual = await analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
       const distancePenalty = Math.abs(timestamp - targetTimestamp) * 0.22
       const centerBonus = Math.abs(timestamp - targetTimestamp) <= 1.25 ? 1.2 : 0
       return { timestamp, visual, rank: (visual.score || 0) + centerBonus - distancePenalty }
-    })
+    }))
 
   const usable = candidates.filter((candidate) => candidate.visual.usable)
   const ranked = (usable.length ? usable : candidates).sort((a, b) => b.rank - a.rank)
@@ -4263,7 +4313,7 @@ async function handleStillExport(req, res) {
 
     const totalSec = qualitySearch ? getMediaDuration(inputPath) : null
     const best = qualitySearch
-      ? chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualityWindowSec)
+      ? await chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualityWindowSec)
       : { timestamp: requestedTimestamp, visual: { score: 0, reason: 'Exact requested frame.' } }
     const selectedTimestamp = Math.max(0, best.timestamp)
     const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}|${preview ? 'preview-v1' : 'full-v1'}`).digest('hex').slice(0, 24)
@@ -4350,13 +4400,17 @@ async function handleInfo(req, res) {
     const { url } = body
     if (!url) return sendJson(res, 400, { error: 'url is required' })
 
+    if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
+
     console.log(`[info] Getting info for: ${url}`)
 
-    const { execSync } = require('child_process')
-    const result = execSync(
-      `yt-dlp --dump-json --no-download "${url}"`,
-      { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-    )
+    const result = await new Promise((resolve, reject) => {
+      execFile('yt-dlp', [
+        '--dump-json',
+        '--no-download',
+        String(url),
+      ], { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)))
+    })
 
     const info = JSON.parse(result)
     const durationSec = info.duration || 0
@@ -4383,6 +4437,20 @@ async function handleInfo(req, res) {
       'Access-Control-Allow-Headers': 'Content-Type',
     })
     return res.end()
+  }
+
+  // Endpoints whose only legitimate callers are server-side (Next routes or
+  // this process itself). Browser-called endpoints (/info, /upload, /clip,
+  // /thumbnail, /serve, /health) stay open — see SLICER_BACKEND_PROTECTION.md.
+  const needsInternalAuth =
+    (req.method === 'POST' && ['/download-start', '/download', '/transcribe-local', '/score-clips', '/job-start'].includes(req.url)) ||
+    (req.method === 'GET' && (
+      req.url?.startsWith('/download-poll/') ||
+      req.url?.startsWith('/transcribe-poll/') ||
+      req.url?.startsWith('/still')
+    ))
+  if (needsInternalAuth && INTERNAL_TOKEN && !isAuthorizedInternal(req)) {
+    return sendJson(res, 401, { error: 'Unauthorized' })
   }
 
   if (req.method === 'POST' && req.url === '/download-start') {
@@ -4427,6 +4495,13 @@ server.listen(PORT, () => {
     retentionSweeper.scheduleRetentionSweeps({ runImmediately: true })
   } else {
     console.log('[retention-sweeper] skipped (SLICER_JOB_STORE != sqlite or sweeper disabled)')
+  }
+  if (!INTERNAL_TOKEN) {
+    console.warn('\n⚠️  ⚠️  ⚠️  SLICER_INTERNAL_TOKEN is NOT set ⚠️  ⚠️  ⚠️')
+    console.warn('   Server-called endpoints (/job-start, /download*, /transcribe*, /score-clips, /still)')
+    console.warn('   are accepting UNAUTHENTICATED requests. Anyone with the tunnel URL can run')
+    console.warn('   yt-dlp/ffmpeg jobs and spend paid transcription/scoring credits on this box.')
+    console.warn('   Set SLICER_INTERNAL_TOKEN in .env.local (see SLICER_BACKEND_PROTECTION.md) and restart.\n')
   }
   console.log(`\n🎬 Slicer Local API running on http://localhost:${PORT}`)
   console.log(`   POST /download  - Download YouTube/Twitch video`)

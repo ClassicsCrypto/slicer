@@ -6,8 +6,8 @@ import path from 'path'
 import Database from 'better-sqlite3'
 import { NextRequest, NextResponse } from 'next/server'
 
-const DATA_DIR = path.join(process.cwd(), 'server', 'data')
-const DB_PATH = path.join(DATA_DIR, 'slicer.sqlite')
+import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
+
 const SESSION_COOKIE = 'slicer_session'
 const SESSION_DAYS = 30
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
@@ -66,6 +66,9 @@ let db: Database.Database | null = null
 function getDb() {
   if (db) return db
   fs.mkdirSync(DATA_DIR, { recursive: true })
+  if (!fs.existsSync(DB_PATH)) {
+    console.warn(`[auth] Creating a NEW empty SQLite database at ${DB_PATH} — if you expected existing users/sessions, SLICER_DATA_DIR points at the wrong place.`)
+  }
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -321,8 +324,24 @@ export function upsertOAuthUser(input: {
   return { userId, workspaceId: workspace.id }
 }
 
+const EMAIL_CODE_COOLDOWN_MS = 60 * 1000
+
 export function createEmailLoginCode(email: string) {
   const normalized = email.trim().toLowerCase()
+
+  // Per-email cooldown. Besides plain abuse, every re-mint resets the
+  // attempt counter (ON CONFLICT below), so unthrottled requests grant a
+  // fresh 5 guesses each time.
+  const existing = getDb().prepare(`
+    SELECT created_at FROM email_login_codes WHERE email = ?
+  `).get(normalized) as { created_at: string } | undefined
+  if (existing) {
+    const elapsed = Date.now() - new Date(existing.created_at).getTime()
+    if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < EMAIL_CODE_COOLDOWN_MS) {
+      return { throttled: true as const, retryAfterSec: Math.ceil((EMAIL_CODE_COOLDOWN_MS - elapsed) / 1000) }
+    }
+  }
+
   const code = crypto.randomInt(100000, 1000000).toString()
   const ts = nowIso()
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
