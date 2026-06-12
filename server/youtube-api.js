@@ -26,6 +26,7 @@ const { Readable } = require('stream')
 const { pipeline } = require('stream/promises')
 const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 const retentionSweeper = require('./lib/retention-sweeper.js')
+const { runMediaToolLimited } = require('./audio-energy')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -327,10 +328,13 @@ function getDownloadFormat(rawUrl) {
 
 function getVideoStreamMeta(filePath) {
   try {
-    const raw = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,bit_rate -of csv=p=0 "${String(filePath).replace(/"/g, '\\"')}"`,
-      { timeout: 10000, encoding: 'utf8' }
-    ).trim()
+    const raw = execFileSync('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height,bit_rate',
+      '-of', 'csv=p=0',
+      String(filePath),
+    ], { timeout: 10000, encoding: 'utf8' }).trim()
     const [width, height, bitRate] = raw.split(',').map((value) => parseInt(value, 10) || 0)
     return { width, height, bitRate }
   } catch {
@@ -1416,11 +1420,11 @@ function resolveServedFilePath(audioUrl, explicitPath) {
   return null
 }
 
-function detectVolumeSpikesForFile(filePath) {
+async function detectVolumeSpikesForFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return []
   try {
     const { analyzeAudioEnergy, findVolumeSpikes } = require('./audio-energy')
-    const segments = analyzeAudioEnergy(filePath, 3)
+    const segments = await analyzeAudioEnergy(filePath, 3)
     const spikes = findVolumeSpikes(segments, 4)
     return clusterAudioActionSpikes(spikes, 9).slice(0, 80)
   } catch (error) {
@@ -2598,10 +2602,10 @@ function parseAverageSignalMetric(output, key) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function analyzeFrameMotion(inputPath, timestamp) {
+async function analyzeFrameMotion(inputPath, timestamp) {
   try {
     const start = Math.max(0, Number(timestamp || 0) - 0.45)
-    const result = spawnSync('ffmpeg', [
+    const output = await runMediaToolLimited('ffmpeg', [
       '-hide_banner',
       '-ss', String(start),
       '-i', inputPath,
@@ -2610,8 +2614,7 @@ function analyzeFrameMotion(inputPath, timestamp) {
       '-vf', 'fps=6,scale=160:-1,format=gray,tblend=all_mode=difference,signalstats,metadata=print',
       '-f', 'null',
       '-',
-    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
-    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    ], 12000)
     const motionYAvg = parseAverageSignalMetric(output, 'YAVG')
     if (motionYAvg == null) return { score: 0, reason: 'Motion metrics unavailable.' }
     return {
@@ -2658,12 +2661,12 @@ function scoreVisualMetrics(metrics, timestamp, totalSec, motion) {
   return brightnessScore + contrastScore + saturationScore + edgePenalty + motionScore
 }
 
-function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
+async function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
   const inputPath = resolveServedInputPath(sourceUrl)
   if (!inputPath) return { usable: true, score: 0, reason: 'No source available for visual scoring.' }
 
   try {
-    const result = spawnSync('ffmpeg', [
+    const output = await runMediaToolLimited('ffmpeg', [
       '-hide_banner',
       '-ss', String(Math.max(0, timestamp)),
       '-i', inputPath,
@@ -2672,11 +2675,10 @@ function analyzeProofFrameVisual(sourceUrl, timestamp, totalSec) {
       '-vf', 'scale=160:-1,signalstats,metadata=print',
       '-f', 'null',
       '-',
-    ], { encoding: 'utf8', timeout: 12000, maxBuffer: 1024 * 1024 })
-    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    ], 12000)
     const metrics = parseSignalStats(output)
     if (!Object.keys(metrics).length) return { usable: true, score: 0, reason: 'Visual metrics unavailable.' }
-    const motion = analyzeFrameMotion(inputPath, timestamp)
+    const motion = await analyzeFrameMotion(inputPath, timestamp)
     const reject = visualRejectReason(metrics, timestamp, totalSec, motion)
     const visualScore = scoreVisualMetrics(metrics, timestamp, totalSec, motion)
     return {
@@ -2715,17 +2717,20 @@ function candidateProofFrameTimestamps(clip) {
 async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
   if (!sourceUrl || !clips?.length) return clips
 
-  return clips.map((clip) => {
+  const enriched = []
+  for (const clip of clips) {
     const baseScore = Number(clip.virality_score || 7)
-    const candidates = candidateProofFrameTimestamps(clip).map((timestamp) => {
-      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+    // Per-candidate ffmpeg probes run concurrently, bounded globally by the
+    // shared media-tool limiter so a 10-clip job can't spawn 200+ processes.
+    const candidates = await Promise.all(candidateProofFrameTimestamps(clip).map(async (timestamp) => {
+      const visual = await analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
       const peakBias = 2 - Math.abs(timestamp - (clip.start_time + ((clip.end_time - clip.start_time) * 0.58))) / Math.max(4, clip.duration || 30)
       return {
         timestamp,
         visual,
         score: baseScore + visual.score + peakBias,
       }
-    })
+    }))
 
     const usable = candidates.filter((candidate) => candidate.visual.usable)
     const ranked = (usable.length ? usable : candidates)
@@ -2733,7 +2738,7 @@ async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
       .slice(0, 3)
 
     const labels = ['best', 'action', 'clean']
-    return {
+    enriched.push({
       ...clip,
       proof_frames: ranked.map((candidate, index) => ({
         label: labels[index],
@@ -2741,8 +2746,9 @@ async function enrichClipsWithVisualProofFrames(clips, sourceUrl, totalSec) {
         score: Math.max(1, Math.min(10, Math.round(candidate.score))),
         reason: `${candidate.visual.reason}${usable.length ? '' : ' Fallback used because all sampled frames looked weak.'}`,
       })),
-    }
-  })
+    })
+  }
+  return enriched
 }
 
 function buildClipPayloadFromRange(startSec, endSec, viralityScore, aiReason, words, detectionMode) {
@@ -3126,7 +3132,7 @@ async function handleTranscribeLocal(req, res) {
     } else {
       // Legacy cache entry without spikes — compute once and upgrade the
       // entry so later hits skip the ~200-process ffmpeg re-scan.
-      volumeSpikes = detectVolumeSpikesForFile(filePath).slice(0, 80)
+      volumeSpikes = (await detectVolumeSpikesForFile(filePath)).slice(0, 80)
       setCachedTranscription(cacheSource, { ...cached, volumeSpikes })
     }
     const cacheKey = getTranscriptionCacheKey(cacheSource)
@@ -3179,7 +3185,14 @@ async function handleTranscribeLocal(req, res) {
           }
           const fileId = crypto.randomBytes(8).toString('hex')
           filePath = path.join(TEMP_DIR, `${fileId}-audio.mp4`)
-          execFileSync('yt-dlp', ['-f', 'ba/b', '-o', filePath, String(audioUrl)], { timeout: 30 * 60 * 1000 })
+          // Async so a long download can't freeze the event loop (this IIFE
+          // used to execSync for up to 30 minutes BEFORE the route responded).
+          await new Promise((resolve, reject) => {
+            execFile('yt-dlp', ['-f', 'ba/b', '-o', filePath, String(audioUrl)], {
+              timeout: 30 * 60 * 1000,
+              maxBuffer: 50 * 1024 * 1024,
+            }, (err) => (err ? reject(err) : resolve()))
+          })
         }
       }
 
@@ -3221,7 +3234,7 @@ async function handleTranscribeLocal(req, res) {
         setTranscription(transcribeId, { status: 'error', error: `Whisper failed: ${err.message}` })
       })
 
-      whisperProc.on('close', (code) => {
+      whisperProc.on('close', async (code) => {
         if (stderrTail.trim()) console.log(`[transcribe-local] ${transcribeId} stderr:`, stderrTail.trim().slice(-500))
 
         if (code !== 0) {
@@ -3247,7 +3260,7 @@ async function handleTranscribeLocal(req, res) {
             if (audioFileForAnalysis !== filePath) {
               console.log(`[transcribe-local] ${transcribeId} using pre-extracted WAV for audio analysis (fast path)`)
             }
-            volumeSpikes = detectVolumeSpikesForFile(audioFileForAnalysis).slice(0, 80)
+            volumeSpikes = (await detectVolumeSpikesForFile(audioFileForAnalysis)).slice(0, 80)
             console.log(`[transcribe-local] ${transcribeId} found ${volumeSpikes.length} volume spikes`)
           } catch (e) {
             console.error(`[transcribe-local] Audio energy analysis failed:`, e.message)
@@ -4275,14 +4288,14 @@ async function handleThumbnail(req, res) {
 
     console.log(`[thumb] extracting frame at ${ts}s`)
 
-    execFileSync('ffmpeg', [
+    await runMediaToolLimited('ffmpeg', [
       '-ss', String(ts),
       '-i', String(inputPath),
       '-vframes', '1',
       '-vf', "scale='min(640,iw)':-2",
       '-q:v', '5',
       '-y', tempThumbFile,
-    ], { timeout: 15000 })
+    ], 15000)
 
     if (!fs.existsSync(tempThumbFile)) {
       return sendJson(res, 500, { error: 'Failed to extract frame' })
@@ -4333,21 +4346,21 @@ function buildStillOutputArgs({ crop, format, outputFile, preview = false }) {
   return `-filter_complex "[0:v]split=2[base][fg];[base]scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},boxblur=${preview ? '12:1' : '24:2'},eq=saturation=0.82:brightness=-0.05[bg];[fg]scale=${target.w}:${target.h}:force_original_aspect_ratio=decrease[front];[bg][front]overlay=(W-w)/2:(H-h)/2,format=${format === 'png' ? 'rgba' : 'yuvj420p'}" ${imageCodecArgs}`
 }
 
-function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
+async function chooseBestStillTimestamp(sourceUrl, targetTimestamp, totalSec, windowSec) {
   const safeWindow = Math.max(0, Math.min(10, Number(windowSec) || 0))
   const baseOffsets = safeWindow > 0
     ? [-safeWindow, -safeWindow * 0.7, -safeWindow * 0.45, -safeWindow * 0.22, 0, safeWindow * 0.22, safeWindow * 0.45, safeWindow * 0.7, safeWindow]
     : [0]
   const maxTimestamp = totalSec ? Math.max(0, totalSec - 0.25) : Number.MAX_SAFE_INTEGER
-  const candidates = baseOffsets
+  const candidates = await Promise.all(baseOffsets
     .map((offset) => Math.max(0, Math.min(maxTimestamp, targetTimestamp + offset)))
     .filter((value, index, arr) => Number.isFinite(value) && arr.findIndex((other) => Math.abs(other - value) < 0.04) === index)
-    .map((timestamp) => {
-      const visual = analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
+    .map(async (timestamp) => {
+      const visual = await analyzeProofFrameVisual(sourceUrl, timestamp, totalSec)
       const distancePenalty = Math.abs(timestamp - targetTimestamp) * 0.22
       const centerBonus = Math.abs(timestamp - targetTimestamp) <= 1.25 ? 1.2 : 0
       return { timestamp, visual, rank: (visual.score || 0) + centerBonus - distancePenalty }
-    })
+    }))
 
   const usable = candidates.filter((candidate) => candidate.visual.usable)
   const ranked = (usable.length ? usable : candidates).sort((a, b) => b.rank - a.rank)
@@ -4374,7 +4387,7 @@ async function handleStillExport(req, res) {
 
     const totalSec = qualitySearch ? getMediaDuration(inputPath) : null
     const best = qualitySearch
-      ? chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualityWindowSec)
+      ? await chooseBestStillTimestamp(sourceUrl, requestedTimestamp, totalSec, qualityWindowSec)
       : { timestamp: requestedTimestamp, visual: { score: 0, reason: 'Exact requested frame.' } }
     const selectedTimestamp = Math.max(0, best.timestamp)
     const cacheHash = crypto.createHash('sha1').update(`${sourceUrl}|${requestedTimestamp.toFixed(2)}|${selectedTimestamp.toFixed(2)}|${format}|${crop}|${qualitySearch}|${preview ? 'preview-v1' : 'full-v1'}`).digest('hex').slice(0, 24)
@@ -4465,11 +4478,13 @@ async function handleInfo(req, res) {
 
     console.log(`[info] Getting info for: ${url}`)
 
-    const result = execFileSync('yt-dlp', [
-      '--dump-json',
-      '--no-download',
-      String(url),
-    ], { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 })
+    const result = await new Promise((resolve, reject) => {
+      execFile('yt-dlp', [
+        '--dump-json',
+        '--no-download',
+        String(url),
+      ], { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)))
+    })
 
     const info = JSON.parse(result)
     const durationSec = info.duration || 0
