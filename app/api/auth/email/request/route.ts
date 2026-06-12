@@ -23,7 +23,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Email login is not configured on this deployment.' }, { status: 503 })
   }
 
-  const { code, expiresAt } = createEmailLoginCode(email)
+  const minted = createEmailLoginCode(email)
+  if ('throttled' in minted) {
+    return NextResponse.json(
+      { error: 'A code was sent recently. Wait a moment before requesting another.' },
+      { status: 429, headers: { 'Retry-After': String(minted.retryAfterSec) } },
+    )
+  }
+  const { code, expiresAt } = minted
 
   try {
     const delivery = await sendEmailLoginCode({ to: email, code, expiresAt })
