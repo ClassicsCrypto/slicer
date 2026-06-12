@@ -18,7 +18,7 @@
  */
 
 const http = require('http')
-const { execSync, exec, spawn, spawnSync } = require('child_process')
+const { execSync, exec, execFile, execFileSync, spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -365,13 +365,26 @@ function getDirectMediaMeta(rawUrl) {
   }
 }
 
+// Only plain http(s) URLs may reach yt-dlp/ffprobe/curl. Anything else
+// (file:, ytsearch:, data:, raw shell metacharacters posing as a "URL")
+// is rejected at the request boundary.
+function isAllowedRemoteUrl(value) {
+  try {
+    const parsed = new URL(String(value))
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 function getMediaDuration(input) {
   try {
-    const safeInput = String(input).replace(/"/g, '\\"')
-    const raw = execSync(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${safeInput}"`,
-      { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-    ).trim()
+    const raw = execFileSync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      String(input),
+    ], { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     const duration = Math.round(parseFloat(raw) || 0)
     return Number.isFinite(duration) ? duration : 0
   } catch (error) {
@@ -397,12 +410,13 @@ async function downloadDirectMedia(rawUrl, outputPath) {
     console.warn('[direct-download] fetch failed:', error.message)
   }
 
-  const safeUrl = String(rawUrl).replace(/"/g, '\\"')
-  const safePath = String(outputPath).replace(/"/g, '\\"')
-  execSync(
-    `curl.exe -L --fail --silent --show-error -A "${browserHeaders['user-agent']}" -H "Accept: ${browserHeaders.accept}" -o "${safePath}" "${safeUrl}"`,
-    { timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] },
-  )
+  execFileSync('curl.exe', [
+    '-L', '--fail', '--silent', '--show-error',
+    '-A', browserHeaders['user-agent'],
+    '-H', `Accept: ${browserHeaders.accept}`,
+    '-o', String(outputPath),
+    String(rawUrl),
+  ], { timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 async function ensureDownloadedSource(rawUrl) {
@@ -557,10 +571,13 @@ function getVideoInfo(url) {
   }
 
   try {
-    const raw = execSync(
-      `yt-dlp --js-runtimes node --remote-components ejs:github --no-download --print "%(duration)s|||%(title)s|||%(id)s" "${url}"`,
-      { timeout: 15000, encoding: 'utf8' }
-    ).trim()
+    const raw = execFileSync('yt-dlp', [
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--no-download',
+      '--print', '%(duration)s|||%(title)s|||%(id)s',
+      String(url),
+    ], { timeout: 15000, encoding: 'utf8' }).trim()
     const [duration, title, id] = raw.split('|||')
     return { duration: parseInt(duration) || 0, title: title || 'Untitled', id: id || 'unknown' }
   } catch (err) {
@@ -575,10 +592,18 @@ function downloadAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
     const format = getDownloadFormat(url)
-    const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github --socket-timeout 20 -f "${format}" --merge-output-format mp4 -o "${outputPath}" "${url}"`
-    console.log(`[yt-dlp] downloading: ${cmd}`)
+    const args = [
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--socket-timeout', '20',
+      '-f', format,
+      '--merge-output-format', 'mp4',
+      '-o', String(outputPath),
+      String(url),
+    ]
+    console.log(`[yt-dlp] downloading: yt-dlp ${args.join(' ')}`)
 
-    exec(cmd, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('yt-dlp', args, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         console.error('[yt-dlp] error:', stderr?.slice(-500))
         reject(new Error(`Download failed: ${stderr?.slice(-200) || err.message}`))
@@ -641,6 +666,7 @@ async function handleDownload(req, res) {
 
   const { url } = parsed
   if (!url) return sendJson(res, 400, { error: 'url is required' })
+  if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
 
   console.log(`\n[download] request: ${url}`)
 
@@ -3139,10 +3165,13 @@ async function handleTranscribeLocal(req, res) {
           filePath = path.join(TEMP_DIR, decodeURIComponent(fileName))
         } else {
           // Download the file first
+          if (!isAllowedRemoteUrl(audioUrl)) {
+            setTranscription(transcribeId, { status: 'error', error: 'audioUrl must be an http(s) URL' })
+            return
+          }
           const fileId = crypto.randomBytes(8).toString('hex')
           filePath = path.join(TEMP_DIR, `${fileId}-audio.mp4`)
-          const dlCmd = `yt-dlp -f "ba/b" -o "${filePath}" "${audioUrl}"`
-          execSync(dlCmd, { timeout: 30 * 60 * 1000 })
+          execFileSync('yt-dlp', ['-f', 'ba/b', '-o', filePath, String(audioUrl)], { timeout: 30 * 60 * 1000 })
         }
       }
 
@@ -4046,6 +4075,7 @@ async function handleDownloadStart(req, res) {
 
   const { url } = parsed
   if (!url) return sendJson(res, 400, { error: 'url is required' })
+  if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
 
   // Check cache first
   const cached = getFromCache(url)
@@ -4233,10 +4263,16 @@ async function handleThumbnail(req, res) {
 
     const inputPath = resolveServedInputPath(sourceUrl)
 
-    const cmd = `ffmpeg -ss ${ts} -i "${inputPath}" -vframes 1 -vf "scale='min(640,iw)':-2" -q:v 5 -y "${tempThumbFile}"`
     console.log(`[thumb] extracting frame at ${ts}s`)
 
-    execSync(cmd, { timeout: 15000 })
+    execFileSync('ffmpeg', [
+      '-ss', String(ts),
+      '-i', String(inputPath),
+      '-vframes', '1',
+      '-vf', "scale='min(640,iw)':-2",
+      '-q:v', '5',
+      '-y', tempThumbFile,
+    ], { timeout: 15000 })
 
     if (!fs.existsSync(tempThumbFile)) {
       return sendJson(res, 500, { error: 'Failed to extract frame' })
@@ -4415,13 +4451,15 @@ async function handleInfo(req, res) {
     const { url } = body
     if (!url) return sendJson(res, 400, { error: 'url is required' })
 
+    if (!isAllowedRemoteUrl(url)) return sendJson(res, 400, { error: 'url must be an http(s) URL' })
+
     console.log(`[info] Getting info for: ${url}`)
 
-    const { execSync } = require('child_process')
-    const result = execSync(
-      `yt-dlp --dump-json --no-download "${url}"`,
-      { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-    )
+    const result = execFileSync('yt-dlp', [
+      '--dump-json',
+      '--no-download',
+      String(url),
+    ], { timeout: 30000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 })
 
     const info = JSON.parse(result)
     const durationSec = info.duration || 0
