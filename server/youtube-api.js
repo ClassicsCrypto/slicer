@@ -71,6 +71,14 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 if (!fs.existsSync(THUMB_CACHE_DIR)) fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true })
 if (!fs.existsSync(STILL_CACHE_DIR)) fs.mkdirSync(STILL_CACHE_DIR, { recursive: true })
 
+// Transcription cache: keyed by source URL hash, persists across restarts
+const TRANSCRIPTION_CACHE_DIR = path.join(TEMP_DIR, 'transcription-cache')
+if (!fs.existsSync(TRANSCRIPTION_CACHE_DIR)) fs.mkdirSync(TRANSCRIPTION_CACHE_DIR, { recursive: true })
+
+// Active transcriptions: persisted to disk so they survive restarts
+const TRANSCRIPTION_DIR = path.join(TEMP_DIR, 'transcriptions')
+if (!fs.existsSync(TRANSCRIPTION_DIR)) fs.mkdirSync(TRANSCRIPTION_DIR, { recursive: true })
+
 // Smart cache: videoId → { publicUrl, duration, title, filePath, cachedAt }
 const videoCache = new Map()
 // Active downloads: downloadId → { status, publicUrl, title, error, progress }
@@ -78,6 +86,10 @@ const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 const MIN_REUSABLE_SOURCE_HEIGHT = 720
 const activeJobRuns = new Set()
+// Track in-progress scoring jobs to prevent duplicate calls. MUST live at
+// module scope: it previously sat inside the createServer callback, so a new
+// empty Set was created per request and the duplicate guard never fired.
+const scoringInProgress = new Set()
 const PARTIAL_FILE_RE = /\.(part|ytdl)$/i
 
 function getJobStoreKind() {
@@ -1382,10 +1394,6 @@ function generateSRT(words, clipStartTime = 0, textCase = 'original') {
 // Create server
 const server = http.createServer((req, res) => {
   // CORS preflight
-// Transcription cache: keyed by source URL hash, persists across restarts
-const TRANSCRIPTION_CACHE_DIR = path.join(TEMP_DIR, 'transcription-cache')
-if (!fs.existsSync(TRANSCRIPTION_CACHE_DIR)) fs.mkdirSync(TRANSCRIPTION_CACHE_DIR, { recursive: true })
-
 function getTranscriptionCacheKey(audioUrl) {
   // Strip session tokens so same broadcast always hits cache regardless of token rotation
   // YouTube: remove ?t=... &s=... params. X broadcasts: extract broadcast ID
@@ -1433,10 +1441,6 @@ function setCachedTranscription(audioUrl, result) {
   fs.writeFileSync(file, JSON.stringify(result))
   console.log(`[transcription-cache] SET: ${key} (${result.words?.length || 0} words)`)
 }
-
-// Active transcriptions: persisted to disk so they survive restarts
-const TRANSCRIPTION_DIR = path.join(TEMP_DIR, 'transcriptions')
-if (!fs.existsSync(TRANSCRIPTION_DIR)) fs.mkdirSync(TRANSCRIPTION_DIR, { recursive: true })
 
 function getTranscription(id) {
   const file = path.join(TRANSCRIPTION_DIR, `${id}.json`)
@@ -3345,9 +3349,6 @@ async function handleTranscribeLocal(req, res) {
   sendJson(res, 200, { transcribeId })
 }
 
-// Track in-progress scoring jobs to prevent duplicate calls
-const scoringInProgress = new Set()
-
 // ─── Gemini clip scoring endpoint (runs locally, no Vercel timeout) ───
 async function handleScoreClips(req, res) {
   let raw = ''
@@ -3363,19 +3364,22 @@ async function handleScoreClips(req, res) {
     console.log(`[score-clips] Already scoring job ${jobId} — skipping duplicate request`)
     return sendJson(res, 200, { status: 'already_scoring', jobId })
   }
-  scoringInProgress.add(jobId)
-
   sendJson(res, 200, { status: 'scoring', jobId }) // Respond immediately
 
   // Run Gemini in background
   ;(async () => {
     try {
+      // Acquire the lock as the first statement inside the try so the finally
+      // below always releases it (adding before sendJson could leak the lock
+      // if writing to a destroyed socket threw). Race-free: this synchronous
+      // prefix runs in the same tick as the has() check above.
+      scoringInProgress.add(jobId)
+
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY
       const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview'
       const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
       const OPENROUTER_CLIP_MODEL = process.env.OPENROUTER_CLIP_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free'
       const CLIP_SCORER = (process.env.CLIP_SCORER || 'gemini').toLowerCase()
-      const FULL_TRANSCRIPT_SCOUT = 'off' // Disabled: redundant scout path caused retry confusion/hangs; Gemini/OpenRouter scorer fallback handles model-side review.
       if (!GEMINI_API_KEY && !OPENROUTER_API_KEY) throw new Error('No GEMINI_API_KEY or OPENROUTER_API_KEY configured')
 
       const totalSec = (words[words.length - 1]?.end ?? 0) / 1000
@@ -3508,59 +3512,6 @@ ${titleContext}TRANSCRIPT EXCERPTS:\n${transcriptText}`
           }
           return false
         })
-
-      let scoutCandidatesAdded = 0
-      if (false && FULL_TRANSCRIPT_SCOUT === 'openrouter' && OPENROUTER_API_KEY) {
-        try {
-          const scoutTranscript = buildWholeTranscriptForScout(segments)
-          const scoutPrompt = `You are scanning a full ${videoDurationMin}-minute ${detectedPackLabel} stream transcript to find viral clip candidates that local chunk scoring might miss.
-Detected game/context: ${detectedGame}.${customGameHint}
-${priorityHintText ? `User priority hint: ${priorityHintText}` : ''}
-
-Look across the WHOLE transcript and return a WIDE candidate set: ideally 30-60 possible moments.
-Include obvious viral moments, second-tier usable moments, and quiet gameplay payoffs the chunk scorer may miss: kills/clutches/objectives, funny failures, rage/laugh reactions, sudden audio spikes, quotable lines, or weird context shifts.
-Skip intros, pure setup chatter, music/lyrics, generic ROI talk, and weak vibes, but do not be too conservative. Gemini will judge later.
-Use absolute stream seconds from the timestamps.
-Return compact JSON only:
-{"moments":[{"s":1060,"v":8,"r":"SMG laser beam reaction with payoff"}]}
-
-FULL TRANSCRIPT:
-${scoutTranscript}`
-          const scoutContent = await callOpenRouterText(OPENROUTER_API_KEY, OPENROUTER_CLIP_MODEL, scoutPrompt, { temperature: 0.2, maxOutputTokens: 6000, timeoutMs: 90000 })
-          const scoutJson = extractJsonObject(scoutContent)
-          if (scoutJson) {
-            let scoutParsed
-            try {
-              scoutParsed = JSON.parse(scoutJson)
-            } catch (scoutParseError) {
-              const momentMatches = [...scoutJson.matchAll(/\{\s*\"s\"\s*:\s*(\d+)\s*,\s*\"v\"\s*:\s*(\d+)\s*,\s*\"r\"\s*:\s*\"([^\"\\]*)/g)]
-              scoutParsed = { moments: momentMatches.map((m) => ({ s: Number(m[1]), v: Number(m[2]), r: m[3] })) }
-              console.warn(`[score-clips] Whole-transcript scout JSON was malformed; recovered ${scoutParsed.moments.length} moments`)
-            }
-            const scoutChunks = buildScoutChunksFromMoments(scoutParsed.moments || scoutParsed.clips || [], words, introSkipSec, totalSec, clipLength)
-            const boostedScoutCandidates = scoutChunks
-              .map((chunk) => {
-                const scored = scoreEventChunk(chunk, volumeSpikes, detectedGenrePack, effectiveDetectionMode, priorityProfile)
-                const scoutBoost = Math.max(20, Math.min(45, (chunk.scoutScore || 7) * 4))
-                return {
-                  ...scored,
-                  score: scored.score + scoutBoost,
-                  wholeTranscriptScout: true,
-                  scoutReason: chunk.scoutReason,
-                }
-              })
-              .filter((candidate) => candidate.score > -8 || candidate.signalDensity >= 1 || candidate.wholeTranscriptScout)
-
-            scoredCandidates = mergeChunkSources(boostedScoutCandidates, scoredCandidates)
-            scoutCandidatesAdded = boostedScoutCandidates.length
-            console.log(`[score-clips] Whole-transcript scout added ${scoutCandidatesAdded} candidates via ${OPENROUTER_CLIP_MODEL}`)
-          } else {
-            console.warn('[score-clips] Whole-transcript scout returned no JSON; continuing with local candidates')
-          }
-        } catch (scoutError) {
-          console.warn(`[score-clips] Whole-transcript scout failed: ${scoutError.message}`)
-        }
-      }
 
       scoredCandidates = scoredCandidates
         .sort((a, b) => getCandidatePriorityRank(b, priorityProfile) - getCandidatePriorityRank(a, priorityProfile))
