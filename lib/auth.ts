@@ -321,8 +321,24 @@ export function upsertOAuthUser(input: {
   return { userId, workspaceId: workspace.id }
 }
 
+const EMAIL_CODE_COOLDOWN_MS = 60 * 1000
+
 export function createEmailLoginCode(email: string) {
   const normalized = email.trim().toLowerCase()
+
+  // Per-email cooldown. Besides plain abuse, every re-mint resets the
+  // attempt counter (ON CONFLICT below), so unthrottled requests grant a
+  // fresh 5 guesses each time.
+  const existing = getDb().prepare(`
+    SELECT created_at FROM email_login_codes WHERE email = ?
+  `).get(normalized) as { created_at: string } | undefined
+  if (existing) {
+    const elapsed = Date.now() - new Date(existing.created_at).getTime()
+    if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < EMAIL_CODE_COOLDOWN_MS) {
+      return { throttled: true as const, retryAfterSec: Math.ceil((EMAIL_CODE_COOLDOWN_MS - elapsed) / 1000) }
+    }
+  }
+
   const code = crypto.randomInt(100000, 1000000).toString()
   const ts = nowIso()
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()

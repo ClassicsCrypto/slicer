@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createEmailLoginCode } from '@/lib/auth'
-import { sendEmailLoginCode } from '@/lib/email-login'
+import { isEmailDeliveryConfigured, sendEmailLoginCode } from '@/lib/email-login'
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
@@ -14,7 +14,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 })
   }
 
-  const { code, expiresAt } = createEmailLoginCode(email)
+  // Fail closed BEFORE minting a code: createEmailLoginCode writes a working
+  // code row (and resets its attempt counter), so gating only the response
+  // would still leave live guessable codes behind. devCode preview exists
+  // only behind an explicit debug flag and never in production.
+  const debugAllowed = process.env.AUTH_EMAIL_DEBUG === 'true' && process.env.NODE_ENV !== 'production'
+  if (!isEmailDeliveryConfigured() && !debugAllowed) {
+    return NextResponse.json({ error: 'Email login is not configured on this deployment.' }, { status: 503 })
+  }
+
+  const minted = createEmailLoginCode(email)
+  if ('throttled' in minted) {
+    return NextResponse.json(
+      { error: 'A code was sent recently. Wait a moment before requesting another.' },
+      { status: 429, headers: { 'Retry-After': String(minted.retryAfterSec) } },
+    )
+  }
+  const { code, expiresAt } = minted
 
   try {
     const delivery = await sendEmailLoginCode({ to: email, code, expiresAt })
