@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInternalServerApiUrl } from '@/lib/api-url-server'
+import { getInternalServerApiUrl, backendAuthHeaders } from '@/lib/api-url-server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     stillUrl.searchParams.set(key, value)
   }
 
-  const stillResponse = await fetch(stillUrl, { cache: 'no-store' })
+  const stillResponse = await fetch(stillUrl, { cache: 'no-store', headers: backendAuthHeaders() })
   if (!stillResponse.ok || !stillResponse.body) {
     const payload = await stillResponse.json().catch(() => ({}))
     return NextResponse.json({ error: payload.error || `Still export failed with ${stillResponse.status}` }, { status: 502 })

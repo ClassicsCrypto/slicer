@@ -8,6 +8,7 @@ const PROTECTED_PREFIXES = [
   '/api/caption',
   '/api/usage',
   '/api/autoclip',
+  '/api/stills',
 ]
 
 function authBypassed() {
