@@ -121,11 +121,9 @@ async function fetchJob(jobId) {
 
 async function updateJob(jobId, patch) {
   if (isSqlitePrimaryJobStore()) {
-    const existing = sqliteShadowStore.getShadowJob(jobId)
-    if (!existing) return null
-    const updatedJob = buildUpdatedSqliteJob(existing, patch)
-    sqliteShadowStore.upsertShadowJob(updatedJob)
-    return sqliteShadowStore.getShadowJob(jobId)
+    // Read-merge-write inside one transaction — the Next process writes the
+    // same rows, so an out-of-transaction read here loses concurrent updates.
+    return sqliteShadowStore.mutateShadowJob(jobId, (existing) => buildUpdatedSqliteJob(existing, patch))
   }
 
   if (!SUPABASE_URL || !SUPABASE_KEY) return null
@@ -161,6 +159,17 @@ async function updateJob(jobId, patch) {
 }
 
 async function mergeJobProgress(jobId, patch, statusOverride) {
+  if (isSqlitePrimaryJobStore()) {
+    // The progress spread happens INSIDE the transaction on the fresh row,
+    // so concurrent progress writers (votes, PATCH, this worker) can't
+    // clobber each other's keys.
+    const updated = sqliteShadowStore.mutateShadowJob(jobId, (existing) => buildUpdatedSqliteJob(existing, {
+      progress: { ...(existing.progress || {}), ...patch },
+      ...(statusOverride ? { status: statusOverride } : {}),
+    }))
+    return updated?.progress ?? { ...patch }
+  }
+
   const existing = await fetchJob(jobId)
   const nextProgress = { ...(existing?.progress || {}), ...patch }
   const payload = { progress: nextProgress }
@@ -213,9 +222,6 @@ async function reconcileInterruptedSqliteJobs() {
     const updatedMs = new Date(row.updated_at || row.created_at).getTime()
     if (Number.isFinite(updatedMs) && updatedMs > cutoffMs) continue
 
-    let progress = {}
-    try { progress = JSON.parse(row.progress_json || '{}') } catch {}
-
     const matchingComplete = completedRows.find((candidate) => (
       candidate.id !== row.id &&
       candidate.raw_input_url === row.raw_input_url &&
@@ -224,36 +230,56 @@ async function reconcileInterruptedSqliteJobs() {
     ))
 
     const nowIso = new Date().toISOString()
+
+    // Re-check on the FRESH row inside the transaction: another writer may
+    // have completed/failed the job (or bumped its activity) between the
+    // snapshot listing above and this write.
+    const stillInterrupted = (existing) => {
+      if (existing.status !== 'processing') return false
+      const freshMs = new Date(existing.updated_at || existing.created_at).getTime()
+      return !Number.isFinite(freshMs) || freshMs <= cutoffMs
+    }
+
     if (matchingComplete) {
       let sourceProgress = {}
       try { sourceProgress = JSON.parse(matchingComplete.progress_json || '{}') } catch {}
-      await updateJob(row.id, {
-        status: 'complete',
-        progress: {
-          ...progress,
-          ...sourceProgress,
-          phase: 'complete',
-          progress: 'Clip selection complete. Recovered from matching completed run after API restart interrupted final write.',
-          recoveredFromJobId: matchingComplete.id,
-          recoveredAt: nowIso,
-          completedAt: nowIso,
-        },
+      let wrote = false
+      sqliteShadowStore.mutateShadowJob(row.id, (existing) => {
+        if (!stillInterrupted(existing)) return null
+        wrote = true
+        return buildUpdatedSqliteJob(existing, {
+          status: 'complete',
+          progress: {
+            ...(existing.progress || {}),
+            ...sourceProgress,
+            phase: 'complete',
+            progress: 'Clip selection complete. Recovered from matching completed run after API restart interrupted final write.',
+            recoveredFromJobId: matchingComplete.id,
+            recoveredAt: nowIso,
+            completedAt: nowIso,
+          },
+        })
       })
-      recovered += 1
+      if (wrote) recovered += 1
       continue
     }
 
-    await updateJob(row.id, {
-      status: 'failed',
-      progress: {
-        ...progress,
-        phase: 'failed',
-        progress: `Processing was interrupted by an API restart and did not resume within ${staleMinutes} minutes. Please retry the job.`,
-        interruptedAt: nowIso,
-        completedAt: nowIso,
-      },
+    let wrote = false
+    sqliteShadowStore.mutateShadowJob(row.id, (existing) => {
+      if (!stillInterrupted(existing)) return null
+      wrote = true
+      return buildUpdatedSqliteJob(existing, {
+        status: 'failed',
+        progress: {
+          ...(existing.progress || {}),
+          phase: 'failed',
+          progress: `Processing was interrupted by an API restart and did not resume within ${staleMinutes} minutes. Please retry the job.`,
+          interruptedAt: nowIso,
+          completedAt: nowIso,
+        },
+      })
     })
-    failed += 1
+    if (wrote) failed += 1
   }
 
   if (recovered || failed) {
