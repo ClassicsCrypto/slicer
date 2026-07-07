@@ -31,9 +31,9 @@ export default function Button({
   }
 
   const variantStyle: Record<string, React.CSSProperties> = {
-    primary: { background: 'linear-gradient(135deg, #FF4D4D, #FF6B6B)' },
-    secondary: { background: '#15151F' },
-    danger: { background: 'linear-gradient(135deg, #FF4D4D, #DC2626)' },
+    primary: { background: 'linear-gradient(135deg, #FF5A36, #FF7A5C)' },
+    secondary: { background: '#16121D' },
+    danger: { background: 'linear-gradient(135deg, #FF5A36, #DC2626)' },
     ghost: {},
   }
 
