@@ -9,11 +9,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: '#00BFA5',
-        accent: '#00E676',
-        background: '#0A0E1A',
-        surface: '#111827',
+        primary: '#FF5A36',
+        accent: '#2FE6C8',
+        amber: '#FFB350',
+        background: '#0A0911',
+        surface: '#16121D',
+        dust: '#F2EAE0',
         muted: '#9CA3AF',
+      },
+      fontFamily: {
+        display: ['var(--font-display)', 'Arial Narrow', 'sans-serif'],
+        body: ['var(--font-body)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'Courier New', 'monospace'],
       },
       animation: {
         marquee: 'marquee 30s linear infinite',
