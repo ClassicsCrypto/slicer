@@ -529,6 +529,7 @@ export default function UploadTab({ onJobCreated, onViewClips }: UploadTabProps)
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-white/45">
+          <span>Min <strong className="text-white/70">2 min</strong></span>
           <span>Max <strong className="text-white/70">2GB</strong> / <strong className="text-white/70">3 hours</strong></span>
           <span>MP4, MOV, WebM, MKV</span>
         </div>
