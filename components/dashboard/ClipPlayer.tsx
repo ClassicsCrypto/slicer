@@ -315,6 +315,7 @@ interface ClipPlayerProps {
   clip: Clip
   sourceUrl: string
   subtitleOptions?: SubtitleOptions
+  exportAspectRatio?: 'twitter' | 'tiktok' | 'youtube_shorts' | 'custom'
   onTrimChange?: (start: number, end: number) => void
   onPlaybackTimeChange?: (time: number) => void
   externalSeekTime?: number | null
@@ -326,6 +327,7 @@ export default function ClipPlayer({
   clip,
   sourceUrl,
   subtitleOptions,
+  exportAspectRatio = 'custom',
   onTrimChange,
   onPlaybackTimeChange,
   externalSeekTime,
@@ -467,6 +469,12 @@ export default function ClipPlayer({
   const trimEndPct = (trimEnd / originalDuration) * 100
   const isTrimmed = trimStart > 0.1 || trimEnd < originalDuration - 0.1
   const relativeTime = Math.max(0, currentTime - trimStart)
+  const cropAspectClass = exportAspectRatio === 'tiktok'
+    ? 'aspect-[9/16]'
+    : exportAspectRatio === 'youtube_shorts'
+      ? 'aspect-square'
+      : 'aspect-video'
+  const previewFitClass = exportAspectRatio === 'custom' ? 'object-contain' : 'object-cover'
 
   function fmt(seconds: number): string {
     const mins = Math.floor(seconds / 60)
@@ -476,14 +484,25 @@ export default function ClipPlayer({
 
   return (
     <div className="rounded-xl overflow-hidden border border-white/10" style={{ background: '#0A0A0F' }}>
-      <div className="relative aspect-video bg-black">
-        <video
-          ref={videoRef}
-          src={sourceUrl}
-          className="w-full h-full object-contain"
-          preload="metadata"
-          playsInline
-        />
+      <div className="group/preview relative aspect-video bg-black">
+        <div className={`absolute inset-y-0 left-1/2 ${cropAspectClass} h-full max-w-full -translate-x-1/2 overflow-hidden bg-black`}>
+          <video
+            ref={videoRef}
+            src={sourceUrl}
+            className={`h-full w-full ${previewFitClass}`}
+            preload="metadata"
+            playsInline
+          />
+
+          {subOpts.enabled && displaySubtitles.length > 0 && (
+            <SubtitleOverlay
+              words={displaySubtitles.filter((word) => word.end > trimStart && word.start < trimEnd)}
+              currentTime={currentTime}
+              isPlaying={isPlaying}
+              options={subOpts}
+            />
+          )}
+        </div>
 
         <button
           type="button"
@@ -502,15 +521,6 @@ export default function ClipPlayer({
             {isPlaying ? '❚❚' : '▶'}
           </span>
         </button>
-
-        {subOpts.enabled && displaySubtitles.length > 0 && (
-          <SubtitleOverlay
-            words={displaySubtitles.filter((word) => word.end > trimStart && word.start < trimEnd)}
-            currentTime={currentTime}
-            isPlaying={isPlaying}
-            options={subOpts}
-          />
-        )}
       </div>
 
       <div className="px-4 py-3 space-y-2">

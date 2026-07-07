@@ -3,7 +3,7 @@
 import { ButtonHTMLAttributes, ReactNode } from 'react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success'
   size?: 'sm' | 'md' | 'lg'
   children: ReactNode
 }
@@ -22,6 +22,7 @@ export default function Button({
     secondary: 'border border-white/10 text-white hover:border-white/30 hover:bg-white/5',
     danger: 'text-white hover:opacity-80',
     ghost: 'text-white/60 hover:text-white hover:bg-white/5',
+    success: 'text-white hover:scale-105',
   }
 
   const sizes = {
@@ -35,6 +36,7 @@ export default function Button({
     secondary: { background: '#16121D' },
     danger: { background: 'linear-gradient(135deg, #FF5A36, #DC2626)' },
     ghost: {},
+    success: { background: 'linear-gradient(135deg, #16A34A, #22C55E)' },
   }
 
   return (

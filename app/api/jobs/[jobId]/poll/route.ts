@@ -6,6 +6,7 @@ import { JobProgress } from '@/types'
 export const maxDuration = 30
 
 const STALE_JOB_MS = 2 * 60 * 60 * 1000
+const STALE_DOWNLOAD_JOB_MS = 45 * 60 * 1000
 
 function getActivityTimestamp(job: any): number {
   const progress = (job?.progress ?? {}) as JobProgress
@@ -34,7 +35,9 @@ async function recoverStaleJob(job: any) {
   if (job?.status !== 'processing') return job
 
   const ageMs = Date.now() - getActivityTimestamp(job)
-  if (ageMs < STALE_JOB_MS) return job
+  const progress = (job.progress ?? {}) as JobProgress
+  const staleAfterMs = progress.phase === 'downloading' ? STALE_DOWNLOAD_JOB_MS : STALE_JOB_MS
+  if (ageMs < staleAfterMs) return job
 
   // Re-check on the fresh row inside the transaction: the worker may have
   // completed the job (or bumped activity) since our read above. Returning
@@ -43,7 +46,9 @@ async function recoverStaleJob(job: any) {
   const updated = await mutateJobRecord(job.id, (existing) => {
     if (existing?.status !== 'processing') return null
     const freshAgeMs = Date.now() - getActivityTimestamp(existing)
-    if (freshAgeMs < STALE_JOB_MS) return null
+    const freshProgress = (existing.progress ?? {}) as JobProgress
+    const freshStaleAfterMs = freshProgress.phase === 'downloading' ? STALE_DOWNLOAD_JOB_MS : STALE_JOB_MS
+    if (freshAgeMs < freshStaleAfterMs) return null
     return {
       ...existing,
       status: 'failed',

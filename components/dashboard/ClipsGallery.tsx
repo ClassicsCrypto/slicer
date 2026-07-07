@@ -14,6 +14,7 @@ import ProcessingView from '@/components/dashboard/ProcessingView'
 
 interface ClipsGalleryProps {
   initialJobs?: Job[]
+  onEditJob?: (job: Job, clipId?: string) => void
 }
 
 function DownloadClipButton({ clip, sourceUrl, title, subtitleOptions, aspectRatio, trimStart, trimEnd, originalStartTime, onAspectRatioChange, onWatermarkToggle }: { clip: Clip; sourceUrl: string; title: string; subtitleOptions?: import('@/types').SubtitleOptions; aspectRatio?: string; trimStart?: number | null; trimEnd?: number | null; originalStartTime?: number; onAspectRatioChange?: (ratio: string) => void; onWatermarkToggle?: (enabled: boolean) => void }) {
@@ -692,6 +693,7 @@ function JobCard({
   onDelete,
   onRetry,
   onRescore,
+  onEditJob,
   onJobComplete,
   onClipDelete,
   onClipVote,
@@ -700,6 +702,7 @@ function JobCard({
   onDelete: (id: string) => void
   onRetry: (id: string) => void
   onRescore: (id: string) => void
+  onEditJob?: (job: Job, clipId?: string) => void
   onJobComplete: (job: Job) => void
   onClipDelete: (jobId: string, clipId: string) => void
   onClipVote: (jobId: string, clipId: string, value: 'up' | 'down' | 'neutral') => void
@@ -795,6 +798,15 @@ function JobCard({
           </div>
         </div>
         <div className="flex items-center gap-3 ml-4">
+          {clips.length > 0 && onEditJob && (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onEditJob({ ...job, clips }) }}
+            >
+              Edit Clips
+            </Button>
+          )}
           {job.status === 'complete' && (
             <Badge variant="green">Done {deliveredClipCount} clips</Badge>
           )}
@@ -907,12 +919,23 @@ function JobCard({
             sourceUrl={job.source_url}
             subtitleOptions={previewSubtitleOptions}
             exportAspectRatio={previewAspectRatio as 'twitter' | 'tiktok' | 'youtube_shorts' | 'custom'}
+            showPostControls={false}
+            showSubtitleControls={false}
             onSubtitleOptionsChange={(next) => updateClipSubtitleOptions(previewClip.id, next)}
             onClipChange={handlePreviewClipChange}
             onTrimChange={(s, e) => { setTrimmedStart(s); setTrimmedEnd(e) }}
             onExportAspectRatioChange={(ratio) => updateClipAspectRatio(previewClip.id, ratio)}
           >
-            <div className="pt-3 flex gap-2">
+            <div className="pt-3 flex flex-col gap-2 sm:flex-row">
+              {onEditJob && (
+                <button
+                  type="button"
+                  onClick={() => onEditJob({ ...job, clips }, getClipStableId(previewClip))}
+                  className="rounded-lg border border-emerald-300/35 bg-emerald-500/15 px-4 py-2.5 text-sm font-bold text-emerald-50 transition-all hover:bg-emerald-500/25 sm:w-[168px]"
+                >
+                  Edit
+                </button>
+              )}
               <DownloadClipButton
                 clip={previewClip}
                 sourceUrl={job.source_url}
@@ -933,7 +956,7 @@ function JobCard({
   )
 }
 
-export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
+export default function ClipsGallery({ initialJobs = [], onEditJob }: ClipsGalleryProps) {
   const [jobs, setJobs] = useState<Job[]>(initialJobs)
 
   const fetchJobs = useCallback(async () => {
@@ -1124,10 +1147,10 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
     <div className="py-8 md:py-10 space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-7">
         <div className="max-w-2xl">
-          <p className="text-red-400 text-sm font-bold mb-2">CLIP GALLERY</p>
-          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Review, teach, and export the best cuts.</h1>
+          <p className="text-red-400 text-sm font-bold mb-2">STREAMS</p>
+          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">Streams and jobs.</h1>
           <p className="text-white/50 leading-7">
-            Finished jobs live here with clip previews, still-shot folders, scoring notes, download controls, and training feedback for Slicer.
+            Every processed stream lives here with status, stills, clip counts, scoring notes, and a direct path into Job Studio for focused editing.
           </p>
         </div>
       </section>
@@ -1155,6 +1178,7 @@ export default function ClipsGallery({ initialJobs = [] }: ClipsGalleryProps) {
               onDelete={handleDelete}
               onRetry={handleRetry}
               onRescore={handleRescore}
+              onEditJob={onEditJob}
               onJobComplete={handleJobComplete}
               onClipDelete={handleClipDelete}
               onClipVote={handleClipVote}

@@ -86,6 +86,7 @@ const videoCache = new Map()
 const activeDownloads = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 const MIN_REUSABLE_SOURCE_HEIGHT = 720
+const DOWNLOAD_STALL_TIMEOUT_MS = Number(process.env.SLICER_DOWNLOAD_STALL_TIMEOUT_MS || 3 * 60 * 1000)
 const activeJobRuns = new Set()
 // Track in-progress scoring jobs to prevent duplicate calls. MUST live at
 // module scope: it previously sat inside the createServer callback, so a new
@@ -367,16 +368,21 @@ function isTwitchUrl(rawUrl) {
   }
 }
 
-function getDownloadFormat(rawUrl) {
+function getDownloadFormat(rawUrl, outputQuality = '720p') {
+  const prefer1080 = outputQuality === '1080p'
+  const preferredHd = prefer1080
+    ? 'bv*[height<=1080]+ba/b[height<=1080]/b[height<=1080]/'
+    : ''
+
   if (isXBroadcastUrl(rawUrl)) {
-    return 'bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best'
+    return `${preferredHd}bv*[height<=720]+ba/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best`
   }
 
   if (isTwitchUrl(rawUrl)) {
-    return 'bv*[height<=1080]+ba/b[height<=1080]/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best'
+    return `${preferredHd}bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best`
   }
 
-  return 'bv*[height<=1080]+ba/b[height<=1080]/b[height<=1080]/bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best'
+  return `${preferredHd}bv*[height<=720]+ba/b[height<=720]/b[height<=720]/bv*[height<=480]+ba/b[height<=480]/best[ext=mp4]/best`
 }
 
 function getVideoStreamMeta(filePath) {
@@ -476,7 +482,7 @@ async function downloadDirectMedia(rawUrl, outputPath) {
   ], { timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-async function ensureDownloadedSource(rawUrl) {
+async function ensureDownloadedSource(rawUrl, outputQuality = '720p', onDownloadProgress = null) {
   rawUrl = canonicalizeSourceInputUrl(rawUrl)
   if (looksLikeDirectMediaUrl(rawUrl)) {
     const directMeta = getDirectMediaMeta(rawUrl)
@@ -540,7 +546,7 @@ async function ensureDownloadedSource(rawUrl) {
 
   const fileId = crypto.randomBytes(8).toString('hex')
   const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`)
-  await downloadAudio(rawUrl, outputTemplate)
+  await downloadAudio(rawUrl, outputTemplate, outputQuality, onDownloadProgress)
 
   const files = fs.readdirSync(TEMP_DIR).filter((fileName) => fileName.startsWith(fileId))
   if (!files.length) throw new Error('No output file found after download')
@@ -645,10 +651,10 @@ function getVideoInfo(url) {
 /**
  * Download best audio stream (no ffmpeg needed - downloads native format)
  */
-function downloadAudio(url, outputPath) {
+function downloadAudio(url, outputPath, outputQuality = '720p', onProgress = null) {
   return new Promise((resolve, reject) => {
     // Download best video+audio merged (mp4 preferred)
-    const format = getDownloadFormat(url)
+    const format = getDownloadFormat(url, outputQuality)
     const args = [
       '--js-runtimes', 'node',
       '--remote-components', 'ejs:github',
@@ -660,7 +666,34 @@ function downloadAudio(url, outputPath) {
     ]
     console.log(`[yt-dlp] downloading: yt-dlp ${args.join(' ')}`)
 
-    execFile('yt-dlp', args, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const outputDir = path.dirname(String(outputPath))
+    const outputPrefix = path.basename(String(outputPath)).replace('%(ext)s', '')
+    let lastMediaSignature = ''
+    let lastMediaActivity = Date.now()
+
+    const getMediaSignature = () => {
+      try {
+        if (!fs.existsSync(outputDir)) return ''
+        const files = fs.readdirSync(outputDir)
+          .filter((fileName) => fileName.startsWith(outputPrefix) && !/\.ytdl$/i.test(fileName))
+          .sort()
+          .map((fileName) => ({ fileName, stats: fs.statSync(path.join(outputDir, fileName)) }))
+
+        const bytes = files.reduce((total, file) => total + file.stats.size, 0)
+        const signature = files
+          .map((file) => {
+            return `${file.fileName}:${file.stats.size}:${Math.round(file.stats.mtimeMs)}`
+          })
+          .join('|')
+
+        return { signature, bytes }
+      } catch {
+        return { signature: lastMediaSignature, bytes: 0 }
+      }
+    }
+
+    const child = execFile('yt-dlp', args, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+      clearInterval(stallTimer)
       if (err) {
         console.error('[yt-dlp] error:', stderr?.slice(-500))
         reject(new Error(`Download failed: ${stderr?.slice(-200) || err.message}`))
@@ -669,6 +702,23 @@ function downloadAudio(url, outputPath) {
       console.log('[yt-dlp] done:', stdout.trim().slice(-200))
       resolve()
     })
+
+    const stallTimer = setInterval(() => {
+      const { signature, bytes } = getMediaSignature()
+      if (signature && signature !== lastMediaSignature) {
+        lastMediaSignature = signature
+        lastMediaActivity = Date.now()
+        if (onProgress && bytes > 0) {
+          Promise.resolve(onProgress({ bytes })).catch((error) => {
+            console.warn('[yt-dlp] progress callback failed:', error?.message || error)
+          })
+        }
+        return
+      }
+      if (Date.now() - lastMediaActivity < DOWNLOAD_STALL_TIMEOUT_MS) return
+      console.error(`[yt-dlp] stalled for ${Math.round(DOWNLOAD_STALL_TIMEOUT_MS / 1000)}s with no media progress; terminating`)
+      child.kill('SIGTERM')
+    }, 10_000)
   })
 }
 
@@ -943,8 +993,21 @@ async function handleClip(req, res) {
       const shadowSize = opts.shadow ? 2 : 0
       // ASS Alignment: 2=bottom-center, 5=middle-center, 8=top-center
       const safeZone = opts.safeZone || 'auto'
-      const alignment = safeZone === 'upper_safe' || opts.position === 'top' ? 8 : safeZone === 'center_safe' || opts.position === 'center' ? 5 : 2
-      const marginV = safeZone === 'upper_safe' || opts.position === 'top' ? 86 : safeZone === 'center_safe' || opts.position === 'center' ? 0 : 130
+      const customOffset = Math.max(0, Math.min(88, Number(opts.safeZoneOffset ?? 18)))
+      const alignment = safeZone === 'custom'
+        ? 2
+        : safeZone === 'upper_safe' || opts.position === 'top'
+          ? 8
+          : safeZone === 'center_safe' || opts.position === 'center'
+            ? 5
+            : 2
+      const marginV = safeZone === 'custom'
+        ? Math.round((customOffset / 100) * 720)
+        : safeZone === 'upper_safe' || opts.position === 'top'
+          ? 86
+          : safeZone === 'center_safe' || opts.position === 'center'
+            ? 0
+            : 130
 
       // Generate proper ASS file (reliable alignment vs SRT+force_style)
       const assFile = srtFile.replace('.srt', '.ass')
@@ -1185,8 +1248,10 @@ function toAssTime(sec) {
 function getAssCueEnd(start, fallbackEnd, nextStart = null) {
   const minDuration = 0.05
   if (Number.isFinite(nextStart)) {
-    const endBeforeNextCue = nextStart - 0.02
-    if (endBeforeNextCue > start) return Math.max(start + minDuration, endBeforeNextCue)
+    // Do not leave a gap between active-word events. A 1-2 frame hole is enough
+    // for burned subtitles to flicker even though the browser preview looks
+    // continuous.
+    if (nextStart > start) return Math.max(start + minDuration, nextStart)
     return start + minDuration
   }
 
@@ -3186,7 +3251,8 @@ async function handleTranscribeLocal(req, res) {
       const groqKey = process.env.GROQ_API_KEY || ''
       const whisperArgs = [whisperScript, filePath, '--groq-key', groqKey]
 
-      console.log(`[transcribe-local] ${transcribeId} running: python ${whisperArgs.map((value) => JSON.stringify(value)).join(' ')}`)
+      const redactedWhisperArgs = whisperArgs.map((value, index) => whisperArgs[index - 1] === '--groq-key' ? '[REDACTED]' : value)
+      console.log(`[transcribe-local] ${transcribeId} running: python ${redactedWhisperArgs.map((value) => JSON.stringify(value)).join(' ')}`)
 
       const whisperProc = spawn('python', whisperArgs, {
         windowsHide: true,
@@ -3922,7 +3988,15 @@ async function handleJobStart(req, res) {
           sourceReady: false,
         }, 'processing')
 
-        const downloaded = await ensureDownloadedSource(rawInputUrl)
+        const downloaded = await ensureDownloadedSource(rawInputUrl, options?.outputQuality, async ({ bytes } = {}) => {
+          const downloadedMb = Math.max(1, Math.round((bytes || 0) / 1024 / 1024))
+          await mergeJobProgress(jobId, {
+            phase: 'downloading',
+            progress: `Downloading source stream... ${downloadedMb} MB received`,
+            downloadBytes: bytes || 0,
+            sourceReady: false,
+          }, 'processing')
+        })
         finalSourceUrl = downloaded.publicUrl
         resolvedTitle = downloaded.title || resolvedTitle
 

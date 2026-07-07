@@ -7,14 +7,17 @@ import UploadTab from '@/components/dashboard/UploadTab'
 import ClipsGallery from '@/components/dashboard/ClipsGallery'
 import AutoClipTab from '@/components/dashboard/AutoClipTab'
 import DeveloperTab from '@/components/dashboard/DeveloperTab'
+import JobStudioTab from '@/components/dashboard/JobStudioTab'
 import AccountMenu from '@/components/auth/AccountMenu'
 
-type Tab = 'upload' | 'clips' | 'autoclip' | 'developer'
+type Tab = 'upload' | 'clips' | 'studio' | 'autoclip' | 'developer'
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('upload')
+  const [activeTab, setActiveTab] = useState<Tab>('clips')
   const [galleryKey, setGalleryKey] = useState(0)
   const [processingJobs, setProcessingJobs] = useState<Job[]>([])
+  const [selectedStudioJob, setSelectedStudioJob] = useState<Job | null>(null)
+  const [selectedStudioClipId, setSelectedStudioClipId] = useState<string | undefined>()
 
   const handleJobCreated = useCallback((job: Job) => {
     setProcessingJobs((prev) => [job, ...prev.filter((existing) => existing.id !== job.id)])
@@ -26,8 +29,17 @@ export default function DashboardPage() {
     setGalleryKey((k) => k + 1)
   }, [])
 
+  const openJobStudio = useCallback((job: Job, clipId?: string) => {
+    setSelectedStudioJob(job)
+    setSelectedStudioClipId(clipId)
+    setActiveTab('studio')
+  }, [])
+
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab)
+    if (tab !== 'studio') {
+      setSelectedStudioClipId(undefined)
+    }
     if (tab === 'clips') {
       setGalleryKey((k) => k + 1)
     }
@@ -57,7 +69,8 @@ export default function DashboardPage() {
           <nav className="flex items-center gap-1">
             {([
               { key: 'upload', label: 'Upload' },
-              { key: 'clips', label: 'Clips' },
+              { key: 'clips', label: 'Streams' },
+              { key: 'studio', label: 'Job Studio' },
               { key: 'autoclip', label: 'Auto-Clip' },
               { key: 'developer', label: 'API' },
             ] as const).map((tab) => (
@@ -83,13 +96,22 @@ export default function DashboardPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 pt-[76px] sm:px-6">
+      <main className={`${activeTab === 'studio' ? 'max-w-[1800px]' : 'max-w-7xl'} mx-auto px-4 pt-[76px] sm:px-6`}>
         {activeTab === 'upload' && (
           <UploadTab onJobCreated={handleJobCreated} onViewClips={openClipsTab} />
         )}
 
         {activeTab === 'clips' && (
-          <ClipsGallery key={galleryKey} initialJobs={processingJobs} />
+          <ClipsGallery key={galleryKey} initialJobs={processingJobs} onEditJob={openJobStudio} />
+        )}
+
+        {activeTab === 'studio' && (
+          <JobStudioTab
+            selectedJobId={selectedStudioJob?.id}
+            selectedClipId={selectedStudioClipId}
+            initialJob={selectedStudioJob ?? undefined}
+            onBackToStreams={() => handleTabChange('clips')}
+          />
         )}
 
         {activeTab === 'autoclip' && (

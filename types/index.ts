@@ -118,6 +118,7 @@ export interface SubtitleOptions {
   customColor?: string
   position: SubtitlePosition
   safeZone?: SubtitleSafeZone
+  safeZoneOffset?: number
   style: SubtitleStyle
   background: SubtitleBackground
   backgroundColor?: string
