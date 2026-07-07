@@ -38,6 +38,8 @@ interface ClipPreviewEditorProps {
   sourceUrl: string
   subtitleOptions: SubtitleOptions
   exportAspectRatio?: ExportAspectRatio
+  showPostControls?: boolean
+  showSubtitleControls?: boolean
   onSubtitleOptionsChange: (options: SubtitleOptions) => void
   onClipChange: (clip: Clip) => void
   onTrimChange: (start: number | null, end: number | null) => void
@@ -458,6 +460,8 @@ export default function ClipPreviewEditor({
   sourceUrl,
   subtitleOptions,
   exportAspectRatio,
+  showPostControls = true,
+  showSubtitleControls = true,
   onSubtitleOptionsChange,
   onClipChange,
   onTrimChange,
@@ -1126,6 +1130,7 @@ export default function ClipPreviewEditor({
         clip={clip}
         sourceUrl={sourceUrl}
         subtitleOptions={subtitleOptions}
+        exportAspectRatio={exportAspectRatio}
         onTrimChange={onTrimChange}
         onPlaybackTimeChange={setPlayheadTime}
         externalSeekTime={externalSeekTime}
@@ -1148,6 +1153,7 @@ export default function ClipPreviewEditor({
             <p className="max-w-3xl text-sm leading-6 text-white/85">{cleanClipReason(clip.ai_reason)}</p>
           </div>
 
+          {showPostControls && (
           <div className="space-y-2 rounded-lg border border-white/10 bg-black/15 p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-white/35">Target Platforms</span>
@@ -1185,9 +1191,10 @@ export default function ClipPreviewEditor({
               <p className="text-xs text-white/35">Pick at least one platform to generate drafts.</p>
             )}
           </div>
+          )}
         </div>
 
-        {orderedSelectedPlatforms.length > 0 && (
+        {showPostControls && orderedSelectedPlatforms.length > 0 && (
           <div className="rounded-lg border border-white/10 bg-black/20 p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1239,8 +1246,9 @@ export default function ClipPreviewEditor({
           </div>
         )}
       </div>
-      <div className="order-3">{subtitleStylingPanel}</div>
+      {showSubtitleControls && <div className="order-3">{subtitleStylingPanel}</div>}
 
+      {showSubtitleControls && (
       <div className="order-2 rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
         {subtitleOptions.enabled ? (
           <>
@@ -1430,6 +1438,7 @@ export default function ClipPreviewEditor({
           </div>
         )}
       </div>
+      )}
 
       <div className="order-5">{children}</div>
     </div>
