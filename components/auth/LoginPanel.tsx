@@ -101,10 +101,14 @@ export default function LoginPanel() {
   }
 
   return (
-    <div className="liquid-card w-full max-w-sm p-5 text-left">
-      <div className="mb-4">
-        <div className="text-sm font-bold text-white">Sign in to Slicer</div>
-        <div className="text-xs text-white/40 mt-1">Use an email one-time code or a wallet. Discord login is disabled while Slicer gets its own app identity.</div>
+    <div className="liquid-card w-full max-w-sm p-6 text-left">
+      <div className="mb-5">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="h-3 w-[3px] rounded-full bg-[var(--mars)]" />
+          <span className="eyebrow">Crew access</span>
+        </div>
+        <div className="font-display text-2xl font-bold uppercase tracking-wide text-dust">Sign in to Slicer</div>
+        <div className="text-xs text-dust/40 mt-1.5">Use an email one-time code or a wallet. Discord login is disabled while Slicer gets its own app identity.</div>
       </div>
 
       <div className="space-y-3">
@@ -131,9 +135,13 @@ export default function LoginPanel() {
           <button
             type="submit"
             disabled={emailBusy}
-            className="liquid-button flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2.5 rounded-xl px-4 py-3 text-sm font-bold text-[#180703] transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg, #FF5A36, #FF7A5C)', boxShadow: '0 10px 26px rgba(255, 90, 54, 0.28)' }}
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-black text-black">@</span>
+            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="3" />
+              <path d="m2 7 10 7 10-7" />
+            </svg>
             {emailBusy ? 'Working…' : codeRequested ? 'Verify code' : 'Send one-time code'}
           </button>
         </form>
@@ -155,10 +163,14 @@ export default function LoginPanel() {
           type="button"
           onClick={connectWallet}
           disabled={walletBusy}
-          className="liquid-button flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+          className="liquid-button flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-dust transition hover:border-white/25 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs">◇</span>
-          {walletBusy ? 'Waiting for wallet…' : 'Connect Wallet'}
+          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 7H5a2 2 0 0 1-2-2 2 2 0 0 1 2-2h13v4" />
+            <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1" />
+            <circle cx="16.5" cy="14" r="1" fill="currentColor" stroke="none" />
+          </svg>
+          {walletBusy ? 'Waiting for wallet…' : 'Connect wallet'}
         </button>
       </div>
 

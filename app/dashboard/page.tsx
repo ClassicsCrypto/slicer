@@ -46,45 +46,47 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#0A0A0F' }}>
+    <div className="min-h-screen" style={{ background: 'radial-gradient(ellipse at 50% -20%, rgba(255,90,54,0.06), transparent 50%), #0A0911' }}>
       {/* Header */}
       <header
         className="fixed left-0 right-0 top-0 z-50 border-b border-white/10 backdrop-blur-2xl"
-        style={{ background: 'linear-gradient(135deg, rgba(10,10,15,0.92), rgba(21,21,31,0.78))' }}
+        style={{ background: 'linear-gradient(135deg, rgba(10,9,17,0.92), rgba(22,18,29,0.78))' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-baseline gap-3">
             <Image
               src="/mcv-logo-official.png"
               alt="Slicer"
               width={36}
               height={36}
-              className="object-contain drop-shadow-[0_0_8px_rgba(255,77,77,0.5)]"
+              className="self-center object-contain drop-shadow-[0_0_8px_rgba(255,90,54,0.5)]"
             />
-            <span className="font-black text-xl text-gradient-red tracking-tight">SLICER</span>
-            <span className="text-white/20 text-sm ml-1">by MCV</span>
+            <span className="font-display text-2xl font-bold uppercase tracking-wide text-gradient-red">Slicer</span>
+            <span className="eyebrow hidden sm:inline">MCV Edit Bay</span>
           </div>
 
           {/* Tab nav */}
           <nav className="flex items-center gap-1">
             {([
-              { key: 'upload', label: '📤 Upload', },
+              { key: 'upload', label: 'Upload' },
               { key: 'clips', label: 'Streams' },
               { key: 'studio', label: 'Job Studio' },
-              { key: 'autoclip', label: '🤖 Auto-Clip' },
-              { key: 'developer', label: '🔌 API' },
+              { key: 'autoclip', label: 'Auto-Clip' },
+              { key: 'developer', label: 'API' },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => handleTabChange(tab.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                className={`relative px-3 sm:px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-[0.16em] transition-all ${
                   activeTab === tab.key
-                    ? 'liquid-button text-white'
-                    : 'text-white/40 hover:text-white/70'
+                    ? 'text-dust bg-white/[0.06]'
+                    : 'text-dust/40 hover:text-dust/75'
                 }`}
-                style={activeTab === tab.key ? { background: 'linear-gradient(135deg, #FF4D4D22, #FF6B6B11)', borderBottom: '2px solid #FF4D4D' } : {}}
               >
                 {tab.label}
+                {activeTab === tab.key && (
+                  <span className="absolute inset-x-3 bottom-0 h-[2px] rounded-full bg-[var(--mars)] shadow-[0_0_8px_rgba(255,90,54,0.8)]" />
+                )}
               </button>
             ))}
           </nav>
