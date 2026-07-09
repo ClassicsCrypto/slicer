@@ -22,6 +22,7 @@ export type AuthUser = {
   displayName: string
   avatarUrl: string | null
   primaryProvider: AuthProvider | 'dev'
+  onboardedAt: string | null
 }
 
 export type AuthWorkspace = {
@@ -45,6 +46,7 @@ type UserRow = {
   primary_provider: string
   created_at: string
   updated_at: string
+  onboarded_at: string | null
 }
 
 type WorkspaceRow = {
@@ -167,6 +169,11 @@ function ensureAuthSchema(database: Database.Database) {
       FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
   `)
+
+  const userColumns = database.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>
+  if (!userColumns.some((column) => column.name === 'onboarded_at')) {
+    database.exec('ALTER TABLE users ADD COLUMN onboarded_at TEXT')
+  }
 }
 
 function nowIso() {
@@ -197,6 +204,7 @@ function toAuthUser(row: UserRow): AuthUser {
     displayName: row.display_name,
     avatarUrl: row.avatar_url,
     primaryProvider: row.primary_provider as AuthUser['primaryProvider'],
+    onboardedAt: row.onboarded_at ?? null,
   }
 }
 
@@ -231,6 +239,8 @@ export function ensureDevAuthContext(): AuthContext {
     ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at
   `).run(DEFAULT_WORKSPACE_ID, DEFAULT_USER_ID, 'owner', ts, ts)
 
+  const devRow = database.prepare('SELECT onboarded_at FROM users WHERE id = ?').get(DEFAULT_USER_ID) as { onboarded_at: string | null } | undefined
+
   return {
     user: {
       id: DEFAULT_USER_ID,
@@ -238,6 +248,7 @@ export function ensureDevAuthContext(): AuthContext {
       displayName: 'Slicer Dev User',
       avatarUrl: null,
       primaryProvider: 'dev',
+      onboardedAt: devRow?.onboarded_at ?? null,
     },
     workspace: {
       id: DEFAULT_WORKSPACE_ID,
@@ -488,6 +499,15 @@ export function requireAuth(request: NextRequest): AuthContext | NextResponse {
   const auth = getAuthContext(request)
   if (auth) return auth
   return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+}
+
+export function markUserOnboarded(userId: string): string {
+  const ts = nowIso()
+  getDb().prepare(`
+    UPDATE users SET onboarded_at = COALESCE(onboarded_at, ?), updated_at = ? WHERE id = ?
+  `).run(ts, ts, userId)
+  const row = getDb().prepare('SELECT onboarded_at FROM users WHERE id = ?').get(userId) as { onboarded_at: string | null } | undefined
+  return row?.onboarded_at ?? ts
 }
 
 export function createWalletNonce(walletAddress: string, origin: string) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
-import { getAuthContext } from '@/lib/auth'
+import { getAuthContext, markUserOnboarded } from '@/lib/auth'
 import { resolveEnsNameForAddress } from '@/lib/ens'
 import { DATA_DIR, DB_PATH } from '@/lib/data-dir'
 
@@ -43,4 +43,24 @@ export async function GET(request: NextRequest) {
     workspace: auth.workspace,
     isDevBypass: auth.isDevBypass,
   })
+}
+
+export async function POST(request: NextRequest) {
+  const auth = getAuthContext(request)
+  if (!auth) return NextResponse.json({ authenticated: false }, { status: 401 })
+
+  let action = ''
+  try {
+    const body = await request.json()
+    action = typeof body?.action === 'string' ? body.action : ''
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  if (action !== 'complete_onboarding') {
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  }
+
+  const onboardedAt = markUserOnboarded(auth.user.id)
+  return NextResponse.json({ ok: true, onboardedAt })
 }

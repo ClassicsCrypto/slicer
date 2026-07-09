@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { CSSProperties, MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { getApiUrl } from '@/lib/api-url'
 import { getClipStableId } from '@/lib/clip-id'
+import { EXAMPLE_CLIPS } from '@/lib/example-clips'
 import { emojiCensorWord, groupSubtitleWords } from '@/lib/subtitle-core'
 import {
   ActiveWordStyle,
@@ -37,16 +38,13 @@ interface StudioClip {
   sourceUrl: string
   jobTitle: string
   thumbnailTime: number
+  thumbnailUrl?: string
   transcript: { text: string; start: number; end: number }[]
 }
 
-const STUDIO_CLIPS: StudioClip[] = [
-  { id: 'clip-01', title: 'Opening Laugh', hook: 'Warm open, good context', score: 7.2, duration: 22, start: '0:08', startTime: 8, endTime: 30, thumbnailTime: 19, caption: 'Mars Cats never miss the clip', sourceUrl: '/slicer-cat.mp4', jobTitle: 'Slicer III refinement sample', transcript: [{ text: 'Mars Cats', start: 0.8, end: 1.7 }, { text: 'never miss the clip', start: 2.4, end: 4.1 }, { text: 'that was clean', start: 6.2, end: 7.6 }, { text: 'run it back', start: 10.4, end: 11.7 }] },
-  { id: 'clip-02', title: 'Clean Setup', hook: 'Good lead-in before the reaction', score: 8.1, duration: 29, start: '1:14', startTime: 74, endTime: 103, thumbnailTime: 88.5, caption: 'This is the moment people replay', sourceUrl: '/slicer-cat.mp4', jobTitle: 'Slicer III refinement sample', transcript: [{ text: 'This is the moment', start: 0.6, end: 1.85 }, { text: 'people replay', start: 3.1, end: 4.2 }, { text: 'every single time', start: 6.3, end: 7.9 }, { text: 'watch the left side', start: 11.2, end: 12.9 }, { text: 'there it is', start: 17.3, end: 18.5 }] },
-  { id: 'clip-03', title: 'Best Reaction', hook: 'Highest replay potential', score: 9.4, duration: 32, start: '2:41', startTime: 161, endTime: 193, thumbnailTime: 177, caption: 'Oh no, are you alive?', sourceUrl: '/slicer-cat.mp4', jobTitle: 'Slicer III refinement sample', transcript: [{ text: 'thou...', start: 0.0, end: 1.2 }, { text: 'Boom bullet ...', start: 2.9, end: 4.15 }, { text: 'alive?', start: 5.65, end: 6.5 }, { text: 'Oh no, are you ...', start: 8.0, end: 10.1 }, { text: 'Sony? Oh', start: 11.95, end: 13.5 }, { text: 'shit,', start: 16.9, end: 18.4 }] },
-  { id: 'clip-04', title: 'Clutch Save', hook: 'Action-heavy middle beat', score: 8.8, duration: 27, start: '4:06', startTime: 246, endTime: 273, thumbnailTime: 259.5, caption: 'Bro had one job', sourceUrl: '/slicer-cat.mp4', jobTitle: 'Slicer III refinement sample', transcript: [{ text: 'Bro had', start: 0.5, end: 1.05 }, { text: 'one job', start: 2.0, end: 2.8 }, { text: 'and still saved it', start: 4.2, end: 5.8 }, { text: 'that was actually nuts', start: 8.4, end: 10.2 }, { text: 'clip that', start: 14.7, end: 15.8 }] },
-  { id: 'clip-05', title: 'Outro Beat', hook: 'Good ending, weaker opener', score: 6.9, duration: 18, start: '5:19', startTime: 319, endTime: 337, thumbnailTime: 328, caption: 'Nobody saw that coming', sourceUrl: '/slicer-cat.mp4', jobTitle: 'Slicer III refinement sample', transcript: [{ text: 'Nobody saw', start: 0.4, end: 1.15 }, { text: 'that coming', start: 2.2, end: 3.05 }, { text: 'clean exit', start: 4.9, end: 5.75 }, { text: 'save this one', start: 9.8, end: 11.1 }] },
-]
+// Real example clips (cut from a completed Slicer job) shown when the account
+// has no processed jobs yet. Data + media live in lib/example-clips.ts and public/examples/.
+const STUDIO_CLIPS: StudioClip[] = EXAMPLE_CLIPS
 
 const SUBTITLE_PRESETS: { value: SubtitlePreset; label: string; desc: string; options: Partial<SubtitleOptions> }[] = [
   { value: 'auto', label: 'Auto', desc: 'Slicer picks the safest creator-ready default', options: { mode: 'active_word', safeZone: 'bottom_safe', font: 'impact', size: 'medium', color: '#ffffff', highlightColor: '#ffeb3b', outlineThickness: 'thick', outlineColor: '#000000', background: 'none', backgroundColor: '#000000', backgroundOpacity: 45, shadow: true, animationPreset: 'none', activeWordStyle: 'color', textCase: 'original' } },
@@ -356,23 +354,31 @@ export default function JobStudioTab({ selectedJobId, selectedClipId, initialJob
     let cancelled = false
 
     const loadThumbnails = async () => {
+      const nextThumbnails: Record<string, string> = {}
+
+      // Example clips ship pre-rendered thumbnails; no API round-trip needed
+      studioClips.forEach((clip) => {
+        if (clip.thumbnailUrl) nextThumbnails[clip.id] = clip.thumbnailUrl
+      })
+
+      const apiClips = studioClips.filter((clip) => !clip.thumbnailUrl && clip.sourceUrl)
+
       try {
-        const apiBase = (await getApiUrl()).replace(/\/$/, '')
-        const nextThumbnails: Record<string, string> = {}
-
-        studioClips.forEach((clip) => {
-          if (!clip.sourceUrl) return
-          const url = new URL(`${apiBase}/thumbnail`)
-          url.searchParams.set('sourceUrl', clip.sourceUrl)
-          url.searchParams.set('timestamp', clip.thumbnailTime.toFixed(2))
-          url.searchParams.set('clipId', clip.id)
-          nextThumbnails[clip.id] = url.toString()
-        })
-
-        if (!cancelled) setClipThumbnails(nextThumbnails)
+        if (apiClips.length > 0) {
+          const apiBase = (await getApiUrl()).replace(/\/$/, '')
+          apiClips.forEach((clip) => {
+            const url = new URL(`${apiBase}/thumbnail`)
+            url.searchParams.set('sourceUrl', clip.sourceUrl)
+            url.searchParams.set('timestamp', clip.thumbnailTime.toFixed(2))
+            url.searchParams.set('clipId', clip.id)
+            nextThumbnails[clip.id] = url.toString()
+          })
+        }
       } catch {
-        if (!cancelled) setClipThumbnails({})
+        // static thumbnails below still apply
       }
+
+      if (!cancelled) setClipThumbnails(nextThumbnails)
     }
 
     loadThumbnails()
