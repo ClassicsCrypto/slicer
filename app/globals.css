@@ -312,6 +312,13 @@ button:focus-visible, a:focus-visible {
   background-color: rgba(255, 90, 54, 0.05) !important;
 }
 
+/* ---------- Onboarding tour ---------- */
+
+.tour-spotlight {
+  transition: top 0.28s cubic-bezier(0.2, 0.85, 0.25, 1), left 0.28s cubic-bezier(0.2, 0.85, 0.25, 1),
+    width 0.28s cubic-bezier(0.2, 0.85, 0.25, 1), height 0.28s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -322,6 +329,10 @@ button:focus-visible, a:focus-visible {
   .animate-shimmer,
   .top-origin-popover {
     animation: none;
+  }
+
+  .tour-spotlight {
+    transition: none;
   }
 
   button:not(:disabled):hover::after {

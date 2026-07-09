@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import { Job } from '@/types'
 import UploadTab from '@/components/dashboard/UploadTab'
@@ -8,6 +8,7 @@ import ClipsGallery from '@/components/dashboard/ClipsGallery'
 import AutoClipTab from '@/components/dashboard/AutoClipTab'
 import DeveloperTab from '@/components/dashboard/DeveloperTab'
 import JobStudioTab from '@/components/dashboard/JobStudioTab'
+import OnboardingTour from '@/components/dashboard/OnboardingTour'
 import AccountMenu from '@/components/auth/AccountMenu'
 
 type Tab = 'upload' | 'clips' | 'studio' | 'autoclip' | 'developer'
@@ -18,6 +19,43 @@ export default function DashboardPage() {
   const [processingJobs, setProcessingJobs] = useState<Job[]>([])
   const [selectedStudioJob, setSelectedStudioJob] = useState<Job | null>(null)
   const [selectedStudioClipId, setSelectedStudioClipId] = useState<string | undefined>()
+  const [isBootstrapped, setIsBootstrapped] = useState(false)
+  const [showTour, setShowTour] = useState(false)
+
+  // First visit on an account: land on Upload with the tour. Returning: Streams.
+  useEffect(() => {
+    let cancelled = false
+
+    const bootstrap = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && data?.authenticated && data.user && !data.user.onboardedAt) {
+          setActiveTab('upload')
+          setShowTour(true)
+        }
+      } catch {
+        // fall through to the returning-user default
+      } finally {
+        if (!cancelled) setIsBootstrapped(true)
+      }
+    }
+
+    bootstrap()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const completeTour = useCallback(() => {
+    setShowTour(false)
+    fetch('/api/auth/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'complete_onboarding' }),
+    }).catch(() => {})
+  }, [])
 
   const handleJobCreated = useCallback((job: Job) => {
     setProcessingJobs((prev) => [job, ...prev.filter((existing) => existing.id !== job.id)])
@@ -76,6 +114,7 @@ export default function DashboardPage() {
             ] as const).map((tab) => (
               <button
                 key={tab.key}
+                data-tour={tab.key}
                 onClick={() => handleTabChange(tab.key)}
                 className={`relative px-3 sm:px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-[0.16em] transition-all ${
                   activeTab === tab.key
@@ -97,11 +136,11 @@ export default function DashboardPage() {
 
       {/* Content */}
       <main className={`${activeTab === 'studio' ? 'max-w-[1800px]' : 'max-w-7xl'} mx-auto px-4 pt-[76px] sm:px-6`}>
-        {activeTab === 'upload' && (
+        {isBootstrapped && activeTab === 'upload' && (
           <UploadTab onJobCreated={handleJobCreated} onViewClips={openClipsTab} />
         )}
 
-        {activeTab === 'clips' && (
+        {isBootstrapped && activeTab === 'clips' && (
           <ClipsGallery key={galleryKey} initialJobs={processingJobs} onEditJob={openJobStudio} />
         )}
 
@@ -123,6 +162,8 @@ export default function DashboardPage() {
         )}
 
       </main>
+
+      {showTour && <OnboardingTour onComplete={completeTour} />}
     </div>
   )
 }
