@@ -28,6 +28,11 @@ const sqliteShadowStore = require('./lib/sqlite-shadow-store.js')
 const retentionSweeper = require('./lib/retention-sweeper.js')
 const { normalizeSubtitleWords, censorSubtitleWords, groupSubtitleWords } = require('../lib/subtitle-core.js')
 const { runMediaToolLimited } = require('./audio-energy')
+const {
+  formatDownloadError,
+  getDownloadExecOptions,
+  getDownloadFileId,
+} = require('./lib/yt-dlp-download.js')
 
 // Load .env.local if it exists
 const envPath = path.join(__dirname, '..', '.env.local')
@@ -544,7 +549,7 @@ async function ensureDownloadedSource(rawUrl, outputQuality = '720p', onDownload
     }
   }
 
-  const fileId = crypto.randomBytes(8).toString('hex')
+  const fileId = getDownloadFileId(rawUrl)
   const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`)
   await downloadAudio(rawUrl, outputTemplate, outputQuality, onDownloadProgress)
 
@@ -670,6 +675,7 @@ function downloadAudio(url, outputPath, outputQuality = '720p', onProgress = nul
     const outputPrefix = path.basename(String(outputPath)).replace('%(ext)s', '')
     let lastMediaSignature = ''
     let lastMediaActivity = Date.now()
+    let stalled = false
 
     const getMediaSignature = () => {
       try {
@@ -692,11 +698,11 @@ function downloadAudio(url, outputPath, outputQuality = '720p', onProgress = nul
       }
     }
 
-    const child = execFile('yt-dlp', args, { timeout: 30 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const child = execFile('yt-dlp', args, getDownloadExecOptions(), (err, stdout, stderr) => {
       clearInterval(stallTimer)
       if (err) {
         console.error('[yt-dlp] error:', stderr?.slice(-500))
-        reject(new Error(`Download failed: ${stderr?.slice(-200) || err.message}`))
+        reject(new Error(formatDownloadError(err, stderr, stalled)))
         return
       }
       console.log('[yt-dlp] done:', stdout.trim().slice(-200))
@@ -716,6 +722,7 @@ function downloadAudio(url, outputPath, outputQuality = '720p', onProgress = nul
         return
       }
       if (Date.now() - lastMediaActivity < DOWNLOAD_STALL_TIMEOUT_MS) return
+      stalled = true
       console.error(`[yt-dlp] stalled for ${Math.round(DOWNLOAD_STALL_TIMEOUT_MS / 1000)}s with no media progress; terminating`)
       child.kill('SIGTERM')
     }, 10_000)
@@ -801,7 +808,7 @@ async function handleDownload(req, res) {
     }
 
     // 2. Download audio
-    const fileId = crypto.randomBytes(8).toString('hex')
+    const fileId = getDownloadFileId(url)
     const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`)
     await downloadAudio(url, outputTemplate)
 
@@ -4124,7 +4131,7 @@ async function handleDownloadStart(req, res) {
         return
       }
 
-      const fileId = crypto.randomBytes(8).toString('hex')
+      const fileId = getDownloadFileId(url)
       const outputTemplate = path.join(TEMP_DIR, `${fileId}.%(ext)s`)
       await downloadAudio(url, outputTemplate)
 
