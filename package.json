@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:yt-dlp-download": "node scripts/yt-dlp-download-test.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
